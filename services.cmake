@@ -19,8 +19,6 @@
 # features
 #
 
-add_definitions (-DUSE_SOUND_PLAYER)
-
 add_definitions (-DUSE_IARM)
 option(USE_IARM "USE_IARM" ON)
 
@@ -33,30 +31,18 @@ add_definitions (-DUSE_TR_69)
 
 add_definitions (-DHAS_API_SYSTEM)
 add_definitions (-DHAS_API_POWERSTATE)
-add_definitions(-DRDK_LOG_MILESTONE)
 
 add_definitions (-DUSE_DS)
 
-option(PLUGIN_WAREHOUSE "PLUGIN_WAREHOUSE" ON)
-option(HAS_API_HDMI_INPUT "HAS_API_HDMI_INPUT" ON)
-option(PLUGIN_COPILOT "PLUGIN_COPILOT" OFF)
-option(PLUGIN_FRAMERATE "PLUGIN_FRAMERATE" ON)
-option(PLUGIN_STORAGE_MANAGER "PLUGIN_STORAGE_MANAGER" OFF)
-option(PLUGIN_DEVICEDIAGNOSTICS "PLUGIN_DEVICEDIAGNOSTICS" ON)
-option(PLUGIN_SOUNDPLAYER "PLUGIN_SOUNDPLAYER" OFF)
+# PowerManager specific options
+option(PLUGIN_POWERMANAGER "PLUGIN_POWERMANAGER" ON)
+
+# Keep telemetry and continuewatching as they are needed
 option(PLUGIN_TELEMETRY "PLUGIN_TELEMETRY" ON)
-option(PLUGIN_LEDCONTROL "PLUGIN_LEDCONTROL" ON)
 option(PLUGIN_CONTINUEWATCHING "PLUGIN_CONTINUEWATCHING" ON)
 
 
-#add_definitions (-DCLIENT_VERSION_STRING)=\\\"$(VERSION_FULL_VALUE)\\\"
-#add_definitions (-DSTB_VERSION_STRING)=\\\"$(FULL_VERSION_NAME_VALUE)\\\"
-#add_definitions (-DSTB_TIMESTAMP_STRING)=\\\"$(STB_TIMESTAMP_VALUE)\\\"
-
-#add_definitions (-DHAS_API_TTSSETTINGSSERVICE)
-#add_definitions (-DHAS_API_TTSSESSIONSERVICE)
-#add_definitions (-DHAS_API_TTSRESOURCESERVICE)
-add_definitions (-DPLUGIN_CONTINUEWATCHING)
+#add_definitions (-DPLUGIN_CONTINUEWATCHING)
 option(PLUGIN_CONTINUEWATCHING "PLUGIN_CONTINUEWATCHING" ON)
 
 if(PLUGIN_CONTINUEWATCHING)
@@ -70,15 +56,6 @@ if(PLUGIN_CONTINUEWATCHING)
     if(CONTINUEWATCHING_DISABLE_SECAPI)
         add_definitions (-DDISABLE_SECAPI)
     endif()
-endif()
-
-if (DISABLE_GEOGRAPHY_TIMEZONE)
-    add_definitions (-DDISABLE_GEOGRAPHY_TIMEZONE)
-endif()
-
-if (BUILD_ENABLE_SYSTIMEMGR_SUPPORT)
-    message("Building with SYSTIMEMGR_SUPPORT enabled")
-   add_definitions (-DENABLE_SYSTIMEMGR_SUPPORT)
 endif()
 
 if (BUILD_DBUS)
@@ -140,19 +117,9 @@ if(NET_DISABLE_NETSRVMGR_CHECK)
     add_definitions (-DNET_DISABLE_NETSRVMGR_CHECK)
 endif()
 
-if (ENABLE_WHOAMI)
-    message("Enable WHOAMI")
-    add_definitions (-DENABLE_WHOAMI=ON)
-endif()
-
 if (ENABLE_RFC_MANAGER)
     message("Using binary for RFC Maintenance task")
     add_definitions (-DENABLE_RFC_MANAGER=ON)
-endif()
-
-if (DISABLE_DCM_TASK)
-    message("Disabling DCM Maintenance task")
-    add_definitions (-DDISABLE_DCM_TASK=ON)
 endif()
 
 if(BUILD_ENABLE_ERM)
