@@ -411,6 +411,8 @@ jobs:
           -DTHUNDER_VERSION_MAJOR=4
           -DTHUNDER_VERSION_MINOR=4
           -DRDK_SERVICES_L1_TEST
+          -I$GITHUB_WORKSPACE/entservices-powermanager/plugin
+          -I$GITHUB_WORKSPACE/entservices-powermanager/helpers
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/audiocapturemgr
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/rdk/ds
@@ -419,7 +421,6 @@ jobs:
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/ccec/drivers
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/network
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests
-          -I$GITHUB_WORKSPACE/entservices-powermanager/helpers
           -I$GITHUB_WORKSPACE/Thunder/Source
           -I$GITHUB_WORKSPACE/Thunder/Source/core
           -I$GITHUB_WORKSPACE/install/usr/include
