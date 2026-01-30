@@ -25,6 +25,8 @@ cmake -G Ninja -S "$GITHUB_WORKSPACE" -B build/entservices-powermanager \
 -DDS_FOUND=ON \
 -DPLUGIN_POWERMANAGER=ON \
 -DCMAKE_CXX_FLAGS="-DEXCEPTIONS_ENABLE=ON \
+-I ${GITHUB_WORKSPACE}/plugin \
+-I ${GITHUB_WORKSPACE}/helpers \
 -I ${GITHUB_WORKSPACE}/entservices-testframework/Tests/headers \
 -I ${GITHUB_WORKSPACE}/entservices-testframework/Tests/headers/audiocapturemgr \
 -I ${GITHUB_WORKSPACE}/entservices-testframework/Tests/headers/rdk/ds \
