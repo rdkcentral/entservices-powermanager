@@ -388,7 +388,7 @@ jobs:
           -DHAS_API_POWERSTATE
           -DHAS_RBUS
           -D_DRM_MODE_H
-          -DENABLE_DEVICE_MANUFACTURER_INFO"
+          "
           -D_DRM_MODE_H=ON
           &&
           cmake --build build/mocks -j8
@@ -471,15 +471,7 @@ jobs:
           -DRDK_SERVICES_L1_TEST=ON
           -DUSE_THUNDER_R4=ON
           -DHIDE_NON_EXTERNAL_SYMBOLS=OFF
-          -DPLUGIN_DEVICEDIAGNOSTICS=ON
-          -DPLUGIN_USERPREFERENCES=ON
-          -DPLUGIN_WAREHOUSE=ON
-          -DPLUGIN_DEVICEINFO=OFF
-          -DPLUGIN_DISPLAYINFO=ON
-          -DPLUGIN_DISPLAYSETTINGS=OFF
-          -DPLUGIN_FRAMERATE=ON
           -DPLUGIN_POWERMANAGER=ON
-          -DPLUGIN_SYSTEMSERVICES=ON
           &&
           cmake --build build/entservices-powermanager
           &&
@@ -555,15 +547,7 @@ jobs:
           -DDS_FOUND=ON
           -DUSE_DEVICESETTINGS=ON
           -DBUILD_RPI=ON
-          -DHAS_FRONT_PANEL=ON
-          -DPLUGIN_SYSTEMSERVICES=ON
-          -DPLUGIN_DEVICEINFO=OFF
           -DPLUGIN_POWERMANAGER=ON
-          -DPLUGIN_FRAMERATE=ON
-          -DPLUGIN_USERPREFERENCES=ON
-          -DPLUGIN_WAREHOUSE=ON
-          -DPLUGIN_DEVICEDIAGNOSTICS=ON
-          -DPLUGIN_DISPLAYINFO=ON
           -DRDK_SERVICES_L1_TEST=ON
           -DUSE_THUNDER_R4=ON
           -DHIDE_NON_EXTERNAL_SYMBOLS=OFF
