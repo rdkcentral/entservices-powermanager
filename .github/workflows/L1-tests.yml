@@ -126,18 +126,18 @@ jobs:
           ref: develop
           token: ${{ secrets.RDKCM_RDKE }}
 
-      - name: Checkout entservices-deviceanddisplay
+      - name: Checkout entservices-powermanager
         if: ${{ inputs.caller_source == 'local' }}
         uses: actions/checkout@v3
         with:
-          path: entservices-deviceanddisplay
+          path: entservices-powermanager
 
-      - name: Checkout entservices-deviceanddisplay-testframework
+      - name: Checkout entservices-powermanager-testframework
         if: ${{ inputs.caller_source == 'testframework' }}
         uses: actions/checkout@v3
         with:
-          repository: rdkcentral/entservices-deviceanddisplay
-          path: entservices-deviceanddisplay
+          repository: rdkcentral/entservices-powermanager
+          path: entservices-powermanager
           ref: develop
 
       - name: Checkout googletest
@@ -357,7 +357,7 @@ jobs:
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/ccec/drivers
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/network
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests
-          -I$GITHUB_WORKSPACE/entservices-deviceanddisplay/helpers
+          -I$GITHUB_WORKSPACE/entservices-powermanager/helpers
           -I$GITHUB_WORKSPACE/Thunder/Source
           -I$GITHUB_WORKSPACE/Thunder/Source/core
           -I$GITHUB_WORKSPACE/install/usr/include
@@ -388,18 +388,18 @@ jobs:
           -DHAS_API_POWERSTATE
           -DHAS_RBUS
           -D_DRM_MODE_H
-          -DENABLE_DEVICE_MANUFACTURER_INFO"
+          "
           -D_DRM_MODE_H=ON
           &&
           cmake --build build/mocks -j8
           &&
           cmake --install build/mocks
 
-      - name: Build entservices-deviceanddisplay
+      - name: Build entservices-powermanager
         run: >
           cmake -G Ninja
-          -S "$GITHUB_WORKSPACE/entservices-deviceanddisplay"
-          -B build/entservices-deviceanddisplay
+          -S "$GITHUB_WORKSPACE/entservices-powermanager"
+          -B build/entservices-powermanager
           -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install/usr"
           -DCMAKE_MODULE_PATH="$GITHUB_WORKSPACE/install/tools/cmake"
           -DCMAKE_CXX_FLAGS="
@@ -411,6 +411,8 @@ jobs:
           -DTHUNDER_VERSION_MAJOR=4
           -DTHUNDER_VERSION_MINOR=4
           -DRDK_SERVICES_L1_TEST
+          -I$GITHUB_WORKSPACE/entservices-powermanager/plugin
+          -I$GITHUB_WORKSPACE/entservices-powermanager/helpers
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/audiocapturemgr
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/rdk/ds
@@ -419,7 +421,6 @@ jobs:
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/ccec/drivers
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/network
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests
-          -I$GITHUB_WORKSPACE/entservices-deviceanddisplay/helpers
           -I$GITHUB_WORKSPACE/Thunder/Source
           -I$GITHUB_WORKSPACE/Thunder/Source/core
           -I$GITHUB_WORKSPACE/install/usr/include
@@ -470,19 +471,11 @@ jobs:
           -DRDK_SERVICES_L1_TEST=ON
           -DUSE_THUNDER_R4=ON
           -DHIDE_NON_EXTERNAL_SYMBOLS=OFF
-          -DPLUGIN_DEVICEDIAGNOSTICS=ON
-          -DPLUGIN_USERPREFERENCES=ON
-          -DPLUGIN_WAREHOUSE=ON
-          -DPLUGIN_DEVICEINFO=OFF
-          -DPLUGIN_DISPLAYINFO=ON
-          -DPLUGIN_DISPLAYSETTINGS=OFF
-          -DPLUGIN_FRAMERATE=ON
           -DPLUGIN_POWERMANAGER=ON
-          -DPLUGIN_SYSTEMSERVICES=ON
           &&
-          cmake --build build/entservices-deviceanddisplay
+          cmake --build build/entservices-powermanager
           &&
-          cmake --install build/entservices-deviceanddisplay
+          cmake --install build/entservices-powermanager
 
       - name: Build entservices-testframework
         run: >
@@ -507,7 +500,7 @@ jobs:
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/rdk/iarmmgrs-hal
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/ccec/drivers
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/network
-          -I$GITHUB_WORKSPACE/entservices-deviceanddisplay/helpers
+          -I$GITHUB_WORKSPACE/entservices-powermanager/helpers
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests
           -I$GITHUB_WORKSPACE/Thunder/Source
           -I$GITHUB_WORKSPACE/Thunder/Source/core
@@ -554,15 +547,7 @@ jobs:
           -DDS_FOUND=ON
           -DUSE_DEVICESETTINGS=ON
           -DBUILD_RPI=ON
-          -DHAS_FRONT_PANEL=ON
-          -DPLUGIN_SYSTEMSERVICES=ON
-          -DPLUGIN_DEVICEINFO=OFF
           -DPLUGIN_POWERMANAGER=ON
-          -DPLUGIN_FRAMERATE=ON
-          -DPLUGIN_USERPREFERENCES=ON
-          -DPLUGIN_WAREHOUSE=ON
-          -DPLUGIN_DEVICEDIAGNOSTICS=ON
-          -DPLUGIN_DISPLAYINFO=ON
           -DRDK_SERVICES_L1_TEST=ON
           -DUSE_THUNDER_R4=ON
           -DHIDE_NON_EXTERNAL_SYMBOLS=OFF
@@ -689,12 +674,12 @@ jobs:
           &&
           lcov -c
           -o coverage.info
-          -d build/entservices-deviceanddisplay
+          -d build/entservices-powermanager
           &&
           lcov
           -r coverage.info
           '/usr/include/*'
-          '*/build/entservices-deviceanddisplay/_deps/*'
+          '*/build/entservices-powermanager/_deps/*'
           '*/install/usr/include/*'
           '*/Tests/headers/*'
           '*/Tests/mocks/*'
@@ -704,13 +689,13 @@ jobs:
           &&
           genhtml
           -o coverage
-          -t "entservices-deviceanddisplay coverage"
+          -t "entservices-powermanager coverage"
           filtered_coverage.info
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: artifacts-L1-deviceanddisplay
+          name: artifacts-L1-powermanager
           path: |
             coverage/
             valgrind_log
