@@ -107,6 +107,7 @@ namespace Plugin {
     void PowerManagerImplementation::dispatchRebootBeginEvent(const string& rebootRequestor, const std::string& rebootReasonCustom, const string& rebootReasonOther)
     {
         LOGINFO(">>");
+        printf("Test coverity flow: %s\n");
         _callbackLock.Lock();
         for (auto& notification : _rebootNotifications) {
             auto start = std::chrono::steady_clock::now();
