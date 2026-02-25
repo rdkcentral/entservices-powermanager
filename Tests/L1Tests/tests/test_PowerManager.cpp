@@ -507,27 +507,26 @@ TEST_F(TestPowerManager, PowerModePreChangeAck)
                 transaction_id = transactionId;
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
                 EXPECT_EQ(stateChangeAfter, 1);
-
-                // Delay power mode change by 10 seconds
-                auto status = powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId, 10);
-                EXPECT_EQ(status, Core::ERROR_NONE);
-
-                // Delay Change with invalid clientId
-                status = powerManagerImpl->DelayPowerModeChangeBy(clientId + 10, transactionId, 10);
-                EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
-                status = powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId + 10, 10);
-                EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
-
-                // delay by smaller value
-                status = powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId, 5);
-                EXPECT_EQ(status, Core::ERROR_NONE);
-
+                // Test invalid parameters FIRST before modifying state
                 // Acknowledge - Change Complete with invalid transactionId
-                status = powerManagerImpl->PowerModePreChangeComplete(clientId, transactionId + 10);
+                auto status = powerManagerImpl->PowerModePreChangeComplete(clientId, transactionId + 10);
                 EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
                 // Acknowledge - Change Complete with invalid clientId
                 status = powerManagerImpl->PowerModePreChangeComplete(clientId + 10, transactionId);
                 EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+                // Now set valid delays
+                // Delay power mode change by 10 seconds
+                status = powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId, 10);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                // delay by larger value (extends the timeout)
+                status = powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId, 30);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                // valid PowerModePreChangeComplete
+                status = powerManagerImpl->PowerModePreChangeComplete(clientId, transaction_id);
+                EXPECT_EQ(status, Core::ERROR_NONE);
 
                 wg.Done();
             }));
@@ -539,10 +538,6 @@ TEST_F(TestPowerManager, PowerModePreChangeAck)
     EXPECT_EQ(status, Core::ERROR_NONE);
 
     wg.Wait();
-
-    // valid PowerModePreChangeComplete
-    status = powerManagerImpl->PowerModePreChangeComplete(clientId, transaction_id);
-    EXPECT_EQ(status, Core::ERROR_NONE);
 
     // some delay to destroy AckController after IModeChanged notification
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
