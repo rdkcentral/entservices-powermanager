@@ -612,6 +612,21 @@ namespace Plugin {
         return errorCode;
     }
 
+    Core::hresult PowerManagerImplementation::GetTimeSinceWakeup(TimeSinceWakeup& timeSinceWakeup)
+    {
+        LOGINFO(">>");
+
+        _apiLock.Lock();
+
+        uint32_t errorCode = _powerController.GetTimeSinceWakeup(timeSinceWakeup.secondsSinceWakeup);
+
+        _apiLock.Unlock();
+
+        LOGINFO("<< secondsSinceWakeup: %u, errorCode: %u", timeSinceWakeup.secondsSinceWakeup, errorCode);
+
+        return errorCode;
+    }
+
     Core::hresult PowerManagerImplementation::Reboot(const string& rebootRequestor, const string& rebootReasonCustom, const string& rebootReasonOther)
     {
         const string defaultArg   = "Unknown";

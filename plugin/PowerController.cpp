@@ -46,6 +46,7 @@ PowerController::PowerController(DeepSleepController& deepSleep, std::unique_ptr
     , _settings(Settings::Load(m_settingsFile))
     , _deepSleepWakeupSettings(_settings)
     , _workerPool(WPEFramework::Core::WorkerPool::Instance())
+    , _wakeupTimestamp{}
     , _deepSleep(deepSleep)
 #ifdef OFFLINE_MAINT_REBOOT
     , _rebootController(_settings)
@@ -101,6 +102,13 @@ void PowerController::init()
         _settings.SetPowerState(currentState);
         _settings.Save(m_settingsFile);
     } while (false);
+
+    // Initialize wakeup timestamp if device is in ON state after initialization
+    if (_settings.powerState() == PowerState::POWER_STATE_ON) {
+        _wakeupTimestamp = std::chrono::steady_clock::now();
+        LOGINFO("Initialized wakeup timestamp: device is in ON state at boot");
+    }
+
 }
 
 uint32_t PowerController::SetPowerState(const int keyCode, const PowerState powerState, const std::string& reason)
@@ -122,6 +130,13 @@ uint32_t PowerController::SetPowerState(const int keyCode, const PowerState powe
         _settings.SetPowerState(powerState);
         _settings.Save(m_settingsFile);
         _lastKnownPowerState = curState;
+
+        // Track wakeup timestamp when entering ON from any non-ON state
+        if (powerState == PowerState::POWER_STATE_ON &&
+            curState != PowerState::POWER_STATE_ON) {
+            _wakeupTimestamp = std::chrono::steady_clock::now();
+            LOGINFO("Wakeup timestamp updated: transition from %s to ON", util::str(curState));
+        }
     }
 
     return errCode;
@@ -236,5 +251,28 @@ uint32_t PowerController::SetDeepSleepTimer(const int timeOut)
 {
     _deepSleepWakeupSettings.SetTimeout(timeOut);
     _settings.Save(m_settingsFile);
+    return WPEFramework::Core::ERROR_NONE;
+}
+
+uint32_t PowerController::GetTimeSinceWakeup(uint32_t& secondsSinceWakeup)
+{
+    // Return 0 if device is not in ON state
+    if (_settings.powerState() != PowerState::POWER_STATE_ON) {
+        secondsSinceWakeup = 0;
+        return WPEFramework::Core::ERROR_NONE;
+    }
+
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = now - _wakeupTimestamp;
+    auto elapsedSeconds = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
+
+    // Use saturating cast to prevent overflow: cap at UINT32_MAX (~136 years)
+    // This handles the unlikely case where the device stays awake for extremely long periods
+    if (elapsedSeconds > static_cast<decltype(elapsedSeconds)>(UINT32_MAX)) {
+        secondsSinceWakeup = UINT32_MAX;
+    } else {
+        secondsSinceWakeup = static_cast<uint32_t>(elapsedSeconds);
+    }
+
     return WPEFramework::Core::ERROR_NONE;
 }
