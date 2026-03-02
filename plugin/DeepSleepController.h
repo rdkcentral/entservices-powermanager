@@ -20,6 +20,7 @@
 
 #include <map>         // for map
 #include <memory>      // for unique_ptr, operator!=
+#include <mutex>       // for mutex
 #include <stdint.h>    // for uint32_t
 #include <string>      // for string
 #include <type_traits> // for is_base_of
@@ -155,6 +156,14 @@ public:
 
     uint32_t GetLastWakeupKeyCode(int& keyCode) const;
 
+    uint32_t GetTimeSinceWakeup(uint32_t& secondsSinceWakeup);
+
+    // Update wakeup timestamp (called when resuming from any standby state)
+    void UpdateWakeupTime();
+
+    // Reset wakeup timestamp to zero (called when entering standby from ON)
+    void ResetWakeupTime();
+
     // activate deep sleep mode
     uint32_t Activate(uint32_t timeOut, bool nwStandbyMode);
 
@@ -188,6 +197,8 @@ private:
     INotification& _parent;
     WPEFramework::Core::IWorkerPool& _workerPool;
     Timestamp _deepsleepStartTime;
+    Timestamp _lastWakeupTime;
+    std::shared_ptr<std::mutex> _wakeupTimeMutex; // Protects _lastWakeupTime access
     std::shared_ptr<IPlatform> _platform;
     DeepSleepState _deepSleepState;
     uint32_t _deepSleepDelaySec;         // Duration to wait before entering deep sleep mode

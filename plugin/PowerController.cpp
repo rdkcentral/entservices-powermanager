@@ -122,6 +122,20 @@ uint32_t PowerController::SetPowerState(const int keyCode, const PowerState powe
         _settings.SetPowerState(powerState);
         _settings.Save(m_settingsFile);
         _lastKnownPowerState = curState;
+
+        // Track wakeup timestamp when entering ON from any non-ON state
+        // Note: Same-state transitions (e.g., ON->ON) intentionally do not update
+        if (powerState == PowerState::POWER_STATE_ON &&
+            curState != PowerState::POWER_STATE_ON) {
+            _deepSleep.UpdateWakeupTime();
+            LOGINFO("Wakeup timestamp updated: transition from %s to ON", util::str(curState));
+        }
+        // Reset wakeup timestamp when leaving ON state
+        else if (curState == PowerState::POWER_STATE_ON &&
+                 powerState != PowerState::POWER_STATE_ON) {
+            _deepSleep.ResetWakeupTime();
+            LOGINFO("Wakeup timestamp reset: transition from ON to %s", util::str(powerState));
+        }
     }
 
     return errCode;
