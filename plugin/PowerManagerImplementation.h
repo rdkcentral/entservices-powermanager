@@ -40,6 +40,7 @@
 using PowerState         = WPEFramework::Exchange::IPowerManager::PowerState;
 using WakeupReason       = WPEFramework::Exchange::IPowerManager::WakeupReason;
 using ThermalTemperature = WPEFramework::Exchange::IPowerManager::ThermalTemperature;
+using TimeSinceWakeup    = WPEFramework::Exchange::IPowerManager::TimeSinceWakeup;
 
 namespace WPEFramework {
 namespace Plugin {
@@ -131,6 +132,7 @@ namespace Plugin {
         Core::hresult SetDeepSleepTimer(const int timeOut) override;
         Core::hresult GetLastWakeupReason(WakeupReason& wakeupReason) const override;
         Core::hresult GetLastWakeupKeyCode(int& keycode) const override;
+        Core::hresult GetTimeSinceWakeup(TimeSinceWakeup& timeSinceWakeup) override;
         Core::hresult Reboot(const string& rebootRequestor, const string& rebootReasonCustom, const string& rebootReasonOther) override;
         Core::hresult SetNetworkStandbyMode(const bool standbyMode) override;
         Core::hresult GetNetworkStandbyMode(bool& standbyMode) override;
