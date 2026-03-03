@@ -1433,3 +1433,217 @@ TEST_F(PowerManager_L2Test, JsonRpcWakeupSource_UNKNOWN)
     // EXPECT_EQ((status & 0x7F), Core::ERROR_INVALID_PARAMETER);
     EXPECT_NE((status & 0x7F), Core::ERROR_NONE);
 }
+
+/********************************************************
+************Test case Details **************************
+** Test GetTimeSinceWakeup when no wakeup has occurred
+** Expected: secondsSinceWakeup should be 0
+*******************************************************/
+TEST_F(PowerManager_L2Test, GetTimeSinceWakeup_NoWakeup)
+{
+    Core::ProxyType<RPC::InvokeServerType<1, 0, 4>> mEngine_PowerManager;
+    Core::ProxyType<RPC::CommunicatorClient> mClient_PowerManager;
+    PluginHost::IShell *mController_PowerManager;
+
+    TEST_LOG("Creating mEngine_PowerManager");
+    mEngine_PowerManager = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
+    mClient_PowerManager = Core::ProxyType<RPC::CommunicatorClient>::Create(Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(mEngine_PowerManager));
+
+    TEST_LOG("Creating mEngine_PowerManager Announcements");
+#if ((THUNDER_VERSION == 2) || ((THUNDER_VERSION == 4) && (THUNDER_VERSION_MINOR == 2)))
+    mEngine_PowerManager->Announcements(mClient_PowerManager->Announcement());
+#endif
+
+    if (!mClient_PowerManager.IsValid())
+    {
+        TEST_LOG("Invalid mClient_PowerManager");
+    }
+    else
+    {
+        mController_PowerManager = mClient_PowerManager->Open<PluginHost::IShell>(_T("org.rdk.PowerManager"), ~0, 3000);
+        if (mController_PowerManager)
+        {
+            auto PowerManagerPlugin = mController_PowerManager->QueryInterface<Exchange::IPowerManager>();
+            if (PowerManagerPlugin)
+            {
+                Exchange::IPowerManager::TimeSinceWakeup timeSinceWakeup;
+                timeSinceWakeup.secondsSinceWakeup = 999; // Initialize with non-zero value
+
+                uint32_t status = PowerManagerPlugin->GetTimeSinceWakeup(timeSinceWakeup);
+
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                // When no wakeup has occurred, it should return 0
+                EXPECT_EQ(timeSinceWakeup.secondsSinceWakeup, 0);
+
+                PowerManagerPlugin->Release();
+            }
+            else
+            {
+                TEST_LOG("PowerManagerPlugin is NULL");
+            }
+            mController_PowerManager->Release();
+        }
+        else
+        {
+            TEST_LOG("mController_PowerManager is NULL");
+        }
+    }
+}
+
+/********************************************************
+************Test case Details **************************
+** Test GetTimeSinceWakeup after transitioning to ON state
+** 1. Transition to STANDBY
+** 2. Transition back to ON (triggers wakeup timestamp)
+** 3. Query GetTimeSinceWakeup and verify time elapsed
+*******************************************************/
+TEST_F(PowerManager_L2Test, GetTimeSinceWakeup_AfterDeepSleepWakeup)
+{
+    Core::ProxyType<RPC::InvokeServerType<1, 0, 4>> mEngine_PowerManager;
+    Core::ProxyType<RPC::CommunicatorClient> mClient_PowerManager;
+    PluginHost::IShell *mController_PowerManager;
+
+    TEST_LOG("Creating mEngine_PowerManager");
+    mEngine_PowerManager = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
+    mClient_PowerManager = Core::ProxyType<RPC::CommunicatorClient>::Create(Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(mEngine_PowerManager));
+
+    TEST_LOG("Creating mEngine_PowerManager Announcements");
+#if ((THUNDER_VERSION == 2) || ((THUNDER_VERSION == 4) && (THUNDER_VERSION_MINOR == 2)))
+    mEngine_PowerManager->Announcements(mClient_PowerManager->Announcement());
+#endif
+
+    if (!mClient_PowerManager.IsValid())
+    {
+        TEST_LOG("Invalid mClient_PowerManager");
+    }
+    else
+    {
+        mController_PowerManager = mClient_PowerManager->Open<PluginHost::IShell>(_T("org.rdk.PowerManager"), ~0, 3000);
+        if (mController_PowerManager)
+        {
+            auto PowerManagerPlugin = mController_PowerManager->QueryInterface<Exchange::IPowerManager>();
+
+            if (PowerManagerPlugin)
+            {
+                // Transition to STANDBY first to leave ON state
+                uint32_t status = PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY, "test");
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                // Transition to ON - this triggers UpdateWakeupTime()
+                status = PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_ON, "test");
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                // Wait for 2 seconds to allow time to elapse since wakeup
+                std::this_thread::sleep_for(std::chrono::seconds(2));
+
+                // Query GetTimeSinceWakeup
+                Exchange::IPowerManager::TimeSinceWakeup timeSinceWakeup;
+                status = PowerManagerPlugin->GetTimeSinceWakeup(timeSinceWakeup);
+
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                // Verify that at least 2 seconds have elapsed since wakeup
+                TEST_LOG("Time since wakeup: %u seconds", timeSinceWakeup.secondsSinceWakeup);
+                EXPECT_GE(timeSinceWakeup.secondsSinceWakeup, 2);
+                EXPECT_LE(timeSinceWakeup.secondsSinceWakeup, 5);
+
+                PowerManagerPlugin->Release();
+            }
+            else
+            {
+                TEST_LOG("PowerManagerPlugin is NULL");
+            }
+            mController_PowerManager->Release();
+        }
+        else
+        {
+            TEST_LOG("mController_PowerManager is NULL");
+        }
+    }
+}
+
+/********************************************************
+************Test case Details **************************
+** Test GetTimeSinceWakeup with multiple queries
+** Verify that time increases between consecutive calls
+*******************************************************/
+TEST_F(PowerManager_L2Test, GetTimeSinceWakeup_MultipleQueries)
+{
+    Core::ProxyType<RPC::InvokeServerType<1, 0, 4>> mEngine_PowerManager;
+    Core::ProxyType<RPC::CommunicatorClient> mClient_PowerManager;
+    PluginHost::IShell *mController_PowerManager;
+
+    TEST_LOG("Creating mEngine_PowerManager");
+    mEngine_PowerManager = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
+    mClient_PowerManager = Core::ProxyType<RPC::CommunicatorClient>::Create(Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(mEngine_PowerManager));
+
+    TEST_LOG("Creating mEngine_PowerManager Announcements");
+#if ((THUNDER_VERSION == 2) || ((THUNDER_VERSION == 4) && (THUNDER_VERSION_MINOR == 2)))
+    mEngine_PowerManager->Announcements(mClient_PowerManager->Announcement());
+#endif
+
+    if (!mClient_PowerManager.IsValid())
+    {
+        TEST_LOG("Invalid mClient_PowerManager");
+    }
+    else
+    {
+        mController_PowerManager = mClient_PowerManager->Open<PluginHost::IShell>(_T("org.rdk.PowerManager"), ~0, 3000);
+        if (mController_PowerManager)
+        {
+            auto PowerManagerPlugin = mController_PowerManager->QueryInterface<Exchange::IPowerManager>();
+
+            if (PowerManagerPlugin)
+            {
+                // Transition to STANDBY first
+                uint32_t status = PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY, "test");
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                // Transition to ON to trigger wakeup timestamp
+                status = PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_ON, "test");
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                // First query - get baseline
+                Exchange::IPowerManager::TimeSinceWakeup timeSinceWakeup1;
+                status = PowerManagerPlugin->GetTimeSinceWakeup(timeSinceWakeup1);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                TEST_LOG("First query - Time since wakeup: %u seconds", timeSinceWakeup1.secondsSinceWakeup);
+
+                // Sleep for 1 second
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+
+                // Second query
+                Exchange::IPowerManager::TimeSinceWakeup timeSinceWakeup2;
+                status = PowerManagerPlugin->GetTimeSinceWakeup(timeSinceWakeup2);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                TEST_LOG("Second query - Time since wakeup: %u seconds", timeSinceWakeup2.secondsSinceWakeup);
+
+                // Verify that the second query shows more elapsed time
+                EXPECT_GT(timeSinceWakeup2.secondsSinceWakeup, timeSinceWakeup1.secondsSinceWakeup);
+                EXPECT_GE(timeSinceWakeup2.secondsSinceWakeup - timeSinceWakeup1.secondsSinceWakeup, 1);
+
+                // Sleep for another second
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+
+                // Third query
+                Exchange::IPowerManager::TimeSinceWakeup timeSinceWakeup3;
+                status = PowerManagerPlugin->GetTimeSinceWakeup(timeSinceWakeup3);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                TEST_LOG("Third query - Time since wakeup: %u seconds", timeSinceWakeup3.secondsSinceWakeup);
+
+                // Verify that the third query shows even more elapsed time
+                EXPECT_GT(timeSinceWakeup3.secondsSinceWakeup, timeSinceWakeup2.secondsSinceWakeup);
+
+                PowerManagerPlugin->Release();
+            }
+            else
+            {
+                TEST_LOG("PowerManagerPlugin is NULL");
+            }
+            mController_PowerManager->Release();
+        }
+        else
+        {
+            TEST_LOG("mController_PowerManager is NULL");
+        }
+    }
+}
