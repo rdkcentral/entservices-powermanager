@@ -409,6 +409,49 @@ TEST_F(TestPowerManager, GetLastWakeupKeyCode)
     EXPECT_EQ(wakeupKeyCode, 1234);
 }
 
+TEST_F(TestPowerManager, GetTimeSinceWakeup_NoWakeupOccurred)
+{
+    // Test case: Device has not woken up yet (in standby or initial state)
+    // Expected: secondsSinceWakeup should be 0
+
+    WPEFramework::Exchange::IPowerManager::TimeSinceWakeup timeSinceWakeup;
+    timeSinceWakeup.secondsSinceWakeup = 999; // Initialize with non-zero value
+
+    uint32_t status = powerManagerImpl->GetTimeSinceWakeup(timeSinceWakeup);
+
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    EXPECT_EQ(timeSinceWakeup.secondsSinceWakeup, 0);
+}
+
+TEST_F(TestPowerManager, GetTimeSinceWakeup_AfterWakeup)
+{
+    // Test case: Transition to ON state to trigger wakeup timestamp, then measure elapsed time
+
+    // Set up mock expectations for state transitions
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_ON);
+                return PWRMGR_SUCCESS;
+            }));
+
+    // Now transition back to ON - this will trigger UpdateWakeupTime()
+    uint32_t status = powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_ON, "test");
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // Sleep for a short duration to allow time to elapse since wakeup
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+
+    // Now get the time since wakeup
+    WPEFramework::Exchange::IPowerManager::TimeSinceWakeup timeSinceWakeup;
+    status = powerManagerImpl->GetTimeSinceWakeup(timeSinceWakeup);
+
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    // The elapsed time should be at least 2 seconds
+    EXPECT_GE(timeSinceWakeup.secondsSinceWakeup, 2);
+    EXPECT_LE(timeSinceWakeup.secondsSinceWakeup, 5);
+}
+
 using WakeupSourceConfigIteratorImpl = WPEFramework::Core::Service<WPEFramework::RPC::IteratorType<WPEFramework::Exchange::IPowerManager::IWakeupSourceConfigIterator>>;
 
 TEST_F(TestPowerManager, SetWakeupSourceConfig)

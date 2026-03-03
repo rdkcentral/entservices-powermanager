@@ -18,6 +18,7 @@
  */
 #pragma once
 
+#include <chrono>      // for steady_clock, time_point
 #include <cstdint>     // for uint32_t
 #include <memory>      // for unique_ptr, default_delete
 #include <string>      // for basic_string, string
@@ -85,6 +86,7 @@ public:
     uint32_t SetWakeupSourceConfig(const std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig>& configs);
     uint32_t GetWakeupSourceConfig(std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig>& configs) const;
     uint32_t GetWakeupSourceConfig(int& powerMode, int& srcType, int& config) const;
+    uint32_t GetTimeSinceWakeup(uint32_t& secondsSinceWakeup);
     uint32_t Reboot(const string& requestor, const string& reasonCustom, const string& reasonOther);
     uint32_t SetDeepSleepTimer(const int timeOut);
 
@@ -111,6 +113,7 @@ private:
     Settings _settings;
     DeepSleepWakeupSettings _deepSleepWakeupSettings;
     WPEFramework::Core::IWorkerPool& _workerPool;
+    std::chrono::steady_clock::time_point _wakeupTimestamp;
 
     // keep this last
     DeepSleepController& _deepSleep;
