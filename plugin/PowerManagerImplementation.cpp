@@ -25,6 +25,7 @@
 #include "PowerUtils.h"
 #include "UtilsIarm.h"
 #include "UtilsLogging.h"
+#include "UtilsTelemetry.h"
 
 #include <core/Portability.h>
 #include <interfaces/IPowerManager.h>
@@ -367,6 +368,9 @@ namespace Plugin {
 
         // Process request only if requested state is not same as current state
         if (currState != newState) {
+            char telemetryPwrChange[64];
+            snprintf(telemetryPwrChange, sizeof(telemetryPwrChange), "Power Mode Change from %s to %s", util::str(prevState), util::str(newState));
+            Utils::Telemetry::sendMessage((char*)"SYST_INFO_POWER_CHANGE", telemetryPwrChange);
 
             // Check if sync state change required
             isSync = isSyncStateChange(currState, newState);
@@ -377,6 +381,11 @@ namespace Plugin {
 
                     LOGINFO("deepsleep in  progress  ignoring %s request, elapsed: %" PRId64 " sec",
                             util::str(newState), std::chrono::duration_cast<std::chrono::seconds>(_deepSleepController.Elapsed()).count());
+                    char telemetryMsg[128];
+                    snprintf(telemetryMsg, sizeof(telemetryMsg), "Ignore Power Mode Change to %s as device is in transient deep sleep state, elapsed: %" PRId64 " sec",
+                    util::str(newState), std::chrono::duration_cast<std::chrono::seconds>(_deepSleepController.Elapsed()).count());
+                    Utils::Telemetry::sendMessage((char*)"SYST_ERR_SetPwrStateFail", telemetryMsg);
+ 
 
                     selfLock.Unlock();
                     LOGINFO("selfLock Released isSync: na");
@@ -652,6 +661,9 @@ namespace Plugin {
     Core::hresult PowerManagerImplementation::SetNetworkStandbyMode(const bool standbyMode)
     {
         LOGINFO(">> nwStandbyMode: %s", (standbyMode ? "enabled" : "disabled"));
+        char telemetryMsg[64];
+        snprintf(telemetryMsg, sizeof(telemetryMsg), "Set Network Standby Mode: %s", (standbyMode ? "enabled" : "disabled"));
+        Utils::Telemetry::sendMessage((char*)"SYS_INFO_STANDBYMODE", telemetryMsg);
 
         _apiLock.Lock();
 
