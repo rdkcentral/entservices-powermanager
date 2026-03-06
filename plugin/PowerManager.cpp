@@ -18,6 +18,7 @@
  */
 
 #include "PowerManager.h"
+#include "UtilsTelemetry.h"
 
 #define API_VERSION_NUMBER_MAJOR 1
 #define API_VERSION_NUMBER_MINOR 0
@@ -64,6 +65,8 @@ namespace Plugin {
     const string PowerManager::Initialize(PluginHost::IShell* service)
     {
         string message = "";
+
+        Utils::Telemetry::init();
 
         ASSERT(nullptr != service);
         ASSERT(nullptr == _service);
