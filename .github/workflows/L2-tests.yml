@@ -253,6 +253,7 @@ jobs:
           maintenanceMGR.h
           pkg.h
           edid-parser.hpp
+          telemetry_busmessage_sender.h
           btmgr.h
           tvError.h
           tvTypes.h
@@ -348,6 +349,7 @@ jobs:
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Iarm.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Rfc.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/RBus.h
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Telemetry.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Udev.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Wraps.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/maintenanceMGR.h
@@ -380,6 +382,7 @@ jobs:
           -DCMAKE_DISABLE_FIND_PACKAGE_Udev=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_RFC=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_RBus=ON
+          -DCMAKE_DISABLE_FIND_PACKAGE_Telemetry=ON
           -DPLUGIN_SYSTEMMODE=ON
           -DPLUGIN_SYSTEMSERVICES=ON
           -DPLUGIN_POWERMANAGER=ON
@@ -430,6 +433,7 @@ jobs:
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Iarm.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Rfc.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/RBus.h
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Telemetry.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Udev.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Wraps.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/maintenanceMGR.h
@@ -463,6 +467,7 @@ jobs:
           -DCMAKE_DISABLE_FIND_PACKAGE_Udev=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_RFC=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_RBus=ON
+          -DCMAKE_DISABLE_FIND_PACKAGE_Telemetry=ON
           -DPLUGIN_SYSTEMSERVICES=ON
           -DPLUGIN_POWERMANAGER=ON
           -DPLUGIN_DISPLAYSETTINGS=ON
