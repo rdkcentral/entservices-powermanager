@@ -18,6 +18,7 @@
  */
 
 #include "PowerManager.h"
+#include <telemetry_busmessage_sender.h>
 
 #define API_VERSION_NUMBER_MAJOR 1
 #define API_VERSION_NUMBER_MINOR 0
@@ -63,6 +64,9 @@ namespace Plugin {
 
     const string PowerManager::Initialize(PluginHost::IShell* service)
     {
+        t2_init((char *) "Thunder_Plugins");
+        LOGINFO("Telemetry initialized");
+
         string message = "";
 
         ASSERT(nullptr != service);
@@ -156,6 +160,9 @@ namespace Plugin {
         _service->Release();
         _service = nullptr;
         SYSLOG(Logging::Shutdown, (string(_T("PowerManager de-initialised"))));
+
+        LOGINFO("Telemetry uninitialized");
+        t2_uninit();
     }
 
     string PowerManager::Information() const
