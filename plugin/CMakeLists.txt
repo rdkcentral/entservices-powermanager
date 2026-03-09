@@ -19,6 +19,7 @@ set(PLUGIN_NAME PowerManager)
 set(MODULE_NAME ${NAMESPACE}${PLUGIN_NAME})
 set(PLUGIN_IMPLEMENTATION ${MODULE_NAME}Implementation)
 
+set(PLUGIN_POWERMANAGER_AUTOSTART "false" CACHE STRING "Automatically start PowerManager plugin")
 set(PLUGIN_POWERMANAGER_STARTUPORDER "30" CACHE STRING "To configure startup order of PowerManager plugin")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
