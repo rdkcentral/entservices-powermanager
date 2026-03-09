@@ -48,6 +48,7 @@ uint32_t WPEFramework::Plugin::PowerManagerImplementation::_nextClientId        
 // 2. SoC woke-up from deep sleep even before schedule timeout
 static constexpr int kTransientDeepsleepThresholdSec = 5;
 
+
 using namespace std;
 
 namespace WPEFramework {
