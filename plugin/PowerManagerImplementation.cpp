@@ -28,6 +28,7 @@
 
 #include <core/Portability.h>
 #include <interfaces/IPowerManager.h>
+#include <telemetry_busmessage_sender.h>
 
 #define STANDBY_REASON_FILE "/opt/standbyReason.txt"
 
