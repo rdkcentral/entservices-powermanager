@@ -370,7 +370,7 @@ namespace Plugin {
         // Process request only if requested state is not same as current state
         if (currState != newState) {
             char telemetryPwrChange[64];
-            snprintf(telemetryPwrChange, sizeof(telemetryPwrChange), "Power Mode Change from %s to %s", util::str(prevState), util::str(newState));
+            snprintf(telemetryPwrChange, sizeof(telemetryPwrChange), "Power Mode Change from %s to %s", util::str(currState), util::str(newState));
             t2_event_s((char*)"SYST_INFO_POWER_CHANGE", telemetryPwrChange);
 
             // Check if sync state change required
