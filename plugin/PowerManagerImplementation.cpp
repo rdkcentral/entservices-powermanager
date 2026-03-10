@@ -384,7 +384,7 @@ namespace Plugin {
                             util::str(newState), std::chrono::duration_cast<std::chrono::seconds>(_deepSleepController.Elapsed()).count());
                     char telemetryMsg[128];
                     snprintf(telemetryMsg, sizeof(telemetryMsg), "Ignore Power Mode Change to %s as device is in transient deep sleep state, elapsed: %" PRId64 " sec",
-                    util::str(newState), std::chrono::duration_cast<std::chrono::seconds>(_deepSleepController.Elapsed()).count());
+                             util::str(newState), std::chrono::duration_cast<std::chrono::seconds>(_deepSleepController.Elapsed()).count());
                     t2_event_s((char*)"SYST_ERR_SetPwrStateFail", telemetryMsg);
  
 
