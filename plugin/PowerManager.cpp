@@ -18,7 +18,6 @@
  */
 
 #include "PowerManager.h"
-#include "UtilsTelemetry.h"
 #include <telemetry_busmessage_sender.h>
 
 #define API_VERSION_NUMBER_MAJOR 1
@@ -69,8 +68,6 @@ namespace Plugin {
         LOGINFO("Telemetry initialized");
 
         string message = "";
-
-        Utils::Telemetry::init();
 
         ASSERT(nullptr != service);
         ASSERT(nullptr == _service);
