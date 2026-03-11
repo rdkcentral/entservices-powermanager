@@ -37,6 +37,7 @@
 #include "IarmBusMock.h"
 #include "MfrMock.h"
 #include "RfcApiMock.h"
+#include "TelemetryMock.h"
 #include "WrapsMock.h"
 
 // utils
@@ -105,6 +106,7 @@ protected:
     PowerManagerHalMock* p_powerManagerHalMock = nullptr;
     mfrMock *p_mfrMock = nullptr;
     IarmBusImplMock* p_iarmBusMock = nullptr;
+    TelemetryApiImplMock* p_telemetryMock = nullptr;
 
 public:
     bool wait_call = true;
@@ -187,6 +189,11 @@ public:
 
         p_mfrMock = new NiceMock<mfrMock>;
         mfr::setImpl(p_mfrMock);
+
+        p_telemetryMock = new NiceMock<TelemetryApiImplMock>;
+        TelemetryApi::setImpl(p_telemetryMock);
+        ON_CALL(*p_telemetryMock, t2_event_s(::testing::_, ::testing::_))
+            .WillByDefault(::testing::Return(T2ERROR_SUCCESS));
 
         EXPECT_CALL( *p_powerManagerHalMock, PLAT_INIT())
             .WillOnce(::testing::Return(PWRMGR_SUCCESS));
@@ -330,6 +337,12 @@ public:
         if (p_mfrMock != nullptr) {
             delete p_mfrMock;
             p_mfrMock = nullptr;
+        }
+
+        TelemetryApi::setImpl(nullptr);
+        if (p_telemetryMock != nullptr) {
+            delete p_telemetryMock;
+            p_telemetryMock = nullptr;
         }
 
         TearDownMocks();
