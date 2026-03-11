@@ -975,6 +975,7 @@ namespace Plugin {
         newState = PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP;
 #endif
         LOGINFO(">> User triggered wakeup from DEEP_SLEEP, moving to powerState: %s", util::str(newState));
+        t2_event_s((char*)"SYST_INFO_DS_WakeUp", (char*)"Resumed due to user action. Sending KED_DEEPSLEEP_WAKEUP.");
         SetPowerState(0, newState, "DeepSleep userwakeup");
         LOGINFO("<<");
     }
@@ -987,6 +988,7 @@ namespace Plugin {
         newState = PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP;
 #endif
         LOGINFO(">> Failed to enter DeepSleep, moving to powerState: %s", util::str(newState));
+        t2_event_s((char*)"SYST_ERR_DSModeFail", (char*)"Failed to enter DeepSleep. Moving to On");
         SetPowerState(0, newState, "DeepSleep failed");
         LOGINFO("<<");
     }
