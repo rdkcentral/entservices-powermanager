@@ -88,12 +88,10 @@ private:
     void scheduleHeartbeat();
     void heartbeatMsg();
     int fetchRFCValueInt(const char* key);
-    bool isStandbyRebootEnabled();
 
 private:
     WPEFramework::Core::IWorkerPool& _workerPool;
     const Settings& _settings;
-    Threshold _standbyRebootThreshold;
     Threshold _forcedRebootThreshold;
     WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> _heartbeatJob;
     bool _rfcUpdated;
