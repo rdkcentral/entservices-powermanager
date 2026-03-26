@@ -29,8 +29,6 @@
 #include "UtilsLogging.h"
 
 #define MAX_RFC_LEN 15
-
-#define STANDBY_REBOOT_ENABLE "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.StandbyReboot.Enable"
 #define FORCE_REBOOT "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.StandbyReboot.ForceAutoReboot"
 
 using Timestamp = std::chrono::steady_clock::time_point;
@@ -77,7 +75,7 @@ void RebootController::heartbeatMsg()
             _forcedRebootThreshold.SetThreshold(val);
         }
 
-        LOGINFO("Reboot thresolds updated: ForcedReboot = %d\n", _forcedRebootThreshold.threshold());
+        LOGINFO("Reboot thresholds updated: ForcedReboot = %d\n", _forcedRebootThreshold.threshold());
         _rfcUpdated = true;
     }
 
