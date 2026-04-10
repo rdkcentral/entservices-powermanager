@@ -485,6 +485,59 @@ TEST_F(TestPowerManager, SetWakeupSourceConfig)
     EXPECT_EQ(status, Core::ERROR_NONE);
 }
 
+TEST_F(TestPowerManager, SetWakeupSourceConfig_InvalidSource)
+{
+    // Passing WAKEUP_SRC_UNKNOWN must be rejected before reaching the HAL,
+    // regardless of the enabled flag value.
+    // No PLAT_API_SetWakeupSrc calls are expected.
+    std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig> configs = {
+        {WakeupSrcType::WAKEUP_SRC_UNKNOWN, false}
+    };
+    auto iterator = WakeupSourceConfigIteratorImpl::Create<WPEFramework::Exchange::IPowerManager::IWakeupSourceConfigIterator>(configs);
+
+    uint32_t status = powerManagerImpl->SetWakeupSourceConfig(iterator);
+
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+}
+
+TEST_F(TestPowerManager, SetWakeupSourceConfig_WifiAndLanEnabledTogether)
+{
+    // Setting both WIFI and LAN to enabled in a single call must trigger
+    // an automatic NetworkStandbyMode update (false -> true).
+    WaitGroup wg;
+    wg.Add(1); // Synchronize with the OnNetworkStandbyModeChanged notification callback.
+
+    Core::ProxyType<NetworkStandbyChangedEvent> nwstandbyModeChangedEvent = Core::ProxyType<NetworkStandbyChangedEvent>::Create();
+    EXPECT_CALL(*nwstandbyModeChangedEvent, OnNetworkStandbyModeChanged(::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const bool enabled) {
+                EXPECT_EQ(enabled, true);
+                wg.Done();
+            }));
+
+    uint32_t status = powerManagerImpl->Register(&(*nwstandbyModeChangedEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig> configs = {
+        {WakeupSrcType::WAKEUP_SRC_WIFI, true},
+        {WakeupSrcType::WAKEUP_SRC_LAN, true}
+    };
+    auto iterator = WakeupSourceConfigIteratorImpl::Create<WPEFramework::Exchange::IPowerManager::IWakeupSourceConfigIterator>(configs);
+
+    status = powerManagerImpl->SetWakeupSourceConfig(iterator);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    wg.Wait();
+
+    bool standbyMode = false;
+    status = powerManagerImpl->GetNetworkStandbyMode(standbyMode);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    EXPECT_EQ(standbyMode, true);
+
+    status = powerManagerImpl->Unregister(&(*nwstandbyModeChangedEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+}
+
 TEST_F(TestPowerManager, GetWakeupSourceConfig)
 {
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_GetWakeupSrc(::testing::_, ::testing::_))
