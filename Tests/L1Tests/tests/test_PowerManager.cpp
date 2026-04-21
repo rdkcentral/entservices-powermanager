@@ -192,7 +192,7 @@ public:
 
         p_telemetryMock = new NiceMock<TelemetryApiImplMock>;
         TelemetryApi::setImpl(p_telemetryMock);
-        ON_CALL(*p_telemetryMock, t2_event_d(::testing::_, ::testing::_))
+        ON_CALL(*p_telemetryMock, t2_event_s(::testing::_, ::testing::_))
             .WillByDefault(::testing::Return(T2ERROR_SUCCESS));
 
         EXPECT_CALL( *p_powerManagerHalMock, PLAT_INIT())
