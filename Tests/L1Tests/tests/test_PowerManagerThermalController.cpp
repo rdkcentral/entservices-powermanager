@@ -24,6 +24,7 @@
 
 using namespace WPEFramework;
 using ThermalTemperature = WPEFramework::Exchange::IPowerManager::ThermalTemperature;
+using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
 
 class WaitGroup {
 public:
@@ -62,6 +63,7 @@ private:
 class TestThermalController : public ::testing::Test, public ThermalController::INotification {
 
 public:
+    MOCK_METHOD(uint32_t, getPowerState, (PowerState&, PowerState&), (const, override));
     MOCK_METHOD(void, onThermalTemperatureChanged, (const ThermalTemperature, const ThermalTemperature, const float current_Temp), (override));
     MOCK_METHOD(void, onDeepSleepForThermalChange, (), (override));
 
@@ -107,6 +109,14 @@ public:
                         /* The default threshold values will assign, if RFC call failed */
                         return WDMP_FAILURE;
                     }
+                }));
+
+        ON_CALL(*this, getPowerState(::testing::_, ::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [](PowerState& currentState, PowerState& prevState) {
+                    currentState = PowerState::POWER_STATE_UNKNOWN;
+                    prevState = PowerState::POWER_STATE_UNKNOWN;
+                    return WPEFramework::Core::ERROR_UNAVAILABLE;
                 }));
 
         // called from ThermalController constructor in initializeThermalProtection
@@ -270,6 +280,33 @@ TEST_F(TestThermalController, modeChangeCritical)
         .WillOnce(::testing::Invoke([&]() {
             wg.Done();
         }));
+
+    auto controller = ThermalController::Create(*this);
+
+    wg.Wait();
+}
+
+TEST_F(TestThermalController, ignoresPollingWhileInDeepSleep)
+{
+    WaitGroup wg;
+
+    wg.Add();
+    EXPECT_CALL(*this, getPowerState(::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](PowerState& currentState, PowerState& prevState) {
+                currentState = PowerState::POWER_STATE_STANDBY_DEEP_SLEEP;
+                prevState = PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP;
+                wg.Done();
+                return WPEFramework::Core::ERROR_NONE;
+            }))
+        .WillRepeatedly(::testing::Invoke(
+            [&](PowerState& currentState, PowerState& prevState) {
+                currentState = PowerState::POWER_STATE_STANDBY_DEEP_SLEEP;
+                prevState = PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP;
+                return WPEFramework::Core::ERROR_NONE;
+            }));
+
+    EXPECT_CALL(*p_mfrMock, mfrGetTemperature(::testing::_, ::testing::_, ::testing::_)).Times(0);
 
     auto controller = ThermalController::Create(*this);
 
