@@ -399,12 +399,12 @@ void ThermalController::pollThermalLevels()
 
     while(!_stopThread)
     {
-        sleep(thermal_poll_interval);
         const uint32_t powerStateResult = _parent.getPowerState(currentPowerState, prevPowerState);
         if ((WPEFramework::Core::ERROR_NONE == powerStateResult) && (PowerState::POWER_STATE_STANDBY_DEEP_SLEEP == currentPowerState)){
             LOGINFO("Ignoring Thermal polling in DEEPSLEEP state");
             continue;
         }
+
         _therm_mutex->lock();
         uint32_t result = platform().GetTemperature(state, current_Temp, current_WifiTemp);//m_cur_Thermal_Level
         if(WPEFramework::Core::ERROR_NONE == result)
@@ -457,6 +457,7 @@ void ThermalController::pollThermalLevels()
         {
             LOGINFO("Warning - Failed to retrieve temperature from OEM");
         }
+        sleep(thermal_poll_interval);
         pollCount++;
     }
     LOGINFO(">> Stop monitoring temeperature");
