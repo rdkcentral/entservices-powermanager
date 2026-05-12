@@ -995,11 +995,12 @@ namespace Plugin {
 
     uint32_t PowerManagerImplementation::getPowerState(PowerState& currentState, PowerState& prevState) const
     {
-        LOGINFO(">>");
         _apiLock.Lock();
         uint32_t errorCode = _powerController.GetPowerState(currentState, prevState);
+        if (Core::ERROR_NONE != errorCode) {
+            LOGERR("Failed to get current power state, errorCode: %d", errorCode);
+        }
         _apiLock.Unlock();
-        LOGINFO("<< currentState: %s, prevState: %s, errorCode: %u", util::str(currentState), util::str(prevState), errorCode);
         return errorCode;
     }
 
