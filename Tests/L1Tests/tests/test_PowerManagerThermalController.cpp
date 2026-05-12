@@ -292,11 +292,17 @@ TEST_F(TestThermalController, ignoresPollingWhileInDeepSleep)
 
     wg.Add();
     EXPECT_CALL(*this, getPowerState(::testing::_, ::testing::_))
-        .WillRepeatedly(::testing::Invoke(
+        .WillOnce(::testing::Invoke(
             [&](PowerState& currentState, PowerState& prevState) {
                 currentState = PowerState::POWER_STATE_STANDBY_DEEP_SLEEP;
                 prevState = PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP;
                 wg.Done();
+                return WPEFramework::Core::ERROR_NONE;
+            }))
+        .WillRepeatedly(::testing::Invoke(
+            [&](PowerState& currentState, PowerState& prevState) {
+                currentState = PowerState::POWER_STATE_STANDBY_DEEP_SLEEP;
+                prevState = PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP;
                 return WPEFramework::Core::ERROR_NONE;
             }));
 
