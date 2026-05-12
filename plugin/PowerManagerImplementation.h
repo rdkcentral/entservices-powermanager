@@ -184,6 +184,7 @@ namespace Plugin {
         virtual void onDeepSleepTimerWakeup(const int wakeupTimeout) override;
         virtual void onDeepSleepUserWakeup(const bool userWakeup) override;
         virtual void onDeepSleepFailed() override;
+        virtual uint32_t getPowerState(PowerState& currentState, PowerState& prevState) const override;
         virtual void onThermalTemperatureChanged(const ThermalTemperature cur_Thermal_Level, const ThermalTemperature new_Thermal_Level, const float current_Temp) override;
         virtual void onDeepSleepForThermalChange() override;
 
