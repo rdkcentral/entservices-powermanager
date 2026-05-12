@@ -402,6 +402,7 @@ void ThermalController::pollThermalLevels()
         const uint32_t powerStateResult = _parent.getPowerState(currentPowerState, prevPowerState);
         if ((WPEFramework::Core::ERROR_NONE == powerStateResult) && (PowerState::POWER_STATE_STANDBY_DEEP_SLEEP == currentPowerState)){
             LOGINFO("Ignoring Thermal polling in DEEPSLEEP state");
+			sleep(thermal_poll_interval);
             continue;
         }
 
