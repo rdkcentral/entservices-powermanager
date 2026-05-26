@@ -123,6 +123,8 @@ namespace Plugin {
             _powerManager->Unregister(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IThermalModeChangedNotification>());
 
             Exchange::JPowerManager::Unregister(*this);
+            _powerManager->nullptr();
+            _powerManager->Release();
 
             // Stop processing:
             RPC::IRemoteConnection* connection   = service->RemoteConnection(_connectionId);
