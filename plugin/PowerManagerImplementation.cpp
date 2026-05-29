@@ -370,7 +370,9 @@ namespace Plugin {
 
         // Process request only if requested state is not same as current state
         if (currState != newState) {
-            t2_event_d((char*)"SYST_INFO_POWER_CHANGE", 1);
+            char telemetryPwrChange[64];
+            snprintf(telemetryPwrChange, sizeof(telemetryPwrChange), "Power Mode Change from %s to %s", util::str(currState), util::str(newState));
+            t2_event_s((char*)"SYST_INFO_POWER_CHANGE", telemetryPwrChange);
 
             // Check if sync state change required
             isSync = isSyncStateChange(currState, newState);
@@ -661,7 +663,9 @@ namespace Plugin {
     Core::hresult PowerManagerImplementation::SetNetworkStandbyMode(const bool standbyMode)
     {
         LOGINFO(">> nwStandbyMode: %s", (standbyMode ? "enabled" : "disabled"));
-        t2_event_d((char*)"SYS_INFO_STANDBYMODE", 1);
+        char telemetryMsg[64];
+        snprintf(telemetryMsg, sizeof(telemetryMsg), "Set Network Standby Mode: %s", (standbyMode ? "enabled" : "disabled"));
+        t2_event_s((char*)"SYS_INFO_STANDBYMODE", telemetryMsg);
 
         _apiLock.Lock();
 
