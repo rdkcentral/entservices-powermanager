@@ -84,7 +84,7 @@ void RebootController::heartbeatMsg()
 
     if (_forcedRebootThreshold.IsThresholdExceeded(uptime)) {
          LOGINFO("Going to force reboot after %lld\n", uptime);
-         v_secure_system("sh /rebootNow.sh -s PwrMgr -o 'Forced Maintenance reboot'");
+         v_secure_system("sh /rebootNow.sh -s PwrMgr -r 'MAINTENANCE_REBOOT' -o 'Forced Maintenance reboot'");
     }
 
     scheduleHeartbeat();
