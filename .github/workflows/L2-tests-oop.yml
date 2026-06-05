@@ -319,6 +319,7 @@ jobs:
           -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install/usr"
           -DCMAKE_MODULE_PATH="$GITHUB_WORKSPACE/install/tools/cmake"
           -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+          -DRDK_SERVICE_L2_TEST=ON
           -DL2_TEST_OOP_RPC=ON
           -DCMAKE_CXX_FLAGS="
           -DL2_TEST_OOP_RPC=ON
