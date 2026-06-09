@@ -194,6 +194,8 @@ public:
         TelemetryApi::setImpl(p_telemetryMock);
         ON_CALL(*p_telemetryMock, t2_event_s(::testing::_, ::testing::_))
             .WillByDefault(::testing::Return(T2ERROR_SUCCESS));
+        ON_CALL(*p_telemetryMock, t2_event_d(::testing::_, ::testing::_))
+            .WillByDefault(::testing::Return(T2ERROR_SUCCESS));
 
         EXPECT_CALL( *p_powerManagerHalMock, PLAT_INIT())
             .WillOnce(::testing::Return(PWRMGR_SUCCESS));
