@@ -273,7 +273,7 @@ void DeepSleepController::enterDeepSleepDelayed()
 {
     _deepSleepDelayJob.Release();
 
-    LOGINFO("Deep Sleep Timer Expires :Enter to Deep sleep Mode..stop Receiver with sleep 10 before DS");
+    LOGINFO("Deep Sleep timer expired: entering deep sleep mode");
     enterDeepSleepNow();
 }
 
@@ -317,7 +317,7 @@ void DeepSleepController::enterDeepSleepNow()
         _parent.onDeepSleepFailed();
         return;
     }
-    LOGINFO("DeeSleep success so perform wakup action");
+    LOGINFO("DeepSleep success; performing wakeup action");
     if (userWakeup) {
         LOGINFO("DeeSleep wakeupReason: user action");
         _parent.onDeepSleepUserWakeup(userWakeup);
