@@ -104,10 +104,11 @@ public:
         case DEEPSLEEPMGR_ALREADY_INITIALIZED:
         case DEEPSLEEPMGR_NOT_INITIALIZED:
         case DEEPSLEEPMGR_INIT_FAILURE:
-        case DEEPSLEEPMGR_SET_FAILURE:
         case DEEPSLEEPMGR_WAKEUP_FAILURE:
         case DEEPSLEEPMGR_TERM_FAILURE:
             return WPEFramework::Core::ERROR_GENERAL;
+        case DEEPSLEEPMGR_SET_FAILURE:
+            return WPEFramework::Core::ERROR_ABORTED;
         default:
             LOGERR("Unknown status: %d", status);
             return WPEFramework::Core::ERROR_GENERAL;
