@@ -1557,7 +1557,7 @@ TEST_F(TestPowerManager, DeepSleepFailure)
                 EXPECT_EQ(networkStandby, false);
                 // Simulate timer wakeup
                 *isGPIOWakeup = false;
-                return DEEPSLEEPMGR_INVALID_ARGUMENT;
+                return DEEPSLEEPMGR_SET_FAILURE; // ERROR_ABORTED -> triggers retry loop
             }));
 
     // TODO: this is incorrect, ideally if SetDeepSleep fails, we should not call DeepSleepWakeup

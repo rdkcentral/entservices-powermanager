@@ -956,10 +956,10 @@ TEST_F(PowerManager_L2Test,DeepSleepFailure)
                         [&](uint32_t deep_sleep_timeout, bool* isGPIOWakeup, bool networkStandby) {
                             EXPECT_EQ(deep_sleep_timeout, deepSleepTimeout);
                             EXPECT_TRUE(nullptr != isGPIOWakeup);
-                            EXPECT_EQ(networkStandby, false);
+                            EXPECT_EQ(networkStandby, true); // Network Standby Mode is Enabled in L2 settings
                             // Simulate timer wakeup
                             *isGPIOWakeup = false;
-                            return DEEPSLEEPMGR_INVALID_ARGUMENT;
+                            return DEEPSLEEPMGR_SET_FAILURE; // ERROR_ABORTED -> triggers retry loop
                         }));
 
                 EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_DeepSleepWakeup())
