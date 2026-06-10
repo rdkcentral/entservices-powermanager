@@ -285,8 +285,7 @@ void DeepSleepController::enterDeepSleepNow()
     bool failed     = true;
     int retryCount  = 5;
     bool userWakeup = 0;
-    LOGINFO("Device entering Deep sleep with nwStandbyMode: %s",
-            (_nwStandbyMode ? "Enabled" : "Disabled"));
+    LOGINFO("Device entering Deep sleep with nwStandbyMode: %s", (_nwStandbyMode ? "Enabled" : "Disabled"));
 
     while (retryCount && failed) {
         uint32_t errorCode = platform().SetDeepSleep(_deepSleepWakeupTimeoutSec, userWakeup, _nwStandbyMode);
@@ -353,6 +352,7 @@ void DeepSleepController::performActivate(uint32_t timeOut, bool nwStandbyMode)
         _deepsleepStartTime = MonotonicClock::now();
 
         // Perform the deep sleep operation
+        _nwStandbyMode             = nwStandbyMode;
         _deepSleepWakeupTimeoutSec = timeOut;
 
         uint32_t delayTimeOut = 0;
