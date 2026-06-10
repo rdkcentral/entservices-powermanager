@@ -297,13 +297,11 @@ void DeepSleepController::enterDeepSleepNow()
             _deepSleepState = DeepSleepState::Failed;
             retryCount--;
 
-            if (errorCode == WPEFramework::Core::ERROR_ABORTED) {
+            if ((errorCode == WPEFramework::Core::ERROR_ABORTED) && (retryCount > 0)) {
                 LOGINFO("Failed to enter deep sleep mode: %u, retry after 5s", errorCode);
                 sleep(5);
-            }
-            else
-            {
-                LOGINFO("No retry needed for other error code except ERROR_ABORTED: %u,", errorCode);
+            } else {
+                LOGINFO("No retry for deep sleep error code: %u", errorCode);
                 break;
             }
         } else {
