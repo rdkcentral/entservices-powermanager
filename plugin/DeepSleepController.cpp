@@ -355,6 +355,7 @@ void DeepSleepController::performActivate(uint32_t timeOut, bool nwStandbyMode)
         _nwStandbyMode             = nwStandbyMode;
         _deepSleepWakeupTimeoutSec = timeOut;
 
+        _deepSleepDelaySec = 0; // reset before reading override; prevents stale value persisting across activations
         uint32_t delayTimeOut = 0;
         if (read_integer_conf("/tmp/deepSleepDelayTimer", delayTimeOut) && delayTimeOut) {
             _deepSleepDelaySec = delayTimeOut;

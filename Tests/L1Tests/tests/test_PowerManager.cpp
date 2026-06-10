@@ -1218,6 +1218,133 @@ TEST_F(TestPowerManager, DeepSleepDelayedTimerWakeup)
     EXPECT_EQ(status, Core::ERROR_NONE);
 }
 
+// Verify that _deepSleepDelaySec is reset across activations: a second activation without
+// the delay override file must not inherit the delay value from a previous activation.
+TEST_F(TestPowerManager, DeepSleepDelayNotPersistedAfterFileRemoved)
+{
+    if (0 != system("echo 1 > /tmp/deepSleepDelayTimer")) {
+        TEST_LOG("system() failed");
+    }
+    if (0 != system("echo 1 > /tmp/deepSleepWakeupTimer")) {
+        TEST_LOG("system() failed");
+    }
+
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(4)
+        .WillRepeatedly(::testing::Return(PWRMGR_SUCCESS));
+
+    WaitGroup wg1, wg2;
+    wg1.Add();
+    wg2.Add();
+
+    Core::ProxyType<PowerModeChangedEvent> modeChanged = Core::ProxyType<PowerModeChangedEvent>::Create();
+    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [](const PowerState prevState, const PowerState newState) {
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+            }))
+        .WillOnce(::testing::Invoke(
+            [&wg1](const PowerState prevState, const PowerState newState) {
+                EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                wg1.Done();
+            }))
+        .WillOnce(::testing::Invoke(
+            [](const PowerState prevState, const PowerState newState) {
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+            }))
+        .WillOnce(::testing::Invoke(
+            [&wg2](const PowerState prevState, const PowerState newState) {
+                EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                wg2.Done();
+            }));
+
+    Core::ProxyType<DeepSleepWakeupEvent> deepSleepTimeout = Core::ProxyType<DeepSleepWakeupEvent>::Create();
+    EXPECT_CALL(*deepSleepTimeout, OnDeepSleepTimeout(::testing::_))
+        .WillOnce(::testing::Invoke(
+            [](const int timeout) {
+                EXPECT_EQ(timeout, 1); // cycle 1: wakeup timer from file
+            }))
+        .WillOnce(::testing::Invoke(
+            [](const int timeout) {
+                EXPECT_EQ(timeout, 1); // cycle 2: wakeup timer from SetDeepSleepTimer
+            }));
+
+    {
+        ::testing::InSequence seq;
+        // Cycle 1: delay file present; PLAT_DS_SetDeepSleep called after 1s scheduling delay
+        EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_SetDeepSleep(::testing::_, ::testing::_, ::testing::_))
+            .WillOnce(::testing::Invoke(
+                [](uint32_t deep_sleep_timeout, bool* isGPIOWakeup, bool networkStandby) {
+                    EXPECT_EQ(deep_sleep_timeout, 1U);
+                    EXPECT_TRUE(nullptr != isGPIOWakeup);
+                    *isGPIOWakeup = false;
+                    std::this_thread::sleep_for(std::chrono::seconds(deep_sleep_timeout));
+                    return DEEPSLEEPMGR_SUCCESS;
+                }));
+        // Cycle 2: delay file absent; _deepSleepDelaySec must be reset to 0, so
+        // PLAT_DS_SetDeepSleep is called immediately (no scheduling delay)
+        EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_SetDeepSleep(::testing::_, ::testing::_, ::testing::_))
+            .WillOnce(::testing::Invoke(
+                [](uint32_t deep_sleep_timeout, bool* isGPIOWakeup, bool networkStandby) {
+                    EXPECT_EQ(deep_sleep_timeout, 1U);
+                    EXPECT_TRUE(nullptr != isGPIOWakeup);
+                    *isGPIOWakeup = false;
+                    std::this_thread::sleep_for(std::chrono::seconds(deep_sleep_timeout));
+                    return DEEPSLEEPMGR_SUCCESS;
+                }));
+    }
+
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_GetLastWakeupReason(::testing::_))
+        .WillRepeatedly(::testing::Invoke(
+            [](DeepSleep_WakeupReason_t* wakeupReason) {
+                *wakeupReason = DEEPSLEEP_WAKEUPREASON_TIMER;
+                return DEEPSLEEPMGR_SUCCESS;
+            }));
+
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_DeepSleepWakeup())
+        .Times(2)
+        .WillRepeatedly(testing::Return(DEEPSLEEPMGR_SUCCESS));
+
+    uint32_t status = powerManagerImpl->Register(&(*modeChanged));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    status = powerManagerImpl->Register(&(*deepSleepTimeout));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // --- First activation: delay file present ---
+    status = powerManagerImpl->SetDeepSleepTimer(1);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    int keyCode = 0;
+    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    wg1.Wait(); // wait for first cycle to fully complete (power state back to light sleep)
+
+    // Remove delay and wakeup override files before second activation
+    if (0 != system("rm -f /tmp/deepSleepDelayTimer")) { /* do nothing */ }
+    if (0 != system("rm -f /tmp/deepSleepWakeupTimer")) { /* do nothing */ }
+
+    // --- Second activation: no delay file ---
+    // Without the fix, _deepSleepDelaySec would still be 1 and deep sleep would be
+    // scheduled with a 1s delay instead of running immediately.
+    status = powerManagerImpl->SetDeepSleepTimer(1);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    wg2.Wait(); // wait for second cycle to complete
+
+    status = powerManagerImpl->Unregister(&(*modeChanged));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    status = powerManagerImpl->Unregister(&(*deepSleepTimeout));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+}
+
 // TODO: This testcase will need some rework
 TEST_F(TestPowerManager, DeepSleepInvalidWakeup)
 {
