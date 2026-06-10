@@ -354,9 +354,9 @@ public:
 
         // Although this file is not created always
         // delete to avoid dependency among test cases
-        if (0 != system("rm -f /tmp/deepSleepTimer")) { /* do nothig */
+        if (0 != system("rm -f /tmp/deepSleepDelayTimer")) { /* do nothig */
         }
-        if (0 != system("rm -f /tmp/deepSleepTimerVal")) { /* do nothig */
+        if (0 != system("rm -f /tmp/deepSleepWakeupTimer")) { /* do nothig */
         }
         if (0 != system("rm -f /tmp/ignoredeepsleep")) { /* do nothig */
         }
@@ -1123,10 +1123,10 @@ TEST_F(TestPowerManager, DeepSleepTimerWakeup)
 
 TEST_F(TestPowerManager, DeepSleepDelayedTimerWakeup)
 {
-    if (0 != system("echo 1 > /tmp/deepSleepTimer")) {
+    if (0 != system("echo 1 > /tmp/deepSleepDelayTimer")) {
         TEST_LOG("system() failed");
     }
-    if (0 != system("echo 2 > /tmp/deepSleepTimerVal")) {
+    if (0 != system("echo 2 > /tmp/deepSleepWakeupTimer")) {
         TEST_LOG("system() failed");
     }
 
