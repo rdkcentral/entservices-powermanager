@@ -282,13 +282,14 @@ void DeepSleepController::enterDeepSleepNow()
     LOGINFO("Enter to Deep sleep Mode..stop Receiver with sleep 1 before DS");
     sleep(1);
 
+    uint32_t errorCode = WPEFramework::Core::ERROR_NONE;
     bool failed     = true;
     int retryCount  = 5;
     bool userWakeup = 0;
     LOGINFO("Device entering Deep sleep with nwStandbyMode: %s", (_nwStandbyMode ? "Enabled" : "Disabled"));
 
     while (retryCount && failed) {
-        uint32_t errorCode = platform().SetDeepSleep(_deepSleepWakeupTimeoutSec, userWakeup, _nwStandbyMode);
+        errorCode = platform().SetDeepSleep(_deepSleepWakeupTimeoutSec, userWakeup, _nwStandbyMode);
 
         failed = WPEFramework::Core::ERROR_NONE != errorCode;
 
