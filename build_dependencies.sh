@@ -55,7 +55,7 @@ cd ..
 git clone --branch develop https://github.com/rdkcentral/entservices-helpers.git
 cd "$GITHUB_WORKSPACE"
 
-git clone --branch topic/RDKEMW-19860 https://github.com/rdkcentral/entservices-testframework.git
+git clone --branch 1.0.17 https://github.com/rdkcentral/entservices-testframework.git
 
 ############################
 # Build Thunder-Tools
