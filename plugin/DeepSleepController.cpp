@@ -310,7 +310,7 @@ void DeepSleepController::enterDeepSleepNow()
     }
 
     if (failed) {
-        LOGERR("Failed to enter deep sleep mode after 5 attempts");
+        LOGERR("Failed to enter deep sleep mode error code: %u", errorCode);
         _parent.onDeepSleepFailed();
         return;
     }
