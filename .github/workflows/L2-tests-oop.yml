@@ -102,7 +102,7 @@ jobs:
         with:
           repository: rdkcentral/entservices-testframework
           path: entservices-testframework
-          ref: 1.0.14
+          ref: 1.0.17
 
       - name: Checkout entservices-powermanager
         if: ${{ inputs.caller_source == 'local' }}
