@@ -19,6 +19,10 @@ set(PLUGIN_NAME PowerManager)
 set(MODULE_NAME ${NAMESPACE}${PLUGIN_NAME})
 set(PLUGIN_IMPLEMENTATION ${MODULE_NAME}Implementation)
 
+option(ENABLE_POWERMANAGER_AIDL "Enable the PowerManager AIDL prototype backend" OFF)
+set(POWERMANAGER_AIDL_STAGING_INCLUDE_DIR "" CACHE PATH "Staged include root for PowerManager AIDL prototype headers")
+set(POWERMANAGER_AIDL_STUB_ARCHIVE "" CACHE FILEPATH "Static archive containing generated PowerManager AIDL stubs")
+
 set(PLUGIN_POWERMANAGER_AUTOSTART "false" CACHE STRING "Automatically start PowerManager plugin")
 set(PLUGIN_POWERMANAGER_STARTUPORDER "30" CACHE STRING "To configure startup order of PowerManager plugin")
 
@@ -30,6 +34,9 @@ find_package(${NAMESPACE}Helpers REQUIRED)
 find_package(CompileSettingsDebug CONFIG REQUIRED)
 find_library(PROCPS_LIBRARIES NAMES procps)
 
+# Always locate the legacy HAL headers. Settings.cpp uses plat_power.h for the
+# on-disk settings format in both AIDL and non-AIDL builds. In AIDL mode we keep
+# the headers but skip linking the legacy HAL libraries (see below).
 find_package(PowerHal)
 find_package(DeepSleepHal)
 find_package(MFR)
@@ -82,9 +89,40 @@ include_directories(
     ${CMAKE_CURRENT_LIST_DIR}
 )
 
+target_include_directories(${PLUGIN_IMPLEMENTATION}
+    PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}
+        ${CMAKE_CURRENT_LIST_DIR}/hal)
+
 set_target_properties(${PLUGIN_IMPLEMENTATION} PROPERTIES
         CXX_STANDARD 11
         CXX_STANDARD_REQUIRED YES)
+
+if(ENABLE_POWERMANAGER_AIDL)
+    set_target_properties(${PLUGIN_IMPLEMENTATION} PROPERTIES
+            CXX_STANDARD 17
+            CXX_STANDARD_REQUIRED YES)
+
+    target_compile_definitions(${PLUGIN_IMPLEMENTATION}
+                               PRIVATE
+                                 ENABLE_POWERMANAGER_AIDL)
+
+    if(POWERMANAGER_AIDL_STAGING_INCLUDE_DIR)
+        target_include_directories(${PLUGIN_IMPLEMENTATION} PRIVATE ${POWERMANAGER_AIDL_STAGING_INCLUDE_DIR})
+    endif()
+
+    if(POWERMANAGER_AIDL_STUB_ARCHIVE)
+        target_link_libraries(${PLUGIN_IMPLEMENTATION} PRIVATE ${POWERMANAGER_AIDL_STUB_ARCHIVE})
+    endif()
+
+    target_link_libraries(${PLUGIN_IMPLEMENTATION} PRIVATE
+        "-Wl,--no-as-needed"
+        binder
+        utils
+        log
+        base
+        "-Wl,--as-needed")
+endif()
 
 if(RDK_SERVICES_L1_TEST OR RDK_SERVICE_L2_TEST)
 
@@ -121,12 +159,19 @@ endif(IARMBUS_FOUND)
 
 if(POWER_HAL_FOUND)
     target_include_directories(${PLUGIN_IMPLEMENTATION} PRIVATE ${POWER_HAL_INCLUDE_DIRS})
-    target_link_libraries(${PLUGIN_IMPLEMENTATION} PRIVATE ${POWER_HAL_LIBRARIES})
+    # In AIDL mode keep the headers (Settings.cpp needs plat_power.h) but do not
+    # link the legacy power HAL library.
+    if(NOT ENABLE_POWERMANAGER_AIDL)
+        target_link_libraries(${PLUGIN_IMPLEMENTATION} PRIVATE ${POWER_HAL_LIBRARIES})
+    endif()
 endif()
 
 if(DEEPSLEEP_HAL_FOUND)
     target_include_directories(${PLUGIN_IMPLEMENTATION} PRIVATE ${DEEPSLEEP_HAL_INCLUDE_DIRS})
-    target_link_libraries(${PLUGIN_IMPLEMENTATION} PRIVATE ${DEEPSLEEP_HAL_LIBRARIES})
+    # In AIDL mode keep the headers but do not link the legacy deep sleep HAL library.
+    if(NOT ENABLE_POWERMANAGER_AIDL)
+        target_link_libraries(${PLUGIN_IMPLEMENTATION} PRIVATE ${DEEPSLEEP_HAL_LIBRARIES})
+    endif()
 endif()
 
 if (RFC_FOUND)

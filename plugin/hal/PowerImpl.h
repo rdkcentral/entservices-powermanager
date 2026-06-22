@@ -19,9 +19,14 @@
 #pragma once
 
 #include <cstdint>
+
+#ifdef ENABLE_POWERMANAGER_AIDL
+#include "hal/AidlPowerState.h"
+#else
 #include <unistd.h>
 
 #include "plat_power.h"
+#endif
 
 #include <core/Portability.h>
 #include <interfaces/IPowerManager.h>
@@ -33,6 +38,53 @@ class PowerImpl : public hal::power::IPlatform {
     using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
     using WakeupSrcType = WPEFramework::Exchange::IPowerManager::WakeupSrcType;
 
+#ifdef ENABLE_POWERMANAGER_AIDL
+    const char* str(PowerState state) const
+    {
+        switch (state) {
+        case PowerState::POWER_STATE_OFF:
+            return "OFF";
+        case PowerState::POWER_STATE_ON:
+            return "ON";
+        case PowerState::POWER_STATE_STANDBY:
+            return "STANDBY";
+        case PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP:
+            return "LIGHT_SLEEP";
+        case PowerState::POWER_STATE_STANDBY_DEEP_SLEEP:
+            return "DEEP_SLEEP";
+        default:
+            return "UNKNOWN";
+        }
+    }
+
+    const char* str(WakeupSrcType src) const
+    {
+        switch (src) {
+        case WakeupSrcType::WAKEUP_SRC_VOICE:
+            return "VOICE";
+        case WakeupSrcType::WAKEUP_SRC_PRESENCEDETECTED:
+            return "PRESENCE_DETECTION";
+        case WakeupSrcType::WAKEUP_SRC_BLUETOOTH:
+            return "BLUETOOTH";
+        case WakeupSrcType::WAKEUP_SRC_WIFI:
+            return "WIFI";
+        case WakeupSrcType::WAKEUP_SRC_IR:
+            return "IR";
+        case WakeupSrcType::WAKEUP_SRC_POWERKEY:
+            return "POWER";
+        case WakeupSrcType::WAKEUP_SRC_TIMER:
+            return "TIMER";
+        case WakeupSrcType::WAKEUP_SRC_CEC:
+            return "CEC";
+        case WakeupSrcType::WAKEUP_SRC_LAN:
+            return "LAN";
+        case WakeupSrcType::WAKEUP_SRC_RF4CE:
+            return "RF4CE";
+        default:
+            return "UNKNOWN";
+        }
+    }
+#else
     const char* str(PWRMGR_WakeupSrcType_t src) const
     {
         switch (src) {
@@ -233,8 +285,61 @@ class PowerImpl : public hal::power::IPlatform {
     }
 private:
     bool m_isPlatformInitialized;
+#endif
 
 public:
+#ifdef ENABLE_POWERMANAGER_AIDL
+    PowerImpl()
+    {
+        LOGINFO("PowerManager AIDL prototype backend enabled");
+    }
+
+    virtual ~PowerImpl() {}
+
+    virtual uint32_t SetPowerState(PowerState newState) override
+    {
+        PowerManagerAidlState::Store::Instance().SetPowerState(newState);
+        LOGINFO("PowerState updated via middleware-owned state: %s", str(newState));
+        return WPEFramework::Core::ERROR_NONE;
+    }
+
+    virtual uint32_t GetPowerState(PowerState& curState) override
+    {
+        curState = PowerManagerAidlState::Store::Instance().GetPowerState();
+        LOGINFO("PowerState read from middleware-owned state: %s", str(curState));
+        return WPEFramework::Core::ERROR_NONE;
+    }
+
+    uint32_t SetWakeupSrc(WakeupSrcType wakeSrcType, bool enabled, bool& supported) override
+    {
+        supported = PowerManagerAidlState::Store::Instance().IsSupported(wakeSrcType);
+
+        if (!supported) {
+            LOGERR("Unsupported wakeup source: %d", wakeSrcType);
+            return WPEFramework::Core::ERROR_GENERAL;
+        }
+
+        PowerManagerAidlState::Store::Instance().SetWakeupSrc(wakeSrcType, enabled);
+
+        LOGINFO("wakeupSrc: %s, enabled: %d, supported: %d", str(wakeSrcType), enabled, supported);
+
+        return WPEFramework::Core::ERROR_NONE;
+    }
+
+    uint32_t GetWakeupSrc(WakeupSrcType wakeSrcType, bool& enabled, bool& supported) const override
+    {
+        supported = PowerManagerAidlState::Store::Instance().GetWakeupSrc(wakeSrcType, enabled);
+
+        if (!supported) {
+            LOGERR("Unsupported wakeup source: %d", wakeSrcType);
+            return WPEFramework::Core::ERROR_GENERAL;
+        }
+
+        LOGINFO("wakeupSrc: %s, enabled: %d, supported: %d", str(wakeSrcType), enabled, supported);
+
+        return WPEFramework::Core::ERROR_NONE;
+    }
+#else
     PowerImpl()
     {
         pmStatus_t result = PWRMGR_SUCCESS;
@@ -306,4 +411,5 @@ public:
 
         return retCode;
     }
+#endif
 };
