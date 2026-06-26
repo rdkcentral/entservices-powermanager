@@ -44,7 +44,9 @@
 #include "mfr_temperature.h"
 #include "mfrMgr.h"
 
-#ifdef MFR_TEMP_CLOCK_READ
+#ifdef POWERMANAGER_ENABLE_AIDL_HAL
+#include "hal/ThermalAidlImpl.h"
+#elif defined(MFR_TEMP_CLOCK_READ)
 #include "hal/ThermalMfrImpl.h"
 #else
 #include "hal/ThermalImpl.h"
@@ -130,7 +132,9 @@ static constexpr int DECLOCK_GRACE_INTERVAL = 60;
     using ThermalTemperature = WPEFramework::Exchange::IPowerManager::ThermalTemperature;
     using IPlatform = hal::Thermal::IPlatform;
     using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
-#ifdef MFR_TEMP_CLOCK_READ
+#ifdef POWERMANAGER_ENABLE_AIDL_HAL
+    using DefaultImpl = ThermalAidlImpl;
+#elif defined(MFR_TEMP_CLOCK_READ)
     using DefaultImpl = ThermalMfrImpl;
 #else
     using DefaultImpl = ThermalImpl;

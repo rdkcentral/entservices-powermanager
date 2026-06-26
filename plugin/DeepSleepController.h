@@ -31,7 +31,11 @@
 
 #include "Settings.h"          // for Settings
 #include "hal/DeepSleep.h"     // for IPlatform
+#ifdef POWERMANAGER_ENABLE_AIDL_HAL
+#include "hal/DeepSleepAidlImpl.h" // for DeepSleepAidlImpl (AIDL backend)
+#else
 #include "hal/DeepSleepImpl.h" // for DeepSleepImpl
+#endif
 
 // forward declarations
 namespace WPEFramework {
@@ -112,7 +116,11 @@ class DeepSleepController {
     using WakeupReason   = WPEFramework::Exchange::IPowerManager::WakeupReason;
     using PowerState     = WPEFramework::Exchange::IPowerManager::PowerState;
     using IPlatform      = hal::deepsleep::IPlatform;
+#ifdef POWERMANAGER_ENABLE_AIDL_HAL
+    using DefaultImpl    = DeepSleepAidlImpl;
+#else
     using DefaultImpl    = DeepSleepImpl;
+#endif
 
     typedef enum {
         Failed     = -1, /*!< Deepsleep operation failed */
