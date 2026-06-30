@@ -21,7 +21,7 @@ set(PLUGIN_IMPLEMENTATION ${MODULE_NAME}Implementation)
 
 option(ENABLE_POWERMANAGER_AIDL "Enable the PowerManager AIDL prototype backend" OFF)
 set(POWERMANAGER_AIDL_STAGING_INCLUDE_DIR "" CACHE PATH "Staged include root for PowerManager AIDL prototype headers")
-set(POWERMANAGER_AIDL_STUB_ARCHIVE "" CACHE FILEPATH "Static archive containing generated PowerManager AIDL stubs")
+set(POWERMANAGER_AIDL_HELPER_ARCHIVE "" CACHE FILEPATH "Static archive containing generated PowerManager AIDL stubs")
 
 set(PLUGIN_POWERMANAGER_AUTOSTART "false" CACHE STRING "Automatically start PowerManager plugin")
 set(PLUGIN_POWERMANAGER_STARTUPORDER "30" CACHE STRING "To configure startup order of PowerManager plugin")
@@ -111,8 +111,8 @@ if(ENABLE_POWERMANAGER_AIDL)
         target_include_directories(${PLUGIN_IMPLEMENTATION} PRIVATE ${POWERMANAGER_AIDL_STAGING_INCLUDE_DIR})
     endif()
 
-    if(POWERMANAGER_AIDL_STUB_ARCHIVE)
-        target_link_libraries(${PLUGIN_IMPLEMENTATION} PRIVATE ${POWERMANAGER_AIDL_STUB_ARCHIVE})
+    if(POWERMANAGER_AIDL_HELPER_ARCHIVE)
+        target_link_libraries(${PLUGIN_IMPLEMENTATION} PRIVATE ${POWERMANAGER_AIDL_HELPER_ARCHIVE})
     endif()
 
     target_link_libraries(${PLUGIN_IMPLEMENTATION} PRIVATE
