@@ -134,30 +134,25 @@ if (RFC_FOUND)
   target_include_directories(${PLUGIN_IMPLEMENTATION} PRIVATE ${RFC_INCLUDE_DIRS})
 endif()
 
-option(POWERMANAGER_ENABLE_AIDL_HAL "Use AIDL HAL backend instead of legacy HAL" OFF)
+option(ENABLE_POWERMANAGER_AIDL "Use AIDL HAL backend instead of legacy HAL" OFF)
 
-if(POWERMANAGER_ENABLE_AIDL_HAL)
-    target_compile_definitions(${PLUGIN_IMPLEMENTATION} PRIVATE POWERMANAGER_ENABLE_AIDL_HAL)
+if(ENABLE_POWERMANAGER_AIDL)
+    target_compile_definitions(${PLUGIN_IMPLEMENTATION} PRIVATE ENABLE_POWERMANAGER_AIDL)
 
     # AIDL generated headers require C++17 (std::optional)
     set_target_properties(${PLUGIN_IMPLEMENTATION} PROPERTIES
             CXX_STANDARD 17
             CXX_STANDARD_REQUIRED YES)
 
-    # AIDL-generated HAL stub sources (installed by rdk-halif-aidl)
-    if(NOT AIDL_DEEPSLEEP_INCLUDE_DIR)
-        set(AIDL_DEEPSLEEP_INCLUDE_DIR "${CMAKE_INSTALL_PREFIX}/include")
+    # Include path for AIDL-generated headers (set via -DPOWERMANAGER_AIDL_STAGING_INCLUDE_DIR)
+    if(POWERMANAGER_AIDL_STAGING_INCLUDE_DIR)
+        target_include_directories(${PLUGIN_IMPLEMENTATION} PRIVATE ${POWERMANAGER_AIDL_STAGING_INCLUDE_DIR})
     endif()
 
-    # Glob AIDL stub .cpp files for deepsleep and sensor/thermal HAL interfaces
-    file(GLOB AIDL_DEEPSLEEP_STUBS "${AIDL_DEEPSLEEP_INCLUDE_DIR}/com/rdk/hal/deepsleep/*.cpp")
-    file(GLOB AIDL_THERMAL_STUBS "${AIDL_DEEPSLEEP_INCLUDE_DIR}/com/rdk/hal/sensor/thermal/*.cpp")
-
-    target_sources(${PLUGIN_IMPLEMENTATION} PRIVATE
-        ${AIDL_DEEPSLEEP_STUBS}
-        ${AIDL_THERMAL_STUBS})
-
-    target_include_directories(${PLUGIN_IMPLEMENTATION} PRIVATE ${AIDL_DEEPSLEEP_INCLUDE_DIR})
+    # Link pre-compiled AIDL helper archive (built by do_compile:prepend in the recipe)
+    if(POWERMANAGER_AIDL_HELPER_ARCHIVE)
+        target_link_libraries(${PLUGIN_IMPLEMENTATION} PRIVATE ${POWERMANAGER_AIDL_HELPER_ARCHIVE})
+    endif()
 
     target_link_libraries(${PLUGIN_IMPLEMENTATION} PRIVATE binder utils log base)
 endif()

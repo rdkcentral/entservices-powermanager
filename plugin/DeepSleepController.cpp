@@ -40,10 +40,14 @@
 #include "LambdaJob.h"      // for LambdaJob
 #include "PowerUtils.h"     // for WakeupReason string
 #include "UtilsLogging.h"   // for LOGINFO, LOGERR
+#ifndef ENABLE_POWERMANAGER_AIDL
 #include "libIARM.h"        // for _IARM_Result_t, IARM_Result_t
 #include "libIBus.h"        // for IARM_Bus_Call
+#endif
 #include "secure_wrapper.h" // for v_secure_system
+#ifndef ENABLE_POWERMANAGER_AIDL
 #include "sysMgr.h"         // for IARM_BUS_SYSMGR_API_GetSystemStates
+#endif
 
 using WakeupReason = WPEFramework::Exchange::IPowerManager::WakeupReason;
 using PowerState   = WPEFramework::Exchange::IPowerManager::PowerState;
@@ -54,6 +58,10 @@ std::map<std::string, DeepSleepWakeupSettings::tzValue> DeepSleepWakeupSettings:
 
 uint32_t DeepSleepWakeupSettings::getTZDiffInSec() const
 {
+#ifdef ENABLE_POWERMANAGER_AIDL
+    // On AIDL platforms, IARM is not available. Return default CST offset.
+    return 6 * 3600;
+#else
     uint32_t _TZDiffTime  = 6 * 3600;
     IARM_Result_t iResult = IARM_RESULT_SUCCESS;
     tzValue value         = tzCST06;
@@ -76,6 +84,7 @@ uint32_t DeepSleepWakeupSettings::getTZDiffInSec() const
         }
     }
     return _TZDiffTime;
+#endif
 }
 
 /*  Get TZ diff

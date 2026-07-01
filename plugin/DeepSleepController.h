@@ -31,7 +31,7 @@
 
 #include "Settings.h"          // for Settings
 #include "hal/DeepSleep.h"     // for IPlatform
-#ifdef POWERMANAGER_ENABLE_AIDL_HAL
+#ifdef ENABLE_POWERMANAGER_AIDL
 #include "hal/DeepSleepAidlImpl.h" // for DeepSleepAidlImpl (AIDL backend)
 #else
 #include "hal/DeepSleepImpl.h" // for DeepSleepImpl
@@ -116,7 +116,7 @@ class DeepSleepController {
     using WakeupReason   = WPEFramework::Exchange::IPowerManager::WakeupReason;
     using PowerState     = WPEFramework::Exchange::IPowerManager::PowerState;
     using IPlatform      = hal::deepsleep::IPlatform;
-#ifdef POWERMANAGER_ENABLE_AIDL_HAL
+#ifdef ENABLE_POWERMANAGER_AIDL
     using DefaultImpl    = DeepSleepAidlImpl;
 #else
     using DefaultImpl    = DeepSleepImpl;

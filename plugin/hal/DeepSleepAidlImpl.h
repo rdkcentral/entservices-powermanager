@@ -23,6 +23,13 @@
 #include <optional>
 #include <vector>
 
+// Workaround: Linux syslog.h defines LOG_PRI(p) as a single-arg macro.
+// Android binder/log headers define LOG_PRI(priority, tag, ...) as multi-arg.
+// If syslog.h was included earlier (via WPEFramework), undef the conflict.
+#ifdef LOG_PRI
+#undef LOG_PRI
+#endif
+
 #include <binder/IServiceManager.h>
 #include <binder/ProcessState.h>
 #include <binder/IPCThreadState.h>

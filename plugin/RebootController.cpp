@@ -80,10 +80,10 @@ void RebootController::heartbeatMsg()
     }
 
     auto uptime = now<std::chrono::seconds>();
-    LOGINFO("PowerManager plugin: HeartBeat at %s uptime:%lld  ForcedReboot = %d ", ctime(&curr),uptime,  _forcedRebootThreshold.threshold());
+    LOGINFO("PowerManager plugin: HeartBeat at %s uptime:%ld  ForcedReboot = %d ", ctime(&curr),uptime,  _forcedRebootThreshold.threshold());
 
     if (_forcedRebootThreshold.IsThresholdExceeded(uptime)) {
-         LOGINFO("Going to force reboot after %lld\n", uptime);
+         LOGINFO("Going to force reboot after %ld\n", uptime);
          v_secure_system("sh /rebootNow.sh -s PwrMgr -r 'MAINTENANCE_REBOOT' -o 'Forced Maintenance reboot'");
     }
 
