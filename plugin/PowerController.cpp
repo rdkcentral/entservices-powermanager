@@ -22,22 +22,26 @@
 
 #include <core/IAction.h>    // for IDispatch
 #include <core/Time.h>       // for Time
-#include <core/WorkerPool.h> // for IWorkerPool, WorkerPool
 
-#include "LambdaJob.h"      // for LambdaJob
 #include "UtilsLogging.h"   // for LOGINFO, LOGERR
-#include "secure_wrapper.h" // for v_secure_system
 
 #include "PowerController.h"
 #include "PowerUtils.h"
+#include "hal/PowerManagerFactory.h"
 
 using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
 using WakeupSrcType = WPEFramework::Exchange::IPowerManager::WakeupSrcType;
 using WakeupReason = WPEFramework::Exchange::IPowerManager::WakeupReason;
 using WakeupSourceConfig = WPEFramework::Exchange::IPowerManager::WakeupSourceConfig;
 using IPlatform = hal::power::IPlatform;
-using DefaultImpl = PowerImpl;
 using util = PowerUtils;
+
+PowerController PowerController::Create(DeepSleepController& deepSleep)
+{
+    auto impl = PowerManagerFactory::CreatePowerPlatform();
+    ASSERT(impl != nullptr);
+    return PowerController(deepSleep, std::move(impl));
+}
 
 PowerController::PowerController(DeepSleepController& deepSleep, std::unique_ptr<IPlatform> platform)
     : _platform(std::move(platform))
@@ -45,7 +49,6 @@ PowerController::PowerController(DeepSleepController& deepSleep, std::unique_ptr
     , _lastKnownPowerState(PowerState::POWER_STATE_ON)
     , _settings(Settings::Load(m_settingsFile))
     , _deepSleepWakeupSettings(_settings)
-    , _workerPool(WPEFramework::Core::WorkerPool::Instance())
     , _wakeupTimestamp{}
     , _deepSleep(deepSleep)
 #ifdef OFFLINE_MAINT_REBOOT
@@ -108,7 +111,11 @@ void PowerController::init()
         _wakeupTimestamp = std::chrono::steady_clock::now();
         LOGINFO("Initialized wakeup timestamp: device is in ON state at boot");
     }
-
+    std::string bootReason;
+    if (WPEFramework::Core::ERROR_NONE == platform().GetBootReason(bootReason)) {
+        LOGINFO("Setting boot reason: %s to DeepSleepController.", bootReason.c_str());
+        _deepSleep.SetBootReason(bootReason);
+    }
 }
 
 uint32_t PowerController::SetPowerState(const int keyCode, const PowerState powerState, const std::string& reason)
@@ -193,6 +200,8 @@ uint32_t PowerController::SetWakeupSourceConfig(const std::list<WPEFramework::Ex
             // latch failed status
             failed = true;
         }
+        // Update DeepSleepController with the new wakeup source configuration
+        _deepSleep.SetWakeupSrc(config.wakeupSource, config.enabled);
     }
 
     uint32_t errorCode = failed ? WPEFramework::Core::ERROR_GENERAL : WPEFramework::Core::ERROR_NONE;
@@ -232,19 +241,7 @@ uint32_t PowerController::GetWakeupSourceConfig(std::list<WPEFramework::Exchange
 
 uint32_t PowerController::Reboot(const string& requestor, const string& reasonCustom, const string& reasonOther)
 {
-    _workerPool.Submit(LambdaJob::Create([requestor, reasonCustom, reasonOther]() {
-        v_secure_system("echo 0 > /opt/.rebootFlag");
-
-        LOGINFO("------------FINAL REBOOT NOTICE----------\n\tRebooting device requestor: %s, reasonCustom: %s, reasonOther: %s",
-            requestor.c_str(), reasonCustom.c_str(), reasonOther.c_str());
-        if (0 == access("/rebootNow.sh", F_OK)) {
-            v_secure_system("/rebootNow.sh -s '%s' -r '%s' -o '%s'", requestor.c_str(), reasonCustom.c_str(), reasonOther.c_str());
-        } else {
-            v_secure_system("/lib/rdk/rebootNow.sh -s '%s' -r '%s' -o '%s'", requestor.c_str(), reasonCustom.c_str(), reasonOther.c_str());
-        }
-    }));
-
-    return WPEFramework::Core::ERROR_NONE;
+    return platform().Reboot(requestor, reasonCustom, reasonOther);
 }
 
 uint32_t PowerController::SetDeepSleepTimer(const int timeOut)
