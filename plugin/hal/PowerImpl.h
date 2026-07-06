@@ -25,9 +25,12 @@
 
 #include <core/Portability.h>
 #include <interfaces/IPowerManager.h>
+#include <core/WorkerPool.h> // for IWorkerPool, WorkerPool
+#include "LambdaJob.h"       // for LambdaJob
 
 #include "Power.h"
 #include "UtilsLogging.h"
+#include "secure_wrapper.h" // for v_secure_system
 
 class PowerImpl : public hal::power::IPlatform {
     using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
@@ -233,9 +236,11 @@ class PowerImpl : public hal::power::IPlatform {
     }
 private:
     bool m_isPlatformInitialized;
+    WPEFramework::Core::IWorkerPool& _workerPool;
 
 public:
-    PowerImpl()
+    PowerImpl():
+        _workerPool(WPEFramework::Core::WorkerPool::Instance())
     {
         pmStatus_t result = PWRMGR_SUCCESS;
         unsigned int retryCount = 1;
@@ -305,5 +310,28 @@ public:
         LOGINFO("PowerState: %s, result: %s", str(state), str(result));
 
         return retCode;
+    }
+
+    virtual uint32_t GetBootReason(std::string& bootReason) const override
+    {
+        bootReason = "";
+        return WPEFramework::Core::ERROR_GENERAL;
+    }
+
+    virtual uint32_t Reboot(const std::string& requestor, const std::string& reasonCustom, const std::string& reasonOther) override
+    {
+        _workerPool.Submit(LambdaJob::Create([requestor, reasonCustom, reasonOther]() {
+            v_secure_system("echo 0 > /opt/.rebootFlag");
+
+            LOGINFO("------------FINAL REBOOT NOTICE----------\n\tRebooting device requestor: %s, reasonCustom: %s, reasonOther: %s",
+                requestor.c_str(), reasonCustom.c_str(), reasonOther.c_str());
+            if (0 == access("/rebootNow.sh", F_OK)) {
+                v_secure_system("/rebootNow.sh -s '%s' -r '%s' -o '%s'", requestor.c_str(), reasonCustom.c_str(), reasonOther.c_str());
+            } else {
+                v_secure_system("/lib/rdk/rebootNow.sh -s '%s' -r '%s' -o '%s'", requestor.c_str(), reasonCustom.c_str(), reasonOther.c_str());
+            }
+        }));
+
+        return WPEFramework::Core::ERROR_NONE;
     }
 };

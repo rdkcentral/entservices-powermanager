@@ -31,6 +31,8 @@ cmake -G Ninja -S "$GITHUB_WORKSPACE" -B build/entservices-powermanager \
 -DUSE_THUNDER_R4=ON \
 -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install/usr" \
 -DCMAKE_MODULE_PATH="$GITHUB_WORKSPACE/install/tools/cmake" \
+-DAIDL_DEEPSLEEP_INCLUDE_DIR="${GITHUB_WORKSPACE}/entservices-testframework/Tests/headers" \
+-DAIDL_BOOT_INCLUDE_DIR="${GITHUB_WORKSPACE}/entservices-testframework/Tests/headers" \
 -DCMAKE_VERBOSE_MAKEFILE=ON \
 -DCMAKE_DISABLE_FIND_PACKAGE_IARMBus=ON \
 -DCMAKE_DISABLE_FIND_PACKAGE_RFC=ON \
@@ -80,3 +82,4 @@ cmake -G Ninja -S "$GITHUB_WORKSPACE" -B build/entservices-powermanager \
 cmake --build build/entservices-powermanager --target install
 echo "======================================================================================"
 exit 0
+

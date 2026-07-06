@@ -267,6 +267,11 @@ jobs:
           &&
           cp -r /usr/include/gstreamer-1.0/gst /usr/include/glib-2.0/* /usr/lib/x86_64-linux-gnu/glib-2.0/include/* /usr/local/include/trower-base64/base64.h /usr/include/libdrm/drm.h /usr/include/libdrm/drm_mode.h /usr/include/xf86drm.h .
 
+      - name: Generate AIDL stub headers
+        run: >
+          sh "$GITHUB_WORKSPACE/entservices-powermanager/Tests/generate_aidl_stub_headers.sh"
+          "$GITHUB_WORKSPACE/entservices-testframework/Tests/headers"
+
       - name: Set clang toolchain
         if: ${{ matrix.compiler == 'clang' }}
         run: echo "TOOLCHAIN_FILE=$GITHUB_WORKSPACE/entservices-testframework/Tests/clang.cmake" >> $GITHUB_ENV
@@ -349,6 +354,8 @@ jobs:
           -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install/usr"
           -DCMAKE_MODULE_PATH="$GITHUB_WORKSPACE/install/tools/cmake"
           -DHIDE_NON_EXTERNAL_SYMBOLS=OFF
+          -DAIDL_DEEPSLEEP_INCLUDE_DIR="$GITHUB_WORKSPACE/entservices-testframework/Tests/headers"
+          -DAIDL_BOOT_INCLUDE_DIR="$GITHUB_WORKSPACE/entservices-testframework/Tests/headers"
           -DCMAKE_CXX_FLAGS="
           -DEXCEPTIONS_ENABLE=ON
           -fprofile-arcs
@@ -679,4 +686,5 @@ jobs:
             rdkL2TestResultsWithoutValgrind.json
             rdkL2TestResultsWithValgrind.json
           if-no-files-found: warn
+
 
