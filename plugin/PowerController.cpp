@@ -52,6 +52,7 @@ PowerController::PowerController(DeepSleepController& deepSleep, std::unique_ptr
     , _rebootController(_settings)
 #endif
 {
+    SYSLOG(Logging::Startup, (_T("%s >>"), __FUNCTION__));
     ASSERT(nullptr != _platform);
 
     // Settings initialization will never fail
@@ -63,9 +64,11 @@ PowerController::PowerController(DeepSleepController& deepSleep, std::unique_ptr
         { WakeupSrcType::WAKEUP_SRC_LAN, wakeupSrcValue }
     };
 
+    SYSLOG(Logging::Startup, (_T("%s before SetWakeupSourceConfig"), __FUNCTION__));
     SetWakeupSourceConfig(configs);
-
+    SYSLOG(Logging::Startup, (_T("%s before init"), __FUNCTION__));
     init();
+    SYSLOG(Logging::Startup, (_T("%s <<"), __FUNCTION__));
 }
 
 void PowerController::init()

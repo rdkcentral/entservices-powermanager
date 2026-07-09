@@ -29,8 +29,9 @@ ThermalController::ThermalController (INotification& parent, std::shared_ptr<IPl
     , _parent(parent)
     , _stopThread(false)
 {
+    SYSLOG(Logging::Startup, (_T("%s >>"), __FUNCTION__));
     initializeThermalProtection();
-    LOGINFO(">> CTOR <<");
+    SYSLOG(Logging::Startup, (_T("%s <<"), __FUNCTION__));
 }
 
 ThermalController::~ThermalController()
@@ -124,6 +125,7 @@ uint32_t ThermalController::SetOvertempGraceInterval(int graceInterval)
 
 void ThermalController::initializeThermalProtection()
 {
+    SYSLOG(Logging::Startup, (_T("%s >>"), __FUNCTION__));
     if (isThermalProtectionEnabled())
     {
         LOGINFO("Thermal Monitor [REBOOT] Enabled: %s", (rebootThreshold.graceInterval > 0) ? "TRUE" : "FALSE");
@@ -160,7 +162,9 @@ void ThermalController::initializeThermalProtection()
             LOGINFO("*****Critical*** Fails to set temperature thresholds.. ");
         }
 
+        SYSLOG(Logging::Startup, (_T("%s before thread create"), __FUNCTION__));
         thermalThreadId = new std::thread(&ThermalController::pollThermalLevels, this);
+        SYSLOG(Logging::Startup, (_T("%s after thread create thermalThreadId=%p"), __FUNCTION__, (void*)thermalThreadId));
 
         if (nullptr == thermalThreadId )
         {
@@ -171,20 +175,30 @@ void ThermalController::initializeThermalProtection()
     {
         LOGINFO("Thermal protection is disabled from RFC ");
     }
+    SYSLOG(Logging::Startup, (_T("%s <<"), __FUNCTION__));
 }
 
 bool ThermalController::isThermalProtectionEnabled()
 {
+    SYSLOG(Logging::Startup, (_T("%s >>"), __FUNCTION__));
     if (!read_config_param)
     {
+        SYSLOG(Logging::Startup, (_T("%s before updateRFCStatus"), __FUNCTION__));
         if (updateRFCStatus())
         {
+            SYSLOG(Logging::Startup, (_T("%s before read_ConfigProps"), __FUNCTION__));
             read_ConfigProps();
+            SYSLOG(Logging::Startup, (_T("%s after read_ConfigProps"), __FUNCTION__));
+        }
+        else
+        {
+            SYSLOG(Logging::Startup, (_T("%s updateRFCStatus returned false"), __FUNCTION__));
         }
 
         read_config_param= TRUE;
     }
 
+    SYSLOG(Logging::Startup, (_T("%s << isFeatureEnabled=%d"), __FUNCTION__, (int)isFeatureEnabled));
     return isFeatureEnabled;
 }
 
@@ -482,6 +496,7 @@ const char* ThermalController::str(ThermalTemperature mode)
 
 bool ThermalController::updateRFCStatus()
 {
+    SYSLOG(Logging::Startup, (_T("%s >>"), __FUNCTION__));
     bool result = false;
     RFC_ParamData_t param = {{0}};
 
