@@ -18,6 +18,7 @@
  */
 
 #include "secure_wrapper.h"
+#include "Module.h"         // for SYSLOG, Logging
 #include "ThermalController.h"
 #include "rfcapi.h"
 

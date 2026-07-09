@@ -20,6 +20,7 @@
 #include <functional> // for function
 #include <unistd.h>   // for access, F_OK
 
+#include "Module.h"         // for SYSLOG, Logging
 #include <core/IAction.h>    // for IDispatch
 #include <core/Time.h>       // for Time
 #include <core/WorkerPool.h> // for IWorkerPool, WorkerPool
