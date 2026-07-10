@@ -17,6 +17,7 @@
  * limitations under the License.
  */
 
+#include "Module.h"
 #include "secure_wrapper.h"
 #include "ThermalController.h"
 #include "rfcapi.h"

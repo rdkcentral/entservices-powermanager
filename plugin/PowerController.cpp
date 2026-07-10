@@ -24,6 +24,7 @@
 #include <core/Time.h>       // for Time
 #include <core/WorkerPool.h> // for IWorkerPool, WorkerPool
 
+#include "Module.h"
 #include "LambdaJob.h"      // for LambdaJob
 #include "UtilsLogging.h"   // for LOGINFO, LOGERR
 #include "secure_wrapper.h" // for v_secure_system
