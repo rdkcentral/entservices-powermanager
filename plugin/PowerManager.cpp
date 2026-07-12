@@ -80,7 +80,9 @@ namespace Plugin {
         _service->AddRef();
         _service->Register(_powermanagersNotification.baseInterface<RPC::IRemoteConnection::INotification>());
         _service->Register(_powermanagersNotification.baseInterface<PluginHost::IShell::ICOMLink::INotification>());
+        SYSLOG(Logging::Startup, (_T("PowerManager::Initialize: before Root")));
         _powerManager = _service->Root<Exchange::IPowerManager>(_connectionId, 5000, _T("PowerManagerImplementation"));
+        SYSLOG(Logging::Startup, (_T("PowerManager::Initialize: after Root, _powerManager=%p"), (void*)_powerManager));
 
         if (nullptr != _powerManager) {
             // Register for notifications

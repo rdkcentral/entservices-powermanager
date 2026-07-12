@@ -24,6 +24,7 @@
 #include <core/Time.h>       // for Time
 #include <core/WorkerPool.h> // for IWorkerPool, WorkerPool
 
+#include "Module.h"
 #include "LambdaJob.h"      // for LambdaJob
 #include "UtilsLogging.h"   // for LOGINFO, LOGERR
 #include "secure_wrapper.h" // for v_secure_system
@@ -52,6 +53,7 @@ PowerController::PowerController(DeepSleepController& deepSleep, std::unique_ptr
     , _rebootController(_settings)
 #endif
 {
+    SYSLOG(WPEFramework::Logging::Startup, (_T("%s >>"), __FUNCTION__));
     ASSERT(nullptr != _platform);
 
     // Settings initialization will never fail
@@ -63,9 +65,12 @@ PowerController::PowerController(DeepSleepController& deepSleep, std::unique_ptr
         { WakeupSrcType::WAKEUP_SRC_LAN, wakeupSrcValue }
     };
 
+    SYSLOG(WPEFramework::Logging::Startup, (_T("%s before SetWakeupSourceConfig"), __FUNCTION__));
     SetWakeupSourceConfig(configs);
 
+    SYSLOG(WPEFramework::Logging::Startup, (_T("%s before init"), __FUNCTION__));
     init();
+    SYSLOG(WPEFramework::Logging::Startup, (_T("%s <<"), __FUNCTION__));
 }
 
 void PowerController::init()
