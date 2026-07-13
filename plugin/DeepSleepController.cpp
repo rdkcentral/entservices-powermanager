@@ -273,27 +273,8 @@ void DeepSleepController::enterDeepSleepDelayed()
 {
     _deepSleepDelayJob.Release();
 
-    LOGINFO("Deep Sleep Timer Expires :Enter to Deep sleep Mode..stop Receiver with sleep 10 before DS");
-
-    bool userWakeup = 0;
-
-    auto status = platform().SetDeepSleep(_deepSleepWakeupTimeoutSec, userWakeup, false);
-
-    if (WPEFramework::Core::ERROR_NONE != status) {
-        LOGINFO("Failed to enter deepsleep status %u", status);
-        _deepSleepState = DeepSleepState::Failed;
-        _parent.onDeepSleepFailed();
-        return;
-    }
-
-    _deepSleepState = DeepSleepState::Completed;
-
-    if (userWakeup) {
-        LOGINFO("DeeSleep wakeupReason: user action");
-        _parent.onDeepSleepUserWakeup(userWakeup);
-    } else {
-        deepSleepTimerWakeup();
-    }
+    LOGINFO("Deep Sleep timer expired: entering deep sleep mode");
+    enterDeepSleepNow();
 }
 
 void DeepSleepController::enterDeepSleepNow()
@@ -301,15 +282,14 @@ void DeepSleepController::enterDeepSleepNow()
     LOGINFO("Enter to Deep sleep Mode..stop Receiver with sleep 1 before DS");
     sleep(1);
 
+    uint32_t errorCode = WPEFramework::Core::ERROR_NONE;
     bool failed     = true;
     int retryCount  = 5;
     bool userWakeup = 0;
+    LOGINFO("Device entering Deep sleep with nwStandbyMode: %s", (_nwStandbyMode ? "Enabled" : "Disabled"));
 
     while (retryCount && failed) {
-        LOGINFO("Device entering Deep sleep with nwStandbyMode: %s",
-            (_nwStandbyMode ? "Enabled" : "Disabled"));
-
-        uint32_t errorCode = platform().SetDeepSleep(_deepSleepWakeupTimeoutSec, userWakeup, _nwStandbyMode);
+        errorCode = platform().SetDeepSleep(_deepSleepWakeupTimeoutSec, userWakeup, _nwStandbyMode);
 
         failed = WPEFramework::Core::ERROR_NONE != errorCode;
 
@@ -317,9 +297,12 @@ void DeepSleepController::enterDeepSleepNow()
             _deepSleepState = DeepSleepState::Failed;
             retryCount--;
 
-            if (retryCount) {
+            if ((errorCode == WPEFramework::Core::ERROR_ABORTED) && (retryCount > 0)) {
                 LOGINFO("Failed to enter deep sleep mode: %u, retry after 5s", errorCode);
                 sleep(5);
+            } else {
+                LOGINFO("No retry for deep sleep error code: %u", errorCode);
+                break;
             }
         } else {
             _deepSleepState = DeepSleepState::Completed;
@@ -328,11 +311,11 @@ void DeepSleepController::enterDeepSleepNow()
     }
 
     if (failed) {
-        LOGERR("Failed to enter deep sleep mode after 5 attempts");
+        LOGERR("Failed to enter deep sleep mode error code: %u", errorCode);
         _parent.onDeepSleepFailed();
         return;
     }
-
+    LOGINFO("DeepSleep success; performing wakeup action");
     if (userWakeup) {
         LOGINFO("DeeSleep wakeupReason: user action");
         _parent.onDeepSleepUserWakeup(userWakeup);
@@ -370,18 +353,20 @@ void DeepSleepController::performActivate(uint32_t timeOut, bool nwStandbyMode)
         _deepsleepStartTime = MonotonicClock::now();
 
         // Perform the deep sleep operation
+        _nwStandbyMode             = nwStandbyMode;
         _deepSleepWakeupTimeoutSec = timeOut;
 
+        _deepSleepDelaySec = 0; // reset before reading override; prevents stale value persisting across activations
         uint32_t delayTimeOut = 0;
-        if (read_integer_conf("/tmp/deepSleepTimer", delayTimeOut) && delayTimeOut) {
+        if (read_integer_conf("/tmp/deepSleepDelayTimer", delayTimeOut) && delayTimeOut) {
             _deepSleepDelaySec = delayTimeOut;
-            LOGINFO("/tmp/deepSleepTimer override Deep Sleep timeOut value: %u", delayTimeOut);
+            LOGINFO("/tmp/deepSleepDelayTimer override Deep Sleep timeOut value: %u", delayTimeOut);
         }
 
         uint32_t wakeupTimer = 0;
-        if (read_integer_conf("/tmp/deepSleepTimerVal", wakeupTimer) && wakeupTimer) {
+        if (read_integer_conf("/tmp/deepSleepWakeupTimer", wakeupTimer) && wakeupTimer) {
             _deepSleepWakeupTimeoutSec = wakeupTimer;
-            LOGINFO("/tmp/deepSleepTimerVal override Deep Sleep wakeup timer value: %u", wakeupTimer);
+            LOGINFO("/tmp/deepSleepWakeupTimer override Deep Sleep wakeup timer value: %u", wakeupTimer);
         }
 
         if (_deepSleepDelaySec) {
