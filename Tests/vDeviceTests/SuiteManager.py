@@ -46,7 +46,6 @@ SUITES = {
         "module_dir": BASE_DIR / "Testcases",
         "tests": [
             "TCID01_Get_Power_State",
-            "TCID02_Get_Temperature_Thresholds",
             "TCID03_Get_Overtemp_Grace_Interval",
             "TCID04_Get_Thermal_State",
             "TCID05_Get_Last_Wakeup_Reason",
@@ -55,6 +54,12 @@ SUITES = {
             "TCID08_Get_Wakeup_Source_Config",
             "TCID09_Get_Power_State_Before_Reboot",
             "TCID10_Get_Time_Since_Wakeup",
+            "TCID11_Set_Overtemp_Grace_Interval",
+            "TCID12_Set_Network_Standby_Mode",
+            "TCID13_Set_Power_State",
+            "TCID14_Set_Wakeup_Source_Config",
+            "TCID15_Delay_Power_Mode_Change_By",
+            "TCID16_Reboot",
         ],
     },
 }

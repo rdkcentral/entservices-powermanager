@@ -258,3 +258,22 @@ def parse_result(curl_response):
     if not isinstance(body, dict) or "result" not in body:
         return None
     return body.get("result")
+
+
+def is_ok(curl_response):
+    '''Return True if a JSON-RPC response indicates success.
+
+    Setters/actions in the PowerManager interface return {"result": null} on
+    success, which parse_result() cannot distinguish from a missing result. Use
+    this helper to validate that a call succeeded: the response must be valid
+    JSON containing a 'result' key (even when null) and no 'error' field.
+    '''
+    if not curl_response or curl_response.startswith("< No response"):
+        return False
+    try:
+        body = json.loads(curl_response)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(body, dict):
+        return False
+    return "result" in body and "error" not in body

@@ -114,6 +114,17 @@ def add_power_mode_prechange_client(client_name):
     )
 
 
+def delay_power_mode_change_by(client_id, transaction_id, delay_period):
+    return _curl(
+        "delayPowerModeChangeBy",
+        params={
+            "clientId": client_id,
+            "transactionId": transaction_id,
+            "delayPeriod": delay_period,
+        },
+    )
+
+
 def remove_power_mode_prechange_client(client_id):
     return _curl(
         "removePowerModePreChangeClient",
