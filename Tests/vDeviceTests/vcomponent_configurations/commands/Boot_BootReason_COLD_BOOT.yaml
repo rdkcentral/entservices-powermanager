@@ -1,0 +1,4 @@
+boot:
+  command: bootReason
+  params:
+    reason: "COLD_BOOT"
