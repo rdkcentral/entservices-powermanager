@@ -52,6 +52,25 @@ def _curl(method, params=None, timeout=5, request_id=42):
     )
 
 
+def _curl_raw(method, params=None, timeout=5, request_id=42):
+    """Build a curl command string for an arbitrary JSON-RPC method."""
+    payload = {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "method": method,
+    }
+    if params is not None:
+        payload["params"] = params
+    data = json.dumps(payload)
+    return (
+        f"curl --max-time {timeout} "
+        f'--header "Content-Type: application/json" '
+        f"--request POST "
+        f"-d '{data}' "
+        f"{WPEFRAMEWORK_JSONRPC_URL}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Getters (safe, no side effects)
 # ---------------------------------------------------------------------------
@@ -107,6 +126,13 @@ def set_network_standby_mode(standby_mode):
     )
 
 
+def set_network_standby_mode_nw(standby_mode):
+    return _curl(
+        "setNetworkStandbyMode",
+        params={"nwStandby": bool(standby_mode)},
+    )
+
+
 def add_power_mode_prechange_client(client_name):
     return _curl(
         "addPowerModePreChangeClient",
@@ -151,6 +177,30 @@ def reboot(reboot_requestor="vdevice-test",
             "rebootReasonOther": reboot_reason_other,
         },
         timeout=8,
+    )
+
+
+def register_event(event_name, listener_id, timeout=8):
+    return _curl_raw(
+        f"{CALLSIGN}.1.register",
+        params={"event": event_name, "id": listener_id},
+        timeout=timeout,
+    )
+
+
+def controller_activate(callsign=CALLSIGN, timeout=8):
+    return _curl_raw(
+        "Controller.1.activate",
+        params={"callsign": callsign},
+        timeout=timeout,
+    )
+
+
+def controller_deactivate(callsign=CALLSIGN, timeout=8):
+    return _curl_raw(
+        "Controller.1.deactivate",
+        params={"callsign": callsign},
+        timeout=timeout,
     )
 
 
