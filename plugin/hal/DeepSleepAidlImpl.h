@@ -164,7 +164,10 @@ public:
             trigger = com::rdk::hal::deepsleep::WakeUpTrigger::RCU_BT;
             break;
         case WakeupSrcType::WAKEUP_SRC_WIFI:
-            trigger = com::rdk::hal::deepsleep::WakeUpTrigger::WLAN; //Vinod: Is mapping correct?
+            trigger = com::rdk::hal::deepsleep::WakeUpTrigger::WLAN;
+            break;
+        case WakeupSrcType::WAKEUP_SRC_TIMER:
+            trigger = com::rdk::hal::deepsleep::WakeUpTrigger::TIMER;
             break;
         case WakeupSrcType::WAKEUP_SRC_IR:
             trigger = com::rdk::hal::deepsleep::WakeUpTrigger::RCU_IR;
