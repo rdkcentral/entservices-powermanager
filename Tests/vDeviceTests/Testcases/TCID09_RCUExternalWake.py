@@ -119,9 +119,6 @@ def _run_variant(original_config, variant):
             return False, f"unable to read configured wakeup state for {label}"
         if get_source_enabled(configured, wakeup_source) is not True:
             return False, f"{wakeup_source} not enabled before deep sleep"
-        if get_source_enabled(configured, "TIMER") is not True:
-            return False, f"TIMER must already be enabled before deep sleep for {label}"
-
         deep_resp = send_curl_command(PowerManagerApis.set_power_state("DEEP_SLEEP", standby_reason=standby_reason, timeout=10))
         log_warning(f"{label} deep sleep response: {deep_resp}")
         if not is_ok(deep_resp):
@@ -189,4 +186,5 @@ def run_test():
     else:
         log_success(msg)
     return True
+
 

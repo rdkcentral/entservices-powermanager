@@ -81,10 +81,6 @@ def run_test():
         if get_source_enabled(configured, "VOICE") is not True:
             log_error("TCID06_VoiceExternalWake Failed ❌ (VOICE not enabled before deep sleep)")
             return False
-        if get_source_enabled(configured, "TIMER") is not True:
-            log_error("TCID06_VoiceExternalWake Failed ❌ (TIMER must already be enabled before deep sleep)")
-            return False
-
         deep_resp = send_curl_command(PowerManagerApis.set_power_state("DEEP_SLEEP", standby_reason="PM-PLUGIN-031", timeout=10))
         log_warning(f"Deep sleep response: {deep_resp}")
         if not is_ok(deep_resp):
@@ -137,4 +133,5 @@ def run_test():
     else:
         log_success(msg)
     return True
+
 

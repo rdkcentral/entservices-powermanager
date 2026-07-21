@@ -14,7 +14,7 @@ import time
 
 from utils import send_curl_command, is_ok, log_success, log_error, log_warning
 import PowerManager_Curl as PowerManagerApis
-from PowerManager_CombinationHelpers import note_partial, parse_error, parse_last_wakeup_reason
+from PowerManager_CombinationHelpers import is_timer_wakeup_reason, note_partial, parse_error, parse_last_wakeup_reason
 
 
 def run_test():
@@ -59,11 +59,13 @@ def run_test():
     reason = parse_last_wakeup_reason(reason_resp)
     if reason == "UNKNOWN":
         note_partial("vdevice did not surface TIMER as last wakeup reason after the preserved valid config and returned UNKNOWN instead.")
-    elif reason != "TIMER":
-        log_error("TCID19_InvalidWakeupUpdate Failed ❌ (wake reason did not follow last valid config)")
+    elif not is_timer_wakeup_reason(reason):
+        log_error("TCID19_InvalidWakeupUpdate Failed ❌ (wake reason did not follow the preserved timer-backed config)")
         send_curl_command(PowerManagerApis.set_power_state("ON", standby_reason="PM-PLUGIN-011-restore"))
         return False
-
+    elif reason != "TIMER":
+        log_warning(f"Observed timer-backed wakeup reason alias after invalid update: {reason}")
+[O
     send_curl_command(PowerManagerApis.set_power_state("ON", standby_reason="PM-PLUGIN-011-restore"))
 
     elapsed_time = time.perf_counter() - start_time

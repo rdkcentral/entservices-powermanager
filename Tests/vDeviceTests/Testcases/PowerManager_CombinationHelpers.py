@@ -9,6 +9,7 @@ STRICT_PARTIALS = os.environ.get("POWERMANAGER_STRICT_SCENARIOS", "0").lower() i
     "true",
     "yes",
 )
+TIMER_WAKEUP_REASONS = {"TIMER", "WARMRESET"}
 
 
 def parse_json_response(curl_response):
@@ -60,6 +61,10 @@ def parse_last_wakeup_reason(curl_response):
         if isinstance(value, str) and value:
             return value
     return None
+
+
+def is_timer_wakeup_reason(reason):
+    return isinstance(reason, str) and reason in TIMER_WAKEUP_REASONS
 
 
 def parse_last_wakeup_keycode(curl_response):

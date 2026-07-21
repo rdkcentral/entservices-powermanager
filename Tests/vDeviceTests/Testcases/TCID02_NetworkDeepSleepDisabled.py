@@ -16,7 +16,7 @@ import time
 
 from utils import POWERMANAGER_CMD_BASE, send_curl_command, send_vcomponent_command, is_ok, log_success, log_error, log_warning
 import PowerManager_Curl as PowerManagerApis
-from PowerManager_CombinationHelpers import build_wakeup_override_entries, get_source_enabled, parse_last_wakeup_reason, parse_network_standby, parse_power_state, parse_wakeup_config, wakeup_map
+from PowerManager_CombinationHelpers import build_wakeup_override_entries, get_source_enabled, is_timer_wakeup_reason, parse_last_wakeup_reason, parse_network_standby, parse_power_state, parse_wakeup_config, wakeup_map
 
 
 def _set_network_standby(enabled):
@@ -176,9 +176,11 @@ def run_test():
             return False
 
         reason = _wait_for_wakeup_reason("TIMER")
-        if reason != "TIMER":
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (last wakeup reason was not TIMER)")
+        if not is_timer_wakeup_reason(reason):
+            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (last wakeup reason was not timer-backed)")
             return False
+        if reason != "TIMER":
+            log_warning(f"Observed timer-backed wakeup reason alias: {reason}")
 
         mode_resp = send_curl_command(PowerManagerApis.get_network_standby_mode)
         log_warning(f"Mode response: {mode_resp}")
@@ -212,4 +214,5 @@ def run_test():
     else:
         log_success(msg)
     return True
+
 

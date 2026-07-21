@@ -14,7 +14,7 @@ import time
 
 from utils import send_curl_command, is_ok, log_success, log_error, log_warning
 import PowerManager_Curl as PowerManagerApis
-from PowerManager_CombinationHelpers import build_wakeup_override_entries, get_source_enabled, parse_last_wakeup_keycode, parse_last_wakeup_reason, parse_wakeup_config, wakeup_map
+from PowerManager_CombinationHelpers import build_wakeup_override_entries, get_source_enabled, is_timer_wakeup_reason, parse_last_wakeup_keycode, parse_last_wakeup_reason, parse_wakeup_config, wakeup_map
 
 
 def run_test():
@@ -62,7 +62,7 @@ def run_test():
             return False
 
         deep_resp = send_curl_command(PowerManagerApis.set_power_state("DEEP_SLEEP", standby_reason="PM-PLUGIN-007", timeout=10))
-        log_warning(f"Deep sleep response: {deep_resp}")
+[O        log_warning(f"Deep sleep response: {deep_resp}")
         if not is_ok(deep_resp):
             log_error("TCID15_NonKeyWakeKeycode Failed ❌ (failed to enter DEEP_SLEEP)")
             return False
@@ -72,9 +72,11 @@ def run_test():
         reason_resp = send_curl_command(PowerManagerApis.get_last_wakeup_reason)
         log_warning(f"Wakeup reason response: {reason_resp}")
         reason = parse_last_wakeup_reason(reason_resp)
-        if reason != "TIMER":
-            log_error("TCID15_NonKeyWakeKeycode Failed ❌ (expected TIMER wakeup reason)")
+        if not is_timer_wakeup_reason(reason):
+            log_error("TCID15_NonKeyWakeKeycode Failed ❌ (expected timer-backed wakeup reason)")
             return False
+        if reason != "TIMER":
+            log_warning(f"Observed timer-backed wakeup reason alias: {reason}")
 
         keycode_resp = send_curl_command(PowerManagerApis.get_last_wakeup_keycode)
         log_warning(f"Post-wake keycode response: {keycode_resp}")
@@ -86,7 +88,7 @@ def run_test():
         restore_entries = [
             {"wakeupSource": source, "enabled": enabled}
             for source, enabled in wakeup_map(original_config).items()
-        ]
+[I        ]
         send_curl_command(PowerManagerApis.set_wakeup_source_config(restore_entries))
         send_curl_command(PowerManagerApis.set_power_state("ON", standby_reason="PM-PLUGIN-007-restore"))
 

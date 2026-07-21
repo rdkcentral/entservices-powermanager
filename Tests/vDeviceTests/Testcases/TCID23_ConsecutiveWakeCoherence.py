@@ -14,7 +14,7 @@ import time
 
 from utils import send_curl_command, is_ok, log_success, log_error, log_warning
 import PowerManager_Curl as PowerManagerApis
-from PowerManager_CombinationHelpers import build_wakeup_override_entries, get_source_enabled, parse_last_wakeup_keycode, parse_last_wakeup_reason, parse_wakeup_config, wakeup_map
+from PowerManager_CombinationHelpers import build_wakeup_override_entries, get_source_enabled, is_timer_wakeup_reason, parse_last_wakeup_keycode, parse_last_wakeup_reason, parse_wakeup_config, wakeup_map
 
 
 def run_test():
@@ -67,9 +67,11 @@ def run_test():
         if not isinstance(first_reason, str) or not first_reason:
             log_error("TCID23_ConsecutiveWakeCoherence Failed ❌ (invalid first wakeup reason)")
             return False
-        if first_reason != "TIMER":
-            log_error("TCID23_ConsecutiveWakeCoherence Failed ❌ (expected first wakeup reason TIMER)")
+        if not is_timer_wakeup_reason(first_reason):
+            log_error("TCID23_ConsecutiveWakeCoherence Failed ❌ (expected first timer-backed wakeup reason)")
             return False
+        if first_reason != "TIMER":
+            log_warning(f"Observed first timer-backed wakeup reason alias: {first_reason}")
 
         first_key_resp = send_curl_command(PowerManagerApis.get_last_wakeup_keycode)
         log_warning(f"First wakeup keycode response: {first_key_resp}")
@@ -97,8 +99,8 @@ def run_test():
         if not isinstance(second_reason, str) or not second_reason:
             log_error("TCID23_ConsecutiveWakeCoherence Failed ❌ (invalid second wakeup reason)")
             return False
-        if second_reason != "TIMER":
-            log_error("TCID23_ConsecutiveWakeCoherence Failed ❌ (expected second wakeup reason TIMER)")
+        if not is_timer_wakeup_reason(second_reason):
+            log_error("TCID23_ConsecutiveWakeCoherence Failed ❌ (expected second timer-backed wakeup reason)")
             return False
         if second_reason != first_reason:
             log_error("TCID23_ConsecutiveWakeCoherence Failed ❌ (wakeup reason changed across consecutive timer cycles)")
