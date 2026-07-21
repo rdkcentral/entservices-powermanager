@@ -1,4 +1,4 @@
-"""
+﻿"""
 /**
  * @file SuiteManager.py
  * @brief SuiteManager.py
@@ -45,50 +45,43 @@ SUITES = {
         "banner": "******************** L2 SUITE - RDK - POWER MANAGER ****************************",
         "module_dir": BASE_DIR / "Testcases",
         "tests": [
-            "TCID01_Get_Power_State",
-            "TCID03_Get_Overtemp_Grace_Interval",
-            "TCID04_Get_Thermal_State",
-            "TCID05_Get_Last_Wakeup_Reason",
-            "TCID06_Get_Last_Wakeup_Keycode",
-            "TCID07_Get_Network_Standby_Mode",
-            "TCID08_Get_Wakeup_Source_Config",
-            "TCID09_Get_Power_State_Before_Reboot",
-            "TCID10_Get_Time_Since_Wakeup",
-            "TCID11_Set_Overtemp_Grace_Interval",
-            "TCID12_Set_Network_Standby_Mode",
-            "TCID13_Set_Power_State",
-            "TCID14_Set_Wakeup_Source_Config",
-            "TCID15_Delay_Power_Mode_Change_By",
-            "TCID16_Reboot",
-            "TCID17_DeepSleepFlow",
-            "TCID18_WakeupAgeReset",
-            "TCID19_PowerStateChain",
-            "TCID20_PowerModeNotify",
-            "TCID21_TimerWakeDisable",
-            "TCID22_KeycodeZeroDeepSleep",
-            "TCID23_NonKeyWakeKeycode",
-            "TCID24_PluginInactiveApis",
-            "TCID25_InvalidWakeupPayload",
-            "TCID26_IgnoreDeepSleep",
-            "TCID27_InvalidWakeupUpdate",
-            "TCID28_UnsupportedTempThresholds",
-            "TCID29_RepeatedOnWakeupAge",
-            "TCID30_DeepSleepTimerClamp",
-            "TCID31_DuplicateWakeupSource",
-            "TCID32_ConsecutiveWakeCoherence",
-            "TCID33_EnableNetworkStandby",
-            "TCID34_DisableNetworkStandby",
-            "TCID35_NetworkStandbyToggle",
-            "TCID36_ImplicitNetworkEnable",
-            "TCID37_ImplicitNetworkDisable",
-            "TCID38_AsymmetricNetworkConfig",
-            "TCID39_NetworkStandbyRepeat",
-            "TCID40_NetworkStandbyNotify",
-            "TCID41_NetworkDeepSleepEnabled",
-            "TCID42_NetworkDeepSleepDisabled",
-            "TCID43_NetworkStandbyReturnOn",
-            "TCID44_AsymmetricDeepSleep",
-            "TCID45_NetworkExternalWake",
+            "TCID01_TimerWakeDisable",
+            "TCID02_NetworkDeepSleepDisabled",
+            "TCID03_AsymmetricDeepSleep",
+            "TCID04_NetworkExternalWake",
+            "TCID05_CECExternalWake",
+            "TCID06_VoiceExternalWake",
+            "TCID07_PresenceExternalWake",
+            "TCID08_FrontPanelExternalWake",
+            "TCID09_RCUExternalWake",
+            "TCID10_WLANExternalWake",
+            "TCID11_ExternalWakePrecedence",
+            "TCID12_DeepSleepFlow",
+            "TCID13_WakeupAgeReset",
+            "TCID14_PowerStateChain",
+            "TCID15_NonKeyWakeKeycode",
+            "TCID16_PluginInactiveApis",
+            "TCID17_InvalidWakeupPayload",
+            "TCID18_IgnoreDeepSleep",
+            "TCID19_InvalidWakeupUpdate",
+            "TCID20_RepeatedOnWakeupAge",
+            "TCID21_DeepSleepTimerClamp",
+            "TCID22_DuplicateWakeupSource",
+            "TCID23_ConsecutiveWakeCoherence",
+            "TCID24_NetworkStandbyToggle",
+            "TCID25_ImplicitNetworkEnable",
+            "TCID26_ImplicitNetworkDisable",
+            "TCID27_AsymmetricNetworkConfig",
+            "TCID28_NetworkStandbyRepeat",
+            "TCID29_NetworkDeepSleepEnabled",
+            "TCID30_NetworkStandbyReturnOn",
+            "TCID31_Get_Overtemp_Grace_Interval",
+            "TCID32_Get_Thermal_State",
+            "TCID33_Get_Power_State_Before_Reboot",
+            "TCID34_Set_Overtemp_Grace_Interval",
+            "TCID35_Delay_Power_Mode_Change_By",
+            "TCID36_Reboot",
+            "TCID51_DeepSleepBackendFailureReaction",
         ],
     },
 }
@@ -107,7 +100,28 @@ def normalize_suite_name(raw_name):
     return raw_name.strip().replace("_", "").replace("-", "").lower()
 
 
-def load_test_cases(suite_name):
+def normalize_test_name(raw_name):
+    return raw_name.strip().replace("_", "").replace("-", "").lower()
+
+
+def resolve_selected_tests(suite_name, requested_tests):
+    if not requested_tests:
+        return list(SUITES[suite_name]["tests"])
+
+    available_tests = SUITES[suite_name]["tests"]
+    resolved = []
+
+    for requested in requested_tests:
+        requested_norm = normalize_test_name(requested)
+        matches = [name for name in available_tests if normalize_test_name(name) == requested_norm]
+        if not matches:
+            raise ValueError(f"Unknown test '{requested}'. Available tests: {available_tests}")
+        resolved.extend(matches)
+
+    return resolved
+
+
+def load_test_cases(suite_name, selected_tests=None):
     suite_config = SUITES[suite_name]
     module_dir = str(suite_config["module_dir"])
 
@@ -115,9 +129,17 @@ def load_test_cases(suite_name):
         sys.path.insert(0, module_dir)
 
     test_cases = []
-    for module_name in suite_config["tests"]:
+    for module_name in resolve_selected_tests(suite_name, selected_tests):
         module = importlib.import_module(module_name)
-        test_cases.append((module_name, module.run_test))
+        run_fn = getattr(module, "run_test", None)
+        if not callable(run_fn):
+            module_file = getattr(module, "__file__", "<unknown>")
+            exported = [name for name in dir(module) if not name.startswith("__")]
+            raise AttributeError(
+                f"Module '{module_name}' from '{module_file}' does not expose callable run_test(). "
+                f"Exported names: {exported}"
+            )
+        test_cases.append((module_name, run_fn))
 
     return suite_config["banner"], test_cases
 
@@ -168,8 +190,8 @@ def run_suite_init(suite_name):
     return ok
 
 
-def run_suite(suite_name):
-    banner, test_cases = load_test_cases(suite_name)
+def run_suite(suite_name, selected_tests=None):
+    banner, test_cases = load_test_cases(suite_name, selected_tests)
     print(banner)
 
     auto_activate = os.environ.get("AUTO_ACTIVATE_PLUGINS", "1").lower() not in ("0", "false", "no")
@@ -235,6 +257,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run PowerManager test suites")
     parser.add_argument("suite", help=f"Test suite name. Available: {list(SUITES.keys())}")
     parser.add_argument("-t", "--timing", action="store_true", help="Enable timing output for passed test cases")
+    parser.add_argument(
+        "--test",
+        dest="tests",
+        action="append",
+        help="Run only the named testcase module. Repeat to run multiple specific tests.",
+    )
 
     args = parser.parse_args()
 
@@ -247,5 +275,10 @@ if __name__ == "__main__":
         log_error(f"Unknown suite '{args.suite}'. Available: {list(SUITES.keys())}")
         sys.exit(1)
 
-    ok = run_suite(matching[0])
+    try:
+        ok = run_suite(matching[0], args.tests)
+    except (ValueError, AttributeError) as exc:
+        log_error(str(exc))
+        sys.exit(1)
     sys.exit(0 if ok else 1)
+

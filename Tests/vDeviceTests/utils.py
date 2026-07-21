@@ -54,7 +54,9 @@ POWERMANAGER_CMD_BASE = os.environ.get("POWERMANAGER_CMD_BASE") or _pick_existin
 # - Explicit URL env vars take precedence.
 TARGET_HOST = os.environ.get("TARGET_HOST", "127.0.0.1")
 JSONRPC_PORT = os.environ.get("JSONRPC_PORT", "9998")
-VCOMPONENT_PORT = os.environ.get("VCOMPONENT_PORT", "8080")
+# DeepSleep vcomponent control plane defaults to 8081. Keep override support via
+# VCOMPONENT_PORT / VCOMPONENT_API_URL for target-specific deployments.
+VCOMPONENT_PORT = os.environ.get("VCOMPONENT_PORT", "8081")
 WPEFRAMEWORK_JSONRPC_URL = (
     os.environ.get("WPEFRAMEWORK_JSONRPC_URL")
     or os.environ.get("JSONRPC_URL")
@@ -197,7 +199,7 @@ def send_vcomponent_command(yaml_file_path):
     changing the test case code. Verify the endpoint/contract before relying on it.
 
     Uses: curl -sS -X POST -H "Content-Type: application/x-yaml"
-               --data-binary @<yaml_file> http://127.0.0.1:8080/api/postKVP
+               --data-binary @<yaml_file> http://127.0.0.1:8081/api/postKVP
     Returns (http_code: int, body: str) tuple. http_code 200 indicates success.
     '''
     try:
