@@ -22,7 +22,7 @@ Disable default activation only if needed:
 ENDPOINTS / DEFAULTS
 --------------------
 - MW JSON-RPC: http://127.0.0.1:9998/jsonrpc
-- vComponent API (scenario hooks - TODO): http://127.0.0.1:8080/api/postKVP
+- vComponent API (DeepSleep simulation default): http://127.0.0.1:8081/api/postKVP
 
 Useful overrides:
 - TARGET_HOST (applies to both endpoints)
@@ -43,11 +43,10 @@ python3 SuiteManager.py powermanager
 
 SCENARIO HOOKS (TODO)
 ---------------------
-This first version is JSON-RPC driven only. The vComponent (deepsleep) runtime
-event-injection mechanism is not yet wired up. utils.send_vcomponent_command()
-mirrors the HdmiCec postKVP contract so multi-step scenario tests (e.g. deepsleep
-timeout wakeup, thermal-mode transitions) can be added later without changing the
-test harness. Verify the endpoint/contract before relying on it.
+DeepSleep simulation uses the vcomponent control plane via
+utils.send_vcomponent_command(). The default control-plane port is 8081 for the
+DeepSleep service; override with VCOMPONENT_PORT or VCOMPONENT_API_URL if your
+target launches the service on a different port.
 
 NOTES
 -----

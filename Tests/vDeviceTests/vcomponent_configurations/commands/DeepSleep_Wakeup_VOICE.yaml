@@ -1,0 +1,3 @@
+deepsleep:
+  command: "DEEPSLEEP_WAKEUP"
+  trigger: VOICE

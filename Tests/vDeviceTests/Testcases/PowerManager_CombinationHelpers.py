@@ -103,6 +103,29 @@ def get_source_enabled(config_list, source_name):
     return wakeup_map(config_list).get(source_name)
 
 
+def build_explicit_wakeup_entries(config_list, enabled_sources):
+    entries = []
+    enabled_set = set(enabled_sources)
+    if not isinstance(config_list, list):
+        return entries
+    for entry in config_list:
+        if not isinstance(entry, dict):
+            continue
+        source = entry.get("wakeupSource")
+        if isinstance(source, str):
+            entries.append({"wakeupSource": source, "enabled": source in enabled_set})
+    return entries
+
+
+def build_wakeup_override_entries(config_list, desired_states):
+    entries = []
+    current = wakeup_map(config_list)
+    for source, enabled in desired_states.items():
+        if current.get(source) != enabled:
+            entries.append({"wakeupSource": source, "enabled": enabled})
+    return entries
+
+
 def non_network_map(config_list):
     mapping = wakeup_map(config_list)
     return {key: value for key, value in mapping.items() if key not in ("WIFI", "LAN")}

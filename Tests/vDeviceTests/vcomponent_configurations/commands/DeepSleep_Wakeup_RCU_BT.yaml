@@ -1,0 +1,4 @@
+deepsleep:
+  command: "DEEPSLEEP_WAKEUP"
+  trigger: RCU_BT
+  keycode: 7
