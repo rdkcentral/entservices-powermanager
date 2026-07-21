@@ -142,7 +142,7 @@ def _build_variant_entries(config_list, enabled_source):
 def _restore_baseline(original_config, standby_reason):
     send_curl_command(PowerManagerApis.set_wakeup_source_config(_build_restore_entries(original_config)))
     send_curl_command(PowerManagerApis.set_power_state("ON", standby_reason=standby_reason))
-[O
+
 
 def _run_variant(original_config, variant):
     label = variant["label"]
@@ -178,7 +178,7 @@ def _run_variant(original_config, variant):
             log_warning("POWERKEY remained disabled in read-back after ERROR_GENERAL; continuing because the DeepSleep controller may still accept FRONT_PANEL wake.")
         if get_source_enabled(configured, "TIMER") is not True:
             return False, f"TIMER not enabled before deep sleep for {label}"
-[I
+
         timer_resp = send_curl_command(PowerManagerApis.set_deep_sleep_timer(PRECEDENCE_TIMER_SECONDS))
         log_warning(f"{label} timer response: {timer_resp}")
         if not is_ok(timer_resp):
@@ -195,7 +195,7 @@ def _run_variant(original_config, variant):
 
         state = _wait_for_awake_state()
         if not isinstance(state, dict):
-[O            return False, f"device did not report a post-wake power state for {label}"
+            return False, f"device did not report a post-wake power state for {label}"
 
         reason = _wait_for_wakeup_reason(expected_reason)
         if reason != expected_reason:

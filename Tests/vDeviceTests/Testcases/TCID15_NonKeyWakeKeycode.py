@@ -62,7 +62,7 @@ def run_test():
             return False
 
         deep_resp = send_curl_command(PowerManagerApis.set_power_state("DEEP_SLEEP", standby_reason="PM-PLUGIN-007", timeout=10))
-[O        log_warning(f"Deep sleep response: {deep_resp}")
+        log_warning(f"Deep sleep response: {deep_resp}")
         if not is_ok(deep_resp):
             log_error("TCID15_NonKeyWakeKeycode Failed ❌ (failed to enter DEEP_SLEEP)")
             return False
@@ -88,7 +88,7 @@ def run_test():
         restore_entries = [
             {"wakeupSource": source, "enabled": enabled}
             for source, enabled in wakeup_map(original_config).items()
-[I        ]
+        ]
         send_curl_command(PowerManagerApis.set_wakeup_source_config(restore_entries))
         send_curl_command(PowerManagerApis.set_power_state("ON", standby_reason="PM-PLUGIN-007-restore"))
 

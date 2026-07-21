@@ -24,7 +24,7 @@ def _set_network_standby(enabled):
     if is_ok(response):
         return response
     response = send_curl_command(PowerManagerApis.set_network_standby_mode_nw(enabled))
-    return response
+[O    return response
 
 
 def _is_expected_post_wake_state(state):
@@ -130,7 +130,7 @@ def run_test():
             log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (TIMER not enabled before deep sleep)")
             return False
         if get_source_enabled(timer_enabled_config, "WIFI") is not False or get_source_enabled(timer_enabled_config, "LAN") is not False:
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (WIFI/LAN changed while enabling TIMER)")
+[I            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (WIFI/LAN changed while enabling TIMER)")
             return False
 
         timer_resp = send_curl_command(PowerManagerApis.set_deep_sleep_timer(15))
@@ -166,7 +166,7 @@ def run_test():
         wlan_state_resp = send_curl_command(PowerManagerApis.get_power_state)
         log_warning(f"Post-WLAN state response: {wlan_state_resp}")
         wlan_state = parse_power_state(wlan_state_resp)
-        if not isinstance(wlan_state, dict) or wlan_state.get("currentState") != "DEEP_SLEEP":
+[O        if not isinstance(wlan_state, dict) or wlan_state.get("currentState") != "DEEP_SLEEP":
             log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (WLAN wake should not exit DEEP_SLEEP)")
             return False
 
@@ -193,7 +193,7 @@ def run_test():
         log_warning(f"Config response: {config_resp}")
         config = parse_wakeup_config(config_resp)
         if not isinstance(config, list):
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (invalid wakeup config after cycle)")
+[I            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (invalid wakeup config after cycle)")
             return False
         if get_source_enabled(config, "WIFI") is not False or get_source_enabled(config, "LAN") is not False:
             log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (WIFI/LAN not disabled after cycle)")

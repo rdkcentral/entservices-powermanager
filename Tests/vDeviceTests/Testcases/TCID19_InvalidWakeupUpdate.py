@@ -65,7 +65,7 @@ def run_test():
         return False
     elif reason != "TIMER":
         log_warning(f"Observed timer-backed wakeup reason alias after invalid update: {reason}")
-[O
+
     send_curl_command(PowerManagerApis.set_power_state("ON", standby_reason="PM-PLUGIN-011-restore"))
 
     elapsed_time = time.perf_counter() - start_time

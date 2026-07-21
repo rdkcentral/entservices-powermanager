@@ -93,7 +93,7 @@ def run_test():
             return False
 
         state = _wait_for_awake_state()
-        if not isinstance(state, dict):
+[O        if not isinstance(state, dict):
             log_error("TCID07_PresenceExternalWake Failed ❌ (device did not report a post-wake power state)")
             return False
 
@@ -108,7 +108,7 @@ def run_test():
         if keycode != 0:
             log_error("TCID07_PresenceExternalWake Failed ❌ (PRESENCE wake should not report a non-zero keycode)")
             return False
-
+[I
         post_config_resp = send_curl_command(PowerManagerApis.get_wakeup_source_config)
         log_warning(f"Post-wake config response: {post_config_resp}")
         post_config = parse_wakeup_config(post_config_resp)

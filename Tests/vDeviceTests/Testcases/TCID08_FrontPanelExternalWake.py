@@ -72,7 +72,7 @@ def run_test():
         tolerated_platform_error = False
         if not is_ok(set_resp):
             error = parse_error(set_resp)
-            if not isinstance(error, dict) or error.get("message") != "ERROR_GENERAL":
+[O            if not isinstance(error, dict) or error.get("message") != "ERROR_GENERAL":
                 log_error("TCID08_FrontPanelExternalWake Failed ❌ (failed to enable FRONT_PANEL wake source)")
                 return False
             tolerated_platform_error = True
@@ -97,7 +97,7 @@ def run_test():
             return False
 
         time.sleep(3)
-        if not _post_deepsleep("DeepSleep_Wakeup_FRONT_PANEL.yaml"):
+[I        if not _post_deepsleep("DeepSleep_Wakeup_FRONT_PANEL.yaml"):
             log_error("TCID08_FrontPanelExternalWake Failed ❌ (failed to post FRONT_PANEL wake simulation)")
             return False
 
