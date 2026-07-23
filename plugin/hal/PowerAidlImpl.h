@@ -47,6 +47,7 @@ public:
         _wakeupSources = {
             {WakeupSrcType::WAKEUP_SRC_IR, true},
             {WakeupSrcType::WAKEUP_SRC_BLUETOOTH, true},
+            {WakeupSrcType::WAKEUP_SRC_RF4CE, true},
             {WakeupSrcType::WAKEUP_SRC_TIMER, true},
         };
 

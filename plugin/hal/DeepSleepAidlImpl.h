@@ -53,6 +53,7 @@ public:
         _wakeupTriggers = {
             com::rdk::hal::deepsleep::WakeUpTrigger::RCU_IR,
             com::rdk::hal::deepsleep::WakeUpTrigger::RCU_BT,
+            com::rdk::hal::deepsleep::WakeUpTrigger::RCU_RF4CE,
             com::rdk::hal::deepsleep::WakeUpTrigger::TIMER
         };
 
