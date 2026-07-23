@@ -215,4 +215,7 @@ echo "==========================================================================
 cd ../../
 cp -r /usr/include/gstreamer-1.0/gst /usr/include/glib-2.0/* /usr/lib/x86_64-linux-gnu/glib-2.0/include/* /usr/local/include/trower-base64/base64.h .
 
+sh "${GITHUB_WORKSPACE}/Tests/generate_aidl_stub_headers.sh" "${GITHUB_WORKSPACE}/entservices-testframework/Tests/headers"
+
 ls -la ${GITHUB_WORKSPACE}
+

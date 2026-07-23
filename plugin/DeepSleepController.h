@@ -22,8 +22,7 @@
 #include <memory>      // for unique_ptr, operator!=
 #include <stdint.h>    // for uint32_t
 #include <string>      // for string
-#include <type_traits> // for is_base_of
-#include <utility>     // for forward, move
+#include <utility>     // for move
 
 #include <core/Proxy.h>               // for ProxyType
 #include <core/Trace.h>               // for ASSERT
@@ -31,7 +30,6 @@
 
 #include "Settings.h"          // for Settings
 #include "hal/DeepSleep.h"     // for IPlatform
-#include "hal/DeepSleepImpl.h" // for DeepSleepImpl
 
 // forward declarations
 namespace WPEFramework {
@@ -112,7 +110,6 @@ class DeepSleepController {
     using WakeupReason   = WPEFramework::Exchange::IPowerManager::WakeupReason;
     using PowerState     = WPEFramework::Exchange::IPowerManager::PowerState;
     using IPlatform      = hal::deepsleep::IPlatform;
-    using DefaultImpl    = DeepSleepImpl;
 
     typedef enum {
         Failed     = -1, /*!< Deepsleep operation failed */
@@ -142,14 +139,7 @@ private:
     }
 
 public:
-    template <typename IMPL = DefaultImpl, typename... Args>
-    static DeepSleepController Create(INotification& parent, Args&&... args)
-    {
-        static_assert(std::is_base_of<IPlatform, IMPL>::value, "Impl must derive from hal::deepsleep::IPlatform");
-        auto impl = std::shared_ptr<IMPL>(new IMPL(std::forward<Args>(args)...));
-        ASSERT(impl != nullptr);
-        return DeepSleepController(parent, std::move(impl));
-    }
+    static DeepSleepController Create(INotification& parent);
 
     uint32_t GetLastWakeupReason(WakeupReason& wakeupReason) const;
 
@@ -163,6 +153,27 @@ public:
 
     // perform maintenance reboot
     void MaintenanceReboot();
+
+    /*
+    * SetWakeupSrc: Enable/Disable the wakeup source
+    *               DeepSleep platform implementation caches the wakeup triggers to be used during
+    *               the next deep sleep entry.
+    *               The wakeup source configuration is not persisted across reboots.
+    * @param wakeSrcType: Wakeup source type to be enabled/disabled
+    * @param enabled: true to enable, false to disable
+    * @return: WPEFramework::Core::ERROR_NONE on success, error code otherwise
+    */
+    uint32_t SetWakeupSrc(WakeupSrcType wakeSrcType, bool enabled);
+
+    /*
+    * CacheBootReason: Cache the boot reason as the value to be returned by GetLastWakeupReason()
+                        till first deepsleep.
+    *                  The boot reason is used to determine the wakeup reason after the device wakes up
+    *                  from deep sleep.
+    * @param bootReason: Boot reason string to be cached
+    * @return: WPEFramework::Core::ERROR_NONE on success, error code otherwise
+    */
+    uint32_t CacheBootReason(const std::string& bootReason);
 
     inline bool IsDeepSleepInProgress() const
     {

@@ -22,8 +22,6 @@
 #include <cstdint>     // for uint32_t
 #include <memory>      // for unique_ptr, default_delete
 #include <string>      // for basic_string, string
-#include <type_traits> // for is_base_of
-#include <utility>     // for forward
 
 #include <core/Portability.h>         // for string, ErrorCodes
 #include <core/Proxy.h>               // for ProxyType
@@ -33,7 +31,7 @@
 #include "DeepSleepController.h" // for DeepSleepController (ptr only)
 #include "RebootController.h"    // for RebootController
 #include "Settings.h"            // for Settings
-#include "hal/PowerImpl.h"       // for IPlatform, PowerImpl
+#include "hal/Power.h"           // for IPlatform
 
 namespace WPEFramework {
 namespace Core {
@@ -47,7 +45,6 @@ class PowerController {
     using WakeupSrcType = WPEFramework::Exchange::IPowerManager::WakeupSrcType;
     using WakeupReason = WPEFramework::Exchange::IPowerManager::WakeupReason;
     using IPlatform = hal::power::IPlatform;
-    using DefaultImpl = PowerImpl;
 
     PowerController(DeepSleepController& deepSleep, std::unique_ptr<IPlatform> platform);
 
@@ -90,13 +87,7 @@ public:
     uint32_t Reboot(const string& requestor, const string& reasonCustom, const string& reasonOther);
     uint32_t SetDeepSleepTimer(const int timeOut);
 
-    template <typename IMPL = DefaultImpl, typename... Args>
-    static PowerController Create(DeepSleepController& deepSleep, Args&&... args)
-    {
-        static_assert(std::is_base_of<IPlatform, IMPL>::value, "Impl must derive from hal::power::IPlatform");
-        IMPL* api = new IMPL(std::forward<Args>(args)...);
-        return PowerController(deepSleep, std::unique_ptr<IPlatform>(api));
-    }
+    static PowerController Create(DeepSleepController& deepSleep);
 
     // Avoid copying this obj
     PowerController(const PowerController&) = delete;            // copy constructor
@@ -112,7 +103,6 @@ private:
     PowerState _lastKnownPowerState;
     Settings _settings;
     DeepSleepWakeupSettings _deepSleepWakeupSettings;
-    WPEFramework::Core::IWorkerPool& _workerPool;
     std::chrono::steady_clock::time_point _wakeupTimestamp;
 
     // keep this last
