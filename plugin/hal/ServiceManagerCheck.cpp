@@ -82,6 +82,9 @@ constexpr uint32_t BR_OK_V7             = 0x7205;
 constexpr uint32_t PING_TRANSACTION     = 0x5F504E47; // '_PNG'
 
 // Macro definitions for internal use
+#ifndef BINDER_VERSION
+#define BINDER_VERSION       _IOWR('b', 9, struct binder_version)
+#endif
 #define BINDER_WRITE_READ_V7 _IOWR('b', 1, struct binder_write_read_v7)
 #define BC_TRANSACTION_V7    _IOW('c', 0, struct binder_transaction_data_v7)
 
