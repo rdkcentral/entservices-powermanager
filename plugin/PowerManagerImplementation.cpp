@@ -372,7 +372,8 @@ namespace Plugin {
         if (currState != newState) {
             char telemetryPwrChange[64];
             snprintf(telemetryPwrChange, sizeof(telemetryPwrChange), "Power Mode Change from %s to %s", util::str(currState), util::str(newState));
-            t2_event_s((char*)"SYST_INFO_POWER_CHANGE_split", telemetryPwrChange);
+            // t2_event_s((char*)"SYST_INFO_POWER_CHANGE_split", telemetryPwrChange);
+            TELEMETRY(SYST_INFO_POWER_CHANGE_split, telemetryPwrChange);
 
             // Check if sync state change required
             isSync = isSyncStateChange(currState, newState);
@@ -383,7 +384,8 @@ namespace Plugin {
 
                     LOGINFO("deepsleep in  progress  ignoring %s request, elapsed: %" PRId64 " sec",
                             util::str(newState), std::chrono::duration_cast<std::chrono::seconds>(_deepSleepController.Elapsed()).count());
-                    t2_event_d((char*)"SYST_ERR_SetPwrStateFail", 1);
+                    // t2_event_d((char*)"SYST_ERR_SetPwrStateFail", 1);
+                    TELEMETRY(SYST_ERR_SetPwrStateFail, 1);
  
 
                     selfLock.Unlock();
@@ -665,7 +667,8 @@ namespace Plugin {
         LOGINFO(">> nwStandbyMode: %s", (standbyMode ? "enabled" : "disabled"));
         char telemetryMsg[64];
         snprintf(telemetryMsg, sizeof(telemetryMsg), "Set Network Standby Mode: %s", (standbyMode ? "enabled" : "disabled"));
-        t2_event_s((char*)"SYS_INFO_STANDBYMODE_split", telemetryMsg);
+        //t2_event_s((char*)"SYS_INFO_STANDBYMODE_split", telemetryMsg);
+        TELEMETRY(SYS_INFO_STANDBYMODE_split, telemetryMsg);
 
         _apiLock.Lock();
 
@@ -972,7 +975,8 @@ namespace Plugin {
         newState = PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP;
 #endif
         LOGINFO(">> User triggered wakeup from DEEP_SLEEP, moving to powerState: %s", util::str(newState));
-        t2_event_d((char*)"SYST_INFO_DS_WakeUp", 1);
+        // t2_event_d((char*)"SYST_INFO_DS_WakeUp", 1);
+        TELEMETRY(SYST_INFO_DS_WakeUp, 1);
         SetPowerState(0, newState, "DeepSleep userwakeup");
         LOGINFO("<<");
     }
@@ -985,7 +989,8 @@ namespace Plugin {
         newState = PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP;
 #endif
         LOGINFO(">> Failed to enter DeepSleep, moving to powerState: %s", util::str(newState));
-        t2_event_d((char*)"SYST_ERR_DSModeFail", 1);
+        // t2_event_d((char*)"SYST_ERR_DSModeFail", 1);
+        TELEMETRY(SYST_ERR_DSModeFail, 1);
         SetPowerState(0, newState, "DeepSleep failed");
         LOGINFO("<<");
     }
