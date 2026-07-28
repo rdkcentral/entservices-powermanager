@@ -1,9 +1,9 @@
 ﻿"""
 /**
- * @file TCID024_ExternallyTriggeredReboot.py
+ * @file TCID30_ExternallyTriggeredReboot.py
  * @brief L3 PowerManager combination testcase.
  *
- * @testcase TCID024_ExternallyTriggeredReboot
+ * @testcase TCID30_ExternallyTriggeredReboot
  * @details Validates network wake preconditions and records the current partial
  *          limitation around missing external wake stimulus in this framework.
  */
@@ -72,7 +72,7 @@ def run_test():
     for yaml_file, expected_reason in REBOOT_REASON_SCENARIOS:
         if not _post_reboot(yaml_file):
             log_error(
-                "TCID024_ExternallyTriggeredReboot Failed ❌ "
+                "TCID30_ExternallyTriggeredReboot Failed ❌ "
                 f"(failed to post reboot simulation via {yaml_file})"
             )
             return False
@@ -85,7 +85,7 @@ def run_test():
 
         if _wait_for_awake_state() is False:
             log_error(
-                "TCID024_ExternallyTriggeredReboot Failed ❌ "
+                "TCID30_ExternallyTriggeredReboot Failed ❌ "
                 f"(device did not report a post-wake power state for {yaml_file})"
             )
             return False
@@ -100,7 +100,7 @@ def run_test():
         reason = _wait_for_boot_reason(expected_reason)
         if reason != expected_reason:
             log_error(
-                "TCID024_ExternallyTriggeredReboot Failed ❌ "
+                "TCID30_ExternallyTriggeredReboot Failed ❌ "
                 f"(last boot reason was not {expected_reason} for {yaml_file}). "
                 f"Returned boot reason: {reason}"
             )
@@ -112,7 +112,7 @@ def run_test():
             wrong_reason = _wait_for_boot_reason(negative_reason, timeout_seconds=5)
             if wrong_reason == negative_reason:
                 log_error(
-                    "TCID024_ExternallyTriggeredReboot Failed ❌ "
+                    "TCID30_ExternallyTriggeredReboot Failed ❌ "
                     f"(negative check failed for {yaml_file}: incorrect boot reason "
                     f"{negative_reason} was reported)"
                 )
@@ -123,7 +123,7 @@ def run_test():
             )
 
     elapsed_time = time.perf_counter() - start_time
-    msg = "TCID024_ExternallyTriggeredReboot Passed ✅"
+    msg = "TCID30_ExternallyTriggeredReboot Passed ✅"
     if os.environ.get("POWERMANAGER_TIMING_ENABLED"):
         log_success(f"{msg} time consumed: {elapsed_time:.3f}s")
     else:

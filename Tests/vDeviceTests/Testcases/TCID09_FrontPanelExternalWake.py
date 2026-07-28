@@ -1,13 +1,12 @@
 ﻿"""
 /**
- * @file TCID01_TimerWakeDisable.py
+ * @file TCID09_FrontPanelExternalWake.py
  * @brief L3 PowerManager combination testcase.
  *
- * @testcase TCID01_TimerWakeDisable
- * @details Disables TIMER in wakeup-source configuration, injects a non-TIMER
- *          DeepSleep wake, and validates that the injected trigger wins over
- *          a 5-second deep-sleep timer by keeping the device in DEEP_SLEEP
- *          beyond the timeout until the external CEC wake is injected.
+ * @testcase TCID09_FrontPanelExternalWake
+ * @details Validates that enabling FRONT_PANEL as a wake source allows a
+ *          simulated FRONT_PANEL DeepSleep wake and reports the correct
+ *          non-key wake metadata.
  */
 """
 
@@ -16,7 +15,7 @@ import time
 
 from utils import POWERMANAGER_CMD_BASE, send_curl_command, send_vcomponent_command, is_ok, log_success, log_error, log_warning
 import PowerManager_Curl as PowerManagerApis
-from PowerManager_CombinationHelpers import build_wakeup_override_entries, get_source_enabled, parse_last_wakeup_keycode, parse_last_wakeup_reason, parse_power_state, parse_wakeup_config, wakeup_map
+from PowerManager_CombinationHelpers import build_explicit_wakeup_entries, parse_last_wakeup_keycode, parse_last_wakeup_reason, parse_power_state, parse_wakeup_config, wakeup_map
 
 
 def _post_deepsleep(yaml_file):
@@ -51,6 +50,14 @@ def _wait_for_wakeup_reason(expected_reason, timeout_seconds=20):
     return last_reason
 
 
+def _build_powerkey_only_entries(config_list):
+    return build_explicit_wakeup_entries(config_list, ["POWERKEY"])
+
+
+def _matches_expected_config(config_list, expected_map):
+    return wakeup_map(config_list) == expected_map
+
+
 def run_test():
     start_time = time.perf_counter()
 
@@ -58,84 +65,68 @@ def run_test():
     log_warning(f"Original config response: {original_resp}")
     original_config = parse_wakeup_config(original_resp)
     if not isinstance(original_config, list):
-        log_error("TCID01_TimerWakeDisable Failed ❌ (unable to read baseline config)")
+        log_error("TCID09_FrontPanelExternalWake Failed ❌ (unable to read baseline config)")
         return False
 
     try:
+        expected_entries = _build_powerkey_only_entries(original_config)
+        expected_config = wakeup_map(expected_entries)
         set_resp = send_curl_command(
             PowerManagerApis.set_wakeup_source_config(
-                build_wakeup_override_entries(original_config, {
-                    "IR": False,
-                    "TIMER": False,
-                    "CEC": True,
-                })
+                expected_entries
             )
         )
         log_warning(f"Set response: {set_resp}")
         if not is_ok(set_resp):
-            log_error("TCID01_TimerWakeDisable Failed ❌ (failed to disable TIMER and enable CEC)")
+            log_error("TCID09_FrontPanelExternalWake Failed ❌ (failed to configure POWERKEY-only wake source state)")
             return False
 
         config_resp = send_curl_command(PowerManagerApis.get_wakeup_source_config)
         log_warning(f"Configured wakeup response: {config_resp}")
         configured = parse_wakeup_config(config_resp)
         if not isinstance(configured, list):
-            log_error("TCID01_TimerWakeDisable Failed ❌ (unable to read configured wakeup state)")
+            log_error("TCID09_FrontPanelExternalWake Failed ❌ (unable to read configured wakeup state)")
             return False
-        if get_source_enabled(configured, "TIMER") is not False:
-            log_error("TCID01_TimerWakeDisable Failed ❌ (TIMER not disabled before deep sleep)")
-            return False
-        if get_source_enabled(configured, "CEC") is not True:
-            log_error("TCID01_TimerWakeDisable Failed ❌ (CEC not enabled before deep sleep)")
+        if not _matches_expected_config(configured, expected_config):
+            log_error("TCID09_FrontPanelExternalWake Failed ❌ (configured wakeup state was not POWERKEY=true with all other sources false)")
             return False
 
-        timer_resp = send_curl_command(PowerManagerApis.set_deep_sleep_timer(5))
-        log_warning(f"Timer response: {timer_resp}")
-        if not is_ok(timer_resp):
-            log_error("TCID01_TimerWakeDisable Failed ❌ (failed to set 5-second deep-sleep timer)")
-            return False
-
-        deep_resp = send_curl_command(PowerManagerApis.set_power_state("DEEP_SLEEP", standby_reason="PM-PLUGIN-021", timeout=10))
+        deep_resp = send_curl_command(PowerManagerApis.set_power_state("DEEP_SLEEP", standby_reason="PM-PLUGIN-033", timeout=10))
         log_warning(f"Deep sleep response: {deep_resp}")
         if not is_ok(deep_resp):
-            log_error("TCID01_TimerWakeDisable Failed ❌ (failed to enter DEEP_SLEEP)")
+            log_error("TCID09_FrontPanelExternalWake Failed ❌ (failed to enter DEEP_SLEEP)")
             return False
 
-        log_warning("Waiting 7 seconds before external wake injection so the delayed CEC wake occurs after the configured 5-second timer window.")
-        time.sleep(7)
-
-        if not _post_deepsleep("DeepSleep_Wakeup_CEC.yaml"):
-            log_error("TCID01_TimerWakeDisable Failed ❌ (failed to post CEC wake simulation)")
+        time.sleep(3)
+        if not _post_deepsleep("DeepSleep_Wakeup_FRONT_PANEL.yaml"):
+            log_error("TCID09_FrontPanelExternalWake Failed ❌ (failed to post FRONT_PANEL wake simulation)")
             return False
 
         state = _wait_for_awake_state()
         if not isinstance(state, dict):
-            log_error("TCID01_TimerWakeDisable Failed ❌ (device did not report a post-wake power state)")
+            log_error("TCID09_FrontPanelExternalWake Failed ❌ (device did not report a post-wake power state)")
             return False
 
-        reason = _wait_for_wakeup_reason("CEC")
-        if reason != "CEC":
-            log_error("TCID01_TimerWakeDisable Failed ❌ (last wakeup reason was not CEC after TIMER disable)")
+        reason = _wait_for_wakeup_reason("FRONTPANEL")
+        if reason != "FRONTPANEL":
+            log_error("TCID09_FrontPanelExternalWake Failed ❌ (last wakeup reason was not FRONTPANEL)")
             return False
 
         keycode_resp = send_curl_command(PowerManagerApis.get_last_wakeup_keycode)
         log_warning(f"Wakeup keycode response: {keycode_resp}")
         keycode = parse_last_wakeup_keycode(keycode_resp)
         if keycode != 0:
-            log_error("TCID01_TimerWakeDisable Failed ❌ (CEC wake should not report a non-zero keycode)")
+            log_error("TCID09_FrontPanelExternalWake Failed ❌ (FRONT_PANEL wake should not report a non-zero keycode)")
             return False
 
         post_config_resp = send_curl_command(PowerManagerApis.get_wakeup_source_config)
         log_warning(f"Post-wake config response: {post_config_resp}")
         post_config = parse_wakeup_config(post_config_resp)
         if not isinstance(post_config, list):
-            log_error("TCID01_TimerWakeDisable Failed ❌ (invalid wakeup config after wake)")
+            log_error("TCID09_FrontPanelExternalWake Failed ❌ (invalid wakeup config after FRONT_PANEL wake)")
             return False
-        if get_source_enabled(post_config, "TIMER") is not False:
-            log_error("TCID01_TimerWakeDisable Failed ❌ (TIMER did not remain disabled after wake)")
-            return False
-        if get_source_enabled(post_config, "CEC") is not True:
-            log_error("TCID01_TimerWakeDisable Failed ❌ (CEC did not remain enabled after wake)")
+        if not _matches_expected_config(post_config, expected_config):
+            log_error("TCID09_FrontPanelExternalWake Failed ❌ (post-wake config was not POWERKEY=true with all other sources false)")
             return False
     finally:
         restore_entries = [
@@ -143,10 +134,10 @@ def run_test():
             for source, enabled in wakeup_map(original_config).items()
         ]
         send_curl_command(PowerManagerApis.set_wakeup_source_config(restore_entries))
-        send_curl_command(PowerManagerApis.set_power_state("ON", standby_reason="PM-PLUGIN-021-restore"))
+        send_curl_command(PowerManagerApis.set_power_state("ON", standby_reason="PM-PLUGIN-033-restore"))
 
     elapsed_time = time.perf_counter() - start_time
-    msg = "TCID01_TimerWakeDisable Passed ✅"
+    msg = "TCID09_FrontPanelExternalWake Passed ✅"
     if os.environ.get("POWERMANAGER_TIMING_ENABLED"):
         log_success(f"{msg} time consumed: {elapsed_time:.3f}s")
     else:

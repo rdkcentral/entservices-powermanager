@@ -1,9 +1,9 @@
 ﻿"""
 /**
- * @file TCID02_NetworkDeepSleepDisabled.py
+ * @file TCID03_NetworkDeepSleepDisabled.py
  * @brief L3 PowerManager combination testcase.
  *
- * @testcase TCID02_NetworkDeepSleepDisabled
+ * @testcase TCID03_NetworkDeepSleepDisabled
  * @details Validates that when network standby and network wake sources are
  *          disabled, LAN/WLAN external wake stimuli do not exit deep sleep and
  *          the device eventually wakes by TIMER with the disabled configuration
@@ -78,37 +78,36 @@ def run_test():
     log_warning(f"Original mode response: {original_mode_resp}")
     original_mode = parse_network_standby(original_mode_resp)
     if not isinstance(original_mode, bool):
-        log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (unable to read baseline network standby mode)")
+        log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (unable to read baseline network standby mode)")
         return False
 
     original_resp = send_curl_command(PowerManagerApis.get_wakeup_source_config)
     log_warning(f"Original config response: {original_resp}")
     original_config = parse_wakeup_config(original_resp)
     if not isinstance(original_config, list):
-        log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (unable to read baseline config)")
+        log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (unable to read baseline config)")
         return False
 
     try:
         disable_resp = _set_network_standby(False)
         log_warning(f"Disable response: {disable_resp}")
         if not is_ok(disable_resp):
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (failed to disable network standby)")
+            log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (failed to disable network standby)")
             return False
 
         disabled_config_resp = send_curl_command(PowerManagerApis.get_wakeup_source_config)
         log_warning(f"Disabled config response: {disabled_config_resp}")
         disabled_config = parse_wakeup_config(disabled_config_resp)
         if not isinstance(disabled_config, list):
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (invalid disabled config)")
+            log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (invalid disabled config)")
             return False
         if get_source_enabled(disabled_config, "WIFI") is not False or get_source_enabled(disabled_config, "LAN") is not False:
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (WIFI/LAN not disabled before deep sleep)")
+            log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (WIFI/LAN not disabled before deep sleep)")
             return False
 
         timer_enable_resp = send_curl_command(
             PowerManagerApis.set_wakeup_source_config(
                 build_wakeup_override_entries(original_config, {
-                    "IR": False,
                     "WIFI": False,
                     "LAN": False,
                     "TIMER": True,
@@ -117,37 +116,37 @@ def run_test():
         )
         log_warning(f"Timer enable response: {timer_enable_resp}")
         if not is_ok(timer_enable_resp):
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (failed to enable TIMER wake source)")
+            log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (failed to enable TIMER wake source)")
             return False
 
         timer_enabled_config_resp = send_curl_command(PowerManagerApis.get_wakeup_source_config)
         log_warning(f"Timer-enabled config response: {timer_enabled_config_resp}")
         timer_enabled_config = parse_wakeup_config(timer_enabled_config_resp)
         if not isinstance(timer_enabled_config, list):
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (invalid timer-enabled config)")
+            log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (invalid timer-enabled config)")
             return False
         if get_source_enabled(timer_enabled_config, "TIMER") is not True:
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (TIMER not enabled before deep sleep)")
+            log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (TIMER not enabled before deep sleep)")
             return False
         if get_source_enabled(timer_enabled_config, "WIFI") is not False or get_source_enabled(timer_enabled_config, "LAN") is not False:
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (WIFI/LAN changed while enabling TIMER)")
+            log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (WIFI/LAN changed while enabling TIMER)")
             return False
 
         timer_resp = send_curl_command(PowerManagerApis.set_deep_sleep_timer(15))
         log_warning(f"Timer response: {timer_resp}")
         if not is_ok(timer_resp):
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (failed to set deep-sleep timer)")
+            log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (failed to set deep-sleep timer)")
             return False
 
         deep_resp = send_curl_command(PowerManagerApis.set_power_state("DEEP_SLEEP", standby_reason="PM-PLUGIN-026", timeout=10))
         log_warning(f"Deep sleep response: {deep_resp}")
         if not is_ok(deep_resp):
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (deep-sleep request failed)")
+            log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (deep-sleep request failed)")
             return False
 
         time.sleep(3)
         if not _post_deepsleep("DeepSleep_Wakeup_LAN.yaml"):
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (failed to post LAN wake simulation)")
+            log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (failed to post LAN wake simulation)")
             return False
 
         time.sleep(4)
@@ -155,11 +154,11 @@ def run_test():
         log_warning(f"Post-LAN state response: {lan_state_resp}")
         lan_state = parse_power_state(lan_state_resp)
         if not isinstance(lan_state, dict) or lan_state.get("currentState") != "DEEP_SLEEP":
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (LAN wake should not exit DEEP_SLEEP)")
+            log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (LAN wake should not exit DEEP_SLEEP)")
             return False
 
         if not _post_deepsleep("DeepSleep_Wakeup_WLAN.yaml"):
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (failed to post WLAN wake simulation)")
+            log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (failed to post WLAN wake simulation)")
             return False
 
         time.sleep(4)
@@ -167,34 +166,34 @@ def run_test():
         log_warning(f"Post-WLAN state response: {wlan_state_resp}")
         wlan_state = parse_power_state(wlan_state_resp)
         if not isinstance(wlan_state, dict) or wlan_state.get("currentState") != "DEEP_SLEEP":
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (WLAN wake should not exit DEEP_SLEEP)")
+            log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (WLAN wake should not exit DEEP_SLEEP)")
             return False
 
         state = _wait_for_post_wake_state()
         if not _is_expected_post_wake_state(state):
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (unexpected post-wake power state)")
+            log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (unexpected post-wake power state)")
             return False
 
         reason = _wait_for_wakeup_reason("TIMER")
         if reason != "TIMER":
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (last wakeup reason was not TIMER)")
+            log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (last wakeup reason was not TIMER)")
             return False
 
         mode_resp = send_curl_command(PowerManagerApis.get_network_standby_mode)
         log_warning(f"Mode response: {mode_resp}")
         mode = parse_network_standby(mode_resp)
         if mode is not False:
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (network standby not disabled after cycle)")
+            log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (network standby not disabled after cycle)")
             return False
 
         config_resp = send_curl_command(PowerManagerApis.get_wakeup_source_config)
         log_warning(f"Config response: {config_resp}")
         config = parse_wakeup_config(config_resp)
         if not isinstance(config, list):
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (invalid wakeup config after cycle)")
+            log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (invalid wakeup config after cycle)")
             return False
         if get_source_enabled(config, "WIFI") is not False or get_source_enabled(config, "LAN") is not False:
-            log_error("TCID02_NetworkDeepSleepDisabled Failed ❌ (WIFI/LAN not disabled after cycle)")
+            log_error("TCID03_NetworkDeepSleepDisabled Failed ❌ (WIFI/LAN not disabled after cycle)")
             return False
     finally:
         restore_entries = [
@@ -206,10 +205,11 @@ def run_test():
         send_curl_command(PowerManagerApis.set_power_state("ON", standby_reason="PM-PLUGIN-026-restore"))
 
     elapsed_time = time.perf_counter() - start_time
-    msg = "TCID02_NetworkDeepSleepDisabled Passed ✅"
+    msg = "TCID03_NetworkDeepSleepDisabled Passed ✅"
     if os.environ.get("POWERMANAGER_TIMING_ENABLED"):
         log_success(f"{msg} time consumed: {elapsed_time:.3f}s")
     else:
         log_success(msg)
     return True
+
 

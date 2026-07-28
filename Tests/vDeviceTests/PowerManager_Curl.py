@@ -158,6 +158,16 @@ def remove_power_mode_prechange_client(client_id):
     )
 
 
+def power_mode_prechange_complete(client_id, transaction_id):
+    return _curl(
+        "powerModePreChangeComplete",
+        params={
+            "clientId": client_id,
+            "transactionId": transaction_id,
+        },
+    )
+
+
 def set_wakeup_source_config(wakeup_sources):
     """wakeup_sources: list of {"wakeupSource": <int>, "enabled": <bool>} entries."""
     return _curl(

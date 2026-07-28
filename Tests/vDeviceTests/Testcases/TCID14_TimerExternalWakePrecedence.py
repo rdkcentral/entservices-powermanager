@@ -1,9 +1,9 @@
 """
 /**
- * @file TCID13_TimerExternalWakePrecedence.py
+ * @file TCID14_TimerExternalWakePrecedence.py
  * @brief L3 PowerManager combination testcase.
  *
- * @testcase TCID13_TimerExternalWakePrecedence
+ * @testcase TCID14_TimerExternalWakePrecedence
  * @details Validates timer-vs-external precedence across the supported
  *          non-network wake families. Most subflows prove that an early
  *          external trigger wins over a long timer, while selected subflows
@@ -240,7 +240,7 @@ def run_test():
     log_warning(f"Original config response: {original_resp}")
     original_config = parse_wakeup_config(original_resp)
     if not isinstance(original_config, list):
-        log_error("TCID13_TimerExternalWakePrecedence Failed ❌ (unable to read baseline config)")
+        log_error("TCID14_TimerExternalWakePrecedence Failed ❌ (unable to read baseline config)")
         return False
 
     failures = []
@@ -254,11 +254,11 @@ def run_test():
         _restore_baseline(original_config, "PM-PLUGIN-011-final-restore")
 
     if failures:
-        log_error(f"TCID13_TimerExternalWakePrecedence Failed ❌ ({'; '.join(failures)})")
+        log_error(f"TCID14_TimerExternalWakePrecedence Failed ❌ ({'; '.join(failures)})")
         return False
 
     elapsed_time = time.perf_counter() - start_time
-    msg = "TCID13_TimerExternalWakePrecedence Passed ✅"
+    msg = "TCID14_TimerExternalWakePrecedence Passed ✅"
     if os.environ.get("POWERMANAGER_TIMING_ENABLED"):
         log_success(f"{msg} time consumed: {elapsed_time:.3f}s")
     else:

@@ -1,9 +1,9 @@
 ﻿"""
 /**
- * @file TCID07_PresenceExternalWake.py
+ * @file TCID08_PresenceExternalWake.py
  * @brief L3 PowerManager combination testcase.
  *
- * @testcase TCID07_PresenceExternalWake
+ * @testcase TCID08_PresenceExternalWake
  * @details Validates that enabling PRESENCE as a wake source allows a simulated
  *          PRESENCE DeepSleep wake and reports the correct non-key wake metadata.
  */
@@ -56,7 +56,7 @@ def run_test():
     log_warning(f"Original config response: {original_resp}")
     original_config = parse_wakeup_config(original_resp)
     if not isinstance(original_config, list):
-        log_error("TCID07_PresenceExternalWake Failed ❌ (unable to read baseline config)")
+        log_error("TCID08_PresenceExternalWake Failed ❌ (unable to read baseline config)")
         return False
 
     try:
@@ -69,54 +69,54 @@ def run_test():
         )
         log_warning(f"Set response: {set_resp}")
         if not is_ok(set_resp):
-            log_error("TCID07_PresenceExternalWake Failed ❌ (failed to enable PRESENCE wake source)")
+            log_error("TCID08_PresenceExternalWake Failed ❌ (failed to enable PRESENCE wake source)")
             return False
 
         config_resp = send_curl_command(PowerManagerApis.get_wakeup_source_config)
         log_warning(f"Configured wakeup response: {config_resp}")
         configured = parse_wakeup_config(config_resp)
         if not isinstance(configured, list):
-            log_error("TCID07_PresenceExternalWake Failed ❌ (unable to read configured wakeup state)")
+            log_error("TCID08_PresenceExternalWake Failed ❌ (unable to read configured wakeup state)")
             return False
         if get_source_enabled(configured, "PRESENCEDETECTED") is not True:
-            log_error("TCID07_PresenceExternalWake Failed ❌ (PRESENCE not enabled before deep sleep)")
+            log_error("TCID08_PresenceExternalWake Failed ❌ (PRESENCE not enabled before deep sleep)")
             return False
         deep_resp = send_curl_command(PowerManagerApis.set_power_state("DEEP_SLEEP", standby_reason="PM-PLUGIN-032", timeout=10))
         log_warning(f"Deep sleep response: {deep_resp}")
         if not is_ok(deep_resp):
-            log_error("TCID07_PresenceExternalWake Failed ❌ (failed to enter DEEP_SLEEP)")
+            log_error("TCID08_PresenceExternalWake Failed ❌ (failed to enter DEEP_SLEEP)")
             return False
 
         time.sleep(3)
         if not _post_deepsleep("DeepSleep_Wakeup_PRESENCE.yaml"):
-            log_error("TCID07_PresenceExternalWake Failed ❌ (failed to post PRESENCE wake simulation)")
+            log_error("TCID08_PresenceExternalWake Failed ❌ (failed to post PRESENCE wake simulation)")
             return False
 
         state = _wait_for_awake_state()
         if not isinstance(state, dict):
-            log_error("TCID07_PresenceExternalWake Failed ❌ (device did not report a post-wake power state)")
+            log_error("TCID08_PresenceExternalWake Failed ❌ (device did not report a post-wake power state)")
             return False
 
         reason = _wait_for_wakeup_reason("PRESENCE")
         if reason != "PRESENCE":
-            log_error("TCID07_PresenceExternalWake Failed ❌ (last wakeup reason was not PRESENCE)")
+            log_error("TCID08_PresenceExternalWake Failed ❌ (last wakeup reason was not PRESENCE)")
             return False
 
         keycode_resp = send_curl_command(PowerManagerApis.get_last_wakeup_keycode)
         log_warning(f"Wakeup keycode response: {keycode_resp}")
         keycode = parse_last_wakeup_keycode(keycode_resp)
         if keycode != 0:
-            log_error("TCID07_PresenceExternalWake Failed ❌ (PRESENCE wake should not report a non-zero keycode)")
+            log_error("TCID08_PresenceExternalWake Failed ❌ (PRESENCE wake should not report a non-zero keycode)")
             return False
 
         post_config_resp = send_curl_command(PowerManagerApis.get_wakeup_source_config)
         log_warning(f"Post-wake config response: {post_config_resp}")
         post_config = parse_wakeup_config(post_config_resp)
         if not isinstance(post_config, list):
-            log_error("TCID07_PresenceExternalWake Failed ❌ (invalid wakeup config after PRESENCE wake)")
+            log_error("TCID08_PresenceExternalWake Failed ❌ (invalid wakeup config after PRESENCE wake)")
             return False
         if get_source_enabled(post_config, "PRESENCEDETECTED") is not True:
-            log_error("TCID07_PresenceExternalWake Failed ❌ (PRESENCE not enabled after wake)")
+            log_error("TCID08_PresenceExternalWake Failed ❌ (PRESENCE not enabled after wake)")
             return False
     finally:
         restore_entries = [
@@ -127,7 +127,7 @@ def run_test():
         send_curl_command(PowerManagerApis.set_power_state("ON", standby_reason="PM-PLUGIN-032-restore"))
 
     elapsed_time = time.perf_counter() - start_time
-    msg = "TCID07_PresenceExternalWake Passed ✅"
+    msg = "TCID08_PresenceExternalWake Passed ✅"
     if os.environ.get("POWERMANAGER_TIMING_ENABLED"):
         log_success(f"{msg} time consumed: {elapsed_time:.3f}s")
     else:
