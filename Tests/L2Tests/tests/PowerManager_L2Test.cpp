@@ -73,6 +73,9 @@ class PwrMgr_Notification : public Exchange::IPowerManager::IRebootNotification,
         /** @brief Event signalled flag */
         uint32_t m_event_signalled;
 
+        /** @brief Transaction ID from OnPowerModePreChange */
+        int m_transactionId;
+
         BEGIN_INTERFACE_MAP(PwrMgr_Notification)
         INTERFACE_ENTRY(Exchange::IPowerManager::IRebootNotification)
         INTERFACE_ENTRY(Exchange::IPowerManager::IModePreChangeNotification)
@@ -83,7 +86,7 @@ class PwrMgr_Notification : public Exchange::IPowerManager::IRebootNotification,
         END_INTERFACE_MAP
 
     public:
-        PwrMgr_Notification(){}
+        PwrMgr_Notification() : m_transactionId(0) {}
         ~PwrMgr_Notification(){}
 
        template <typename T>
@@ -109,11 +112,17 @@ class PwrMgr_Notification : public Exchange::IPowerManager::IRebootNotification,
             TEST_LOG("OnPowerModePreChange event triggered ***\n");
             std::unique_lock<std::mutex> lock(m_mutex);
 
-            TEST_LOG("OnPowerModePreChange currentState: %u, newState: %u\n", currentState, newState);
+            TEST_LOG("OnPowerModePreChange currentState: %u, newState: %u, transactionId: %d\n", currentState, newState, trxnId);
+            m_transactionId = trxnId;
 
             /* Notify the requester thread. */
             m_event_signalled |= POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE;
             m_condition_variable.notify_one();
+        }
+
+        int GetTransactionId() const
+        {
+            return m_transactionId;
         }
 
         void OnDeepSleepTimeout(const int wakeupTimeout) override
@@ -1633,6 +1642,348 @@ TEST_F(PowerManager_L2Test, GetTimeSinceWakeup_MultipleQueries)
                 // Verify that the third query shows even more elapsed time
                 EXPECT_GT(timeSinceWakeup3.secondsSinceWakeup, timeSinceWakeup2.secondsSinceWakeup);
 
+                PowerManagerPlugin->Release();
+            }
+            else
+            {
+                TEST_LOG("PowerManagerPlugin is NULL");
+            }
+            mController_PowerManager->Release();
+        }
+        else
+        {
+            TEST_LOG("mController_PowerManager is NULL");
+        }
+    }
+}
+
+/******************************************************
+** Test: DelayRecalculation_LongestDelayAcksFirst_L2
+** Description: Verify timeout recalculation when client with longest delay ACKs first
+** Scenario:
+** 1. Register 3 clients for pre-change notifications
+** 2. Transition to DEEP_SLEEP
+** 3. Client1 requests 5s delay, Client2 requests 2s, Client3 requests 1s
+** 4. Client1 (5s) ACKs first after 500ms
+** 5. Verify timeout reduces from 5s to 2s (Client2's delay)
+** Expected: Total duration < 3s (not 5s)
+*******************************************************/
+TEST_F(PowerManager_L2Test, DelayRecalculation_LongestDelayAcksFirst_L2)
+{
+    Core::ProxyType<RPC::InvokeServerType<1, 0, 4>> mEngine_PowerManager;
+    Core::ProxyType<RPC::CommunicatorClient> mClient_PowerManager;
+    PluginHost::IShell *mController_PowerManager;
+    uint32_t signalled = POWERMANAGERL2TEST_STATE_INVALID;
+
+    TEST_LOG("Creating mEngine_PowerManager");
+    mEngine_PowerManager = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
+    mClient_PowerManager = Core::ProxyType<RPC::CommunicatorClient>::Create(Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(mEngine_PowerManager));
+
+    TEST_LOG("Creating mEngine_PowerManager Announcements");
+#if ((THUNDER_VERSION == 2) || ((THUNDER_VERSION == 4) && (THUNDER_VERSION_MINOR == 2)))
+    mEngine_PowerManager->Announcements(mClient_PowerManager->Announcement());
+#endif
+
+    if (!mClient_PowerManager.IsValid())
+    {
+        TEST_LOG("Invalid mClient_PowerManager");
+    }
+    else
+    {
+        mController_PowerManager = mClient_PowerManager->Open<PluginHost::IShell>(_T("org.rdk.PowerManager"), ~0, 3000);
+        if (mController_PowerManager)
+        {
+            auto PowerManagerPlugin = mController_PowerManager->QueryInterface<Exchange::IPowerManager>();
+
+            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
+            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
+
+            if (PowerManagerPlugin)
+            {
+                uint32_t clientId1 = 0, clientId2 = 0, clientId3 = 0;
+                uint32_t status = PowerManagerPlugin->AddPowerModePreChangeClient("l2-client1", clientId1);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                status = PowerManagerPlugin->AddPowerModePreChangeClient("l2-client2", clientId2);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                status = PowerManagerPlugin->AddPowerModePreChangeClient("l2-client3", clientId3);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
+                    .WillOnce(::testing::Invoke(
+                        [](PWRMgr_PowerState_t powerState) {
+                            EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                            return PWRMGR_SUCCESS;
+                        }));
+
+                auto startTime = std::chrono::steady_clock::now();
+
+                status = PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-test");
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT, POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+
+                int transactionId = mNotification.GetTransactionId();
+                TEST_LOG("Received transactionId: %d", transactionId);
+
+                // Set delays
+                status = PowerManagerPlugin->DelayPowerModeChangeBy(clientId1, transactionId, 5);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                status = PowerManagerPlugin->DelayPowerModeChangeBy(clientId2, transactionId, 2);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                status = PowerManagerPlugin->DelayPowerModeChangeBy(clientId3, transactionId, 1);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                // Client1 (5s) ACKs after 500ms
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                status = PowerManagerPlugin->PowerModePreChangeComplete(clientId1, transactionId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                // Client2 (2s) ACKs after another 500ms
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                status = PowerManagerPlugin->PowerModePreChangeComplete(clientId2, transactionId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                // Client3 (1s) ACKs after another 500ms
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                status = PowerManagerPlugin->PowerModePreChangeComplete(clientId3, transactionId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+
+                auto endTime = std::chrono::steady_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+                TEST_LOG("Total duration: %ld ms", duration);
+                EXPECT_LT(duration, 3000);  // Less than 3 seconds
+                EXPECT_GT(duration, 1500);  // More than 1.5 seconds
+
+                PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+                PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+                status = PowerManagerPlugin->GetPowerState(currentState, prevState);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+                PowerManagerPlugin->RemovePowerModePreChangeClient(clientId1);
+                PowerManagerPlugin->RemovePowerModePreChangeClient(clientId2);
+                PowerManagerPlugin->RemovePowerModePreChangeClient(clientId3);
+                PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
+                PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
+                PowerManagerPlugin->Release();
+            }
+            else
+            {
+                TEST_LOG("PowerManagerPlugin is NULL");
+            }
+            mController_PowerManager->Release();
+        }
+        else
+        {
+            TEST_LOG("mController_PowerManager is NULL");
+        }
+    }
+}
+
+/******************************************************
+** Test: DelayRecalculation_AllClientsAckImmediately_L2
+** Description: Verify immediate completion when all clients ACK despite long delays
+** Scenario:
+** 1. Register 2 clients
+** 2. Both request long delays (10s, 8s)
+** 3. Both ACK immediately
+** Expected: Completes in <1s (not 10s)
+*******************************************************/
+TEST_F(PowerManager_L2Test, DelayRecalculation_AllClientsAckImmediately_L2)
+{
+    Core::ProxyType<RPC::InvokeServerType<1, 0, 4>> mEngine_PowerManager;
+    Core::ProxyType<RPC::CommunicatorClient> mClient_PowerManager;
+    PluginHost::IShell *mController_PowerManager;
+    uint32_t signalled = POWERMANAGERL2TEST_STATE_INVALID;
+
+    TEST_LOG("Creating mEngine_PowerManager");
+    mEngine_PowerManager = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
+    mClient_PowerManager = Core::ProxyType<RPC::CommunicatorClient>::Create(Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(mEngine_PowerManager));
+
+#if ((THUNDER_VERSION == 2) || ((THUNDER_VERSION == 4) && (THUNDER_VERSION_MINOR == 2)))
+    mEngine_PowerManager->Announcements(mClient_PowerManager->Announcement());
+#endif
+
+    if (!mClient_PowerManager.IsValid())
+    {
+        TEST_LOG("Invalid mClient_PowerManager");
+    }
+    else
+    {
+        mController_PowerManager = mClient_PowerManager->Open<PluginHost::IShell>(_T("org.rdk.PowerManager"), ~0, 3000);
+        if (mController_PowerManager)
+        {
+            auto PowerManagerPlugin = mController_PowerManager->QueryInterface<Exchange::IPowerManager>();
+
+            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
+            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
+
+            if (PowerManagerPlugin)
+            {
+                uint32_t clientId1 = 0, clientId2 = 0;
+                PowerManagerPlugin->AddPowerModePreChangeClient("l2-client1", clientId1);
+                PowerManagerPlugin->AddPowerModePreChangeClient("l2-client2", clientId2);
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
+                    .WillOnce(::testing::Invoke(
+                        [](PWRMgr_PowerState_t powerState) {
+                            EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                            return PWRMGR_SUCCESS;
+                        }));
+
+                auto startTime = std::chrono::steady_clock::now();
+
+                PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-test");
+
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT, POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+
+                int transactionId = mNotification.GetTransactionId();
+
+                // Both clients request long delays
+                PowerManagerPlugin->DelayPowerModeChangeBy(clientId1, transactionId, 10);
+                PowerManagerPlugin->DelayPowerModeChangeBy(clientId2, transactionId, 8);
+
+                // But both ACK immediately
+                PowerManagerPlugin->PowerModePreChangeComplete(clientId1, transactionId);
+                PowerManagerPlugin->PowerModePreChangeComplete(clientId2, transactionId);
+
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+
+                auto endTime = std::chrono::steady_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+                TEST_LOG("Total duration: %ld ms", duration);
+                EXPECT_LT(duration, 1000);  // Less than 1 second
+
+                PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+                PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+                PowerManagerPlugin->GetPowerState(currentState, prevState);
+                EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+                PowerManagerPlugin->RemovePowerModePreChangeClient(clientId1);
+                PowerManagerPlugin->RemovePowerModePreChangeClient(clientId2);
+                PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
+                PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
+                PowerManagerPlugin->Release();
+            }
+            else
+            {
+                TEST_LOG("PowerManagerPlugin is NULL");
+            }
+            mController_PowerManager->Release();
+        }
+        else
+        {
+            TEST_LOG("mController_PowerManager is NULL");
+        }
+    }
+}
+
+/******************************************************
+** Test: DelayRecalculation_FourClientsTimeout_L2
+** Description: Verify timeout recalculation with multiple clients, some timeout
+** Scenario:
+** 1. Register 4 clients
+** 2. Set delays: 3s, 2s, 1s, default
+** 3. Client1 and Client2 ACK, Client3 and Client4 timeout
+** Expected: Timeout at ~2s (not 3s)
+*******************************************************/
+TEST_F(PowerManager_L2Test, DelayRecalculation_FourClientsTimeout_L2)
+{
+    Core::ProxyType<RPC::InvokeServerType<1, 0, 4>> mEngine_PowerManager;
+    Core::ProxyType<RPC::CommunicatorClient> mClient_PowerManager;
+    PluginHost::IShell *mController_PowerManager;
+    uint32_t signalled = POWERMANAGERL2TEST_STATE_INVALID;
+
+    TEST_LOG("Creating mEngine_PowerManager");
+    mEngine_PowerManager = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
+    mClient_PowerManager = Core::ProxyType<RPC::CommunicatorClient>::Create(Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(mEngine_PowerManager));
+
+#if ((THUNDER_VERSION == 2) || ((THUNDER_VERSION == 4) && (THUNDER_VERSION_MINOR == 2)))
+    mEngine_PowerManager->Announcements(mClient_PowerManager->Announcement());
+#endif
+
+    if (!mClient_PowerManager.IsValid())
+    {
+        TEST_LOG("Invalid mClient_PowerManager");
+    }
+    else
+    {
+        mController_PowerManager = mClient_PowerManager->Open<PluginHost::IShell>(_T("org.rdk.PowerManager"), ~0, 3000);
+        if (mController_PowerManager)
+        {
+            auto PowerManagerPlugin = mController_PowerManager->QueryInterface<Exchange::IPowerManager>();
+
+            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
+            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
+
+            if (PowerManagerPlugin)
+            {
+                uint32_t clientId1 = 0, clientId2 = 0, clientId3 = 0, clientId4 = 0;
+                PowerManagerPlugin->AddPowerModePreChangeClient("l2-client1", clientId1);
+                PowerManagerPlugin->AddPowerModePreChangeClient("l2-client2", clientId2);
+                PowerManagerPlugin->AddPowerModePreChangeClient("l2-client3", clientId3);
+                PowerManagerPlugin->AddPowerModePreChangeClient("l2-client4", clientId4);
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
+                    .WillOnce(::testing::Invoke(
+                        [](PWRMgr_PowerState_t powerState) {
+                            EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                            return PWRMGR_SUCCESS;
+                        }));
+
+                auto startTime = std::chrono::steady_clock::now();
+
+                PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-test");
+
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT, POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+
+                int transactionId = mNotification.GetTransactionId();
+
+                // Set delays
+                PowerManagerPlugin->DelayPowerModeChangeBy(clientId1, transactionId, 3);
+                PowerManagerPlugin->DelayPowerModeChangeBy(clientId2, transactionId, 2);
+                PowerManagerPlugin->DelayPowerModeChangeBy(clientId3, transactionId, 1);
+                // Client4 doesn't set delay
+
+                // Client1 ACKs after 500ms
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                PowerManagerPlugin->PowerModePreChangeComplete(clientId1, transactionId);
+
+                // Client2 ACKs after another 500ms
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                PowerManagerPlugin->PowerModePreChangeComplete(clientId2, transactionId);
+
+                // Client3 and Client4 never ACK - wait for timeout
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+
+                auto endTime = std::chrono::steady_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+                TEST_LOG("Total duration: %ld ms", duration);
+                EXPECT_LT(duration, 3000);  // Less than 3 seconds
+                EXPECT_GT(duration, 1500);  // More than 1.5 seconds
+
+                PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+                PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+                PowerManagerPlugin->GetPowerState(currentState, prevState);
+                EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+                PowerManagerPlugin->RemovePowerModePreChangeClient(clientId1);
+                PowerManagerPlugin->RemovePowerModePreChangeClient(clientId2);
+                PowerManagerPlugin->RemovePowerModePreChangeClient(clientId3);
+                PowerManagerPlugin->RemovePowerModePreChangeClient(clientId4);
+                PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
+                PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
                 PowerManagerPlugin->Release();
             }
             else

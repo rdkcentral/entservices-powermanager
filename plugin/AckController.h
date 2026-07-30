@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <memory>
 #include <unordered_set>
+#include <unordered_map>
 
 #include <core/Portability.h>
 #include <core/Timer.h>
@@ -53,6 +54,7 @@ public:
     AckController(PowerState powerState)
         : _workerPool(WPEFramework::Core::WorkerPool::Instance())
         , _powerState(powerState)
+        , _defaultTimeoutMs(0)
         , _transactionId(++_nextTransactionId)
         , _timeout(WPEFramework::Core::Time::Now())
         , _handler(nullptr)
@@ -121,10 +123,14 @@ public:
             }
 
             _pending.erase(clientId);
+            _clientDelays.erase(clientId);  // Remove client's delay
 
             if (_pending.empty() && _running) {
                 _running = false;
                 runHandler(false);
+            } else if (_running) {
+                // Recalculate timeout based on remaining clients' delays
+                recalculateTimeout();
             }
         } while (false);
 
@@ -188,7 +194,6 @@ public:
      */
     void Schedule(const uint64_t offsetInMilliseconds, std::function<void(bool, bool)> handler)
     {
-        ASSERT(false == _running);
         ASSERT(nullptr == _handler);
 
         LOGINFO("time offset: %" PRIu64 "ms, pending: %d", offsetInMilliseconds, int(_pending.size()));
@@ -200,6 +205,7 @@ public:
             std::weak_ptr<AckController> wPtr = shared_from_this();
             _running                          = true;
             _handler                          = std::move(handler);
+            _defaultTimeoutMs                 = offsetInMilliseconds;
 
             // If timeout is already set (via Reschedule), use max of offset or timeout
             auto newTimeout = WPEFramework::Core::Time::Now().Add(offsetInMilliseconds);
@@ -266,10 +272,14 @@ public:
                 break;
             }
 
+            // Store the client's requested delay
+            _clientDelays[clientId] = offsetInMilliseconds;
+
             // set new timeout only if it's greater than previous timeout, else fail silently
             if (newTimeout > _timeout) {
                 _timeout = newTimeout;
                 _workerPool.Reschedule(newTimeout, _timerJob);
+                LOGINFO("Rescheduled to new timeout %" PRIu64 " ms from now", offsetInMilliseconds);
             } else {
                 LOGWARN("Skipping new timeout %" PRIu64 " is less than previous timeout %" PRIu64,
                     newTimeout.Ticks(), _timeout.Ticks());
@@ -283,6 +293,33 @@ public:
     }
 
 private:
+    /**
+     * @brief Recalculates the timeout based on remaining clients' delays.
+     *        Uses the maximum delay among remaining clients, or default timeout if no delays set.
+     */
+    void recalculateTimeout()
+    {
+        uint64_t maxDelayMs = _defaultTimeoutMs;
+
+        // Find the maximum delay among remaining pending clients
+        for (const auto& clientId : _pending) {
+            auto it = _clientDelays.find(clientId);
+            if (it != _clientDelays.end()) {
+                maxDelayMs = std::max(maxDelayMs, it->second);
+            }
+        }
+
+        auto newTimeout = WPEFramework::Core::Time::Now().Add(maxDelayMs);
+
+        // Only reschedule if new timeout is less than current timeout
+        if (newTimeout < _timeout) {
+            _timeout = newTimeout;
+            _workerPool.Reschedule(newTimeout, _timerJob);
+            LOGINFO("Recalculated timeout to %" PRIu64 " ms based on remaining %d clients",
+                maxDelayMs, int(_pending.size()));
+        }
+    }
+
     /**
      * @brief Executes the completion handler.
      * @param isTimedout Indicates whether the handler is triggered due to timeout.
@@ -321,14 +358,16 @@ private:
 private:
     using TimerJob = WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch>;
 
-    WPEFramework::Core::IWorkerPool& _workerPool; // Thunder worker pool
-    PowerState _powerState;                       // target / next powerState to change
-    std::unordered_set<uint32_t> _pending;        // Set of pending acknowledgements.
-    int _transactionId;                           // Unique transaction ID for each AckController instance.
-    WPEFramework::Core::Time _timeout;            // Absolute timeout value for _timerJob (not duration)
-    TimerJob _timerJob;                           // job scheduler to timeout
-    std::function<void(bool, bool)> _handler;     // Completion handler to be called on timeout or all acknowledgements.
-    std::atomic<bool> _running;                   // Flag to synchronize timer timeout callback and Ack* APIs.
+    WPEFramework::Core::IWorkerPool& _workerPool;          // Thunder worker pool
+    PowerState _powerState;                                // target / next powerState to change
+    std::unordered_set<uint32_t> _pending;                 // Set of pending acknowledgements.
+    std::unordered_map<uint32_t, uint64_t> _clientDelays;  // Map of clientId to requested delay in milliseconds
+    uint64_t _defaultTimeoutMs;                            // Default timeout in milliseconds
+    int _transactionId;                                    // Unique transaction ID for each AckController instance.
+    WPEFramework::Core::Time _timeout;                     // Absolute timeout value for _timerJob (not duration)
+    TimerJob _timerJob;                                    // job scheduler to timeout
+    std::function<void(bool, bool)> _handler;              // Completion handler to be called on timeout or all acknowledgements.
+    std::atomic<bool> _running;                            // Flag to synchronize timer timeout callback and Ack* APIs.
 
     static int _nextTransactionId; // static counter for unique transaction ID generation.
 };
