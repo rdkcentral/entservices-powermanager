@@ -782,9 +782,10 @@ TEST_F(TestPowerManager, DelayPowerModeChangeByRestriction)
                 auto status = powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId, 5);
                 EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
 
-                // Acknowledge immediately since delay was rejected
+                // PowerModePreChangeComplete will return ERROR_INVALID_PARAMETER
+                // because client was not added to pending list for non-DEEP_SLEEP
                 status = powerManagerImpl->PowerModePreChangeComplete(clientId, transactionId);
-                EXPECT_EQ(status, Core::ERROR_NONE);
+                EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
 
                 wg.Done();
             }));

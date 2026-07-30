@@ -907,7 +907,7 @@ namespace Plugin {
 
     Core::hresult PowerManagerImplementation::AddPowerModePreChangeClient(const string& clientName, uint32_t& clientId)
     {
-        LOGINFO(">> client: %s, clientId: %u", clientName.c_str(), clientId);
+        LOGINFO(">> client: %s", clientName.c_str());
 
         if (clientName.empty()) {
             LOGERR("AddPowerModePreChangeClient called with empty clientName");
