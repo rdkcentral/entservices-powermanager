@@ -541,7 +541,7 @@ TEST_F(TestPowerManager, PowerModePreChangeAck)
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
-                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -563,7 +563,7 @@ TEST_F(TestPowerManager, PowerModePreChangeAck)
         .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int transactionId, const int stateChangeAfter) {
                 transaction_id = transactionId;
-                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(stateChangeAfter, 1);
                 // Test invalid parameters FIRST before modifying state
                 // Acknowledge - Change Complete with invalid transactionId
@@ -573,7 +573,7 @@ TEST_F(TestPowerManager, PowerModePreChangeAck)
                 status = powerManagerImpl->PowerModePreChangeComplete(clientId + 10, transactionId);
                 EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
 
-                // Now set valid delays
+                // Now set valid delays (DEEP_SLEEP only)
                 // Delay power mode change by 10 seconds
                 status = powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId, 10);
                 EXPECT_EQ(status, Core::ERROR_NONE);
@@ -590,9 +590,9 @@ TEST_F(TestPowerManager, PowerModePreChangeAck)
             }));
 
     // Even though same state is set multiple times only one pre change notification is invoked
-    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "l1-test");
+    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
     EXPECT_EQ(status, Core::ERROR_NONE);
-    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "l1-test");
+    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
     EXPECT_EQ(status, Core::ERROR_NONE);
 
     wg.Wait();
@@ -605,7 +605,7 @@ TEST_F(TestPowerManager, PowerModePreChangeAck)
 
     status = powerManagerImpl->GetPowerState(currentState, prevState);
     EXPECT_EQ(status, Core::ERROR_NONE);
-    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
     EXPECT_EQ(prevState, initialPowerState());
 
     status = powerManagerImpl->RemovePowerModePreChangeClient(clientId);
@@ -620,7 +620,7 @@ TEST_F(TestPowerManager, PowerModePreChangeAckTimeout)
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
-                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -700,10 +700,10 @@ TEST_F(TestPowerManager, PowerModePreChangeUnregisterBeforeAck)
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int transactionId, const int stateChangeAfter) {
-                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(stateChangeAfter, 1);
 
-                // Delay power mode change by 1 seconds
+                // Delay power mode change by 1 seconds (DEEP_SLEEP only)
                 auto status = powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId, 1);
                 EXPECT_EQ(status, Core::ERROR_NONE);
 
@@ -717,9 +717,9 @@ TEST_F(TestPowerManager, PowerModePreChangeUnregisterBeforeAck)
             }));
 
     // Even though same state is set multiple times only one pre change notification is invoked
-    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "l1-test");
+    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
     EXPECT_EQ(status, Core::ERROR_NONE);
-    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "l1-test");
+    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
     EXPECT_EQ(status, Core::ERROR_NONE);
 
     wg.Wait();
@@ -728,7 +728,7 @@ TEST_F(TestPowerManager, PowerModePreChangeUnregisterBeforeAck)
     EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
             [&](const PowerState currState, const PowerState newState) {
-                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 wg.Done();
             }));
 
@@ -742,13 +742,70 @@ TEST_F(TestPowerManager, PowerModePreChangeUnregisterBeforeAck)
 
     status = powerManagerImpl->GetPowerState(currentState, prevState);
     EXPECT_EQ(status, Core::ERROR_NONE);
-    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
     EXPECT_EQ(prevState, initialPowerState());
 
     status = powerManagerImpl->Unregister(&(*prechangeEvent));
     EXPECT_EQ(status, Core::ERROR_NONE);
 
     status = powerManagerImpl->Unregister(&(*modeChangedEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+}
+
+TEST_F(TestPowerManager, DelayPowerModeChangeByRestriction)
+{
+    // Test that DelayPowerModeChangeBy only works for DEEP_SLEEP transitions
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId = 0;
+    uint32_t status   = powerManagerImpl->AddPowerModePreChangeClient("l1-test-client", clientId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    status = powerManagerImpl->Register(&(*prechangeEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    WaitGroup wg;
+    wg.Add();
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int transactionId, const int stateChangeAfter) {
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+
+                // DelayPowerModeChangeBy should FAIL for LIGHT_SLEEP transition
+                auto status = powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId, 5);
+                EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+                // Acknowledge immediately since delay was rejected
+                status = powerManagerImpl->PowerModePreChangeComplete(clientId, transactionId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                wg.Done();
+            }));
+
+    // Trigger LIGHT_SLEEP transition
+    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "l1-test");
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    wg.Wait();
+
+    // Verify state changed immediately (not delayed)
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState    = PowerState::POWER_STATE_UNKNOWN;
+    status = powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+
+    status = powerManagerImpl->RemovePowerModePreChangeClient(clientId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    status = powerManagerImpl->Unregister(&(*prechangeEvent));
     EXPECT_EQ(status, Core::ERROR_NONE);
 }
 

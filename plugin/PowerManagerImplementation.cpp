@@ -413,9 +413,15 @@ namespace Plugin {
             _modeChangeController   = std::shared_ptr<PreModeChangeController>(new PreModeChangeController(newState));
             const int transactionId = _modeChangeController->TransactionId(); // transactionId is unique per request
 
-            // Add all clients to ack await list (who we expect `PreChangeComplete` ack from)
-            for (const auto& client : _modeChangeClients) {
-                _modeChangeController->AckAwait(client.first);
+            // Add all clients to ack await list ONLY for DEEP_SLEEP transitions
+            // For other transitions (ON, STANDBY, LIGHT_SLEEP), proceed immediately without waiting for ACKs
+            if (newState == POWER_STATE_STANDBY_DEEP_SLEEP) {
+                for (const auto& client : _modeChangeClients) {
+                    _modeChangeController->AckAwait(client.first);
+                }
+                LOGINFO("Added %zu clients to ack await list for DEEP_SLEEP transition", _modeChangeClients.size());
+            } else {
+                LOGINFO("Skipping ack await list for %s transition - will proceed immediately", util::str(newState));
             }
 
             // For sync state change requests timeout is `0`
@@ -879,7 +885,17 @@ namespace Plugin {
         _apiLock.Lock();
 
         if (_modeChangeController) {
-            errorCode = _modeChangeController->Reschedule(clientId, transactionId, delayPeriod * 1000);
+            PowerState targetState = _modeChangeController->powerState();
+
+            // Only allow delay for DEEP_SLEEP transitions to prevent wakeup delays
+            // For all other transitions (ON, STANDBY, LIGHT_SLEEP), proceed immediately
+            if (targetState == POWER_STATE_STANDBY_DEEP_SLEEP) {
+                errorCode = _modeChangeController->Reschedule(clientId, transactionId, delayPeriod * 1000);
+                LOGINFO("Delay allowed for DEEP_SLEEP transition");
+            } else {
+                errorCode = Core::ERROR_INVALID_PARAMETER;
+                LOGWARN("Delay NOT allowed for %s transition. DelayPowerModeChangeBy is restricted to DEEP_SLEEP only", util::str(targetState));
+            }
         }
 
         _apiLock.Unlock();
