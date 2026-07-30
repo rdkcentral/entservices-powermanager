@@ -9,8 +9,9 @@ The PowerManager plugin is an enterprise-grade power management solution designe
 ### Advanced Power State Management
 - **Multi-State Power Control**: Supports full spectrum of power states including ON, STANDBY, STANDBY_LIGHT_SLEEP, STANDBY_DEEP_SLEEP, and OFF
 - **Intelligent State Transitions**: Smart power state validation with prerequisite checking and rollback capabilities
-- **Client Acknowledgment System**: Pre-change notification mechanism allowing applications to gracefully prepare for power state transitions
-- **Configurable Timeouts**: Adjustable acknowledgment timeouts ensuring system responsiveness while allowing adequate preparation time
+- **Client Acknowledgment System**: Pre-change notification mechanism allowing applications to gracefully prepare for DEEP_SLEEP transitions. For all other power state transitions (ON, STANDBY, LIGHT_SLEEP), the system proceeds immediately without waiting for client acknowledgments to ensure responsive user experience
+- **Optimized Delay Mechanism**: DelayPowerModeChangeBy API is restricted to DEEP_SLEEP transitions only, preventing unnecessary delays during wakeup and normal operation scenarios
+- **Configurable Timeouts**: Adjustable acknowledgment timeouts for DEEP_SLEEP transitions ensuring adequate preparation time while maintaining system responsiveness
 
 ### Comprehensive Thermal Protection
 - **Real-Time Temperature Monitoring**: Continuous thermal monitoring through manufacturer-specific hardware abstraction layer
