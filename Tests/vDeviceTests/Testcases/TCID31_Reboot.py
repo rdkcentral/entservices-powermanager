@@ -1,9 +1,9 @@
 """
 /**
- * @file TCID025_Reboot.py
+ * @file TCID31_Reboot.py
  * @brief L3 PowerManager functional testcase for reboot.
  *
- * @testcase TCID025_Reboot
+ * @testcase TCID31_Reboot
  * @details Invokes the reboot API and verifies the request is accepted by the
  *          framework (returns a JSON-RPC result with no error).
  *
@@ -49,11 +49,11 @@ def run_test():
     log_warning(f"Response: {response}")
 
     if not is_ok(response):
-        log_error("TCID025_Reboot Failed ❌ (call did not succeed)")
+        log_error("TCID31_Reboot Failed ❌ (call did not succeed)")
         return False
 
     elapsed_time = time.perf_counter() - start_time
-    msg = "TCID025_Reboot Passed ✅"
+    msg = "TCID31_Reboot Passed ✅"
     if os.environ.get("POWERMANAGER_TIMING_ENABLED"):
         log_success(f"{msg} time consumed: {elapsed_time:.3f}s")
     else:

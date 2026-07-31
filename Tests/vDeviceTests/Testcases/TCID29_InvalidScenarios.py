@@ -1,9 +1,9 @@
 """
 /**
- * @file TCID15_InvalidScenarios.py
+ * @file TCID29_InvalidScenarios.py
  * @brief L3 PowerManager combination testcase.
  *
- * @testcase TCID15_InvalidScenarios
+ * @testcase TCID29_InvalidScenarios
  * @details Validates the negative-service and invalid-payload scenarios by
  *          combining the rejected wakeup-source payload checks with the
  *          service-inactive behavior observed after plugin deactivation.
@@ -116,16 +116,16 @@ def run_test():
 
     ok, failure = _run_invalid_payload_subflow()
     if not ok:
-        log_error(f"TCID15_InvalidScenarios Failed ❌ ({failure})")
+        log_error(f"TCID29_InvalidScenarios Failed ❌ ({failure})")
         return False
 
     ok, failure = _run_inactive_service_subflow()
     if not ok:
-        log_error(f"TCID15_InvalidScenarios Failed ❌ ({failure})")
+        log_error(f"TCID29_InvalidScenarios Failed ❌ ({failure})")
         return False
 
     elapsed_time = time.perf_counter() - start_time
-    msg = "TCID15_InvalidScenarios Passed ✅"
+    msg = "TCID29_InvalidScenarios Passed ✅"
     if os.environ.get("POWERMANAGER_TIMING_ENABLED"):
         log_success(f"{msg} time consumed: {elapsed_time:.3f}s")
     else:

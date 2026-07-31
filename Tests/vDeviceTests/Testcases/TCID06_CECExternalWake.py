@@ -1,11 +1,11 @@
 ﻿"""
 /**
- * @file TCID06_VoiceExternalWake.py
+ * @file TCID06_CECExternalWake.py
  * @brief L3 PowerManager combination testcase.
  *
- * @testcase TCID06_VoiceExternalWake
- * @details Validates that enabling VOICE as a wake source allows a simulated
- *          VOICE DeepSleep wake and reports the correct non-key wake metadata.
+ * @testcase TCID06_CECExternalWake
+ * @details Validates that enabling CEC as a wake source allows a simulated
+ *          CEC DeepSleep wake and reports the correct non-key wake metadata.
  */
 """
 
@@ -56,67 +56,67 @@ def run_test():
     log_warning(f"Original config response: {original_resp}")
     original_config = parse_wakeup_config(original_resp)
     if not isinstance(original_config, list):
-        log_error("TCID06_VoiceExternalWake Failed ❌ (unable to read baseline config)")
+        log_error("TCID06_CECExternalWake Failed ❌ (unable to read baseline config)")
         return False
 
     try:
         set_resp = send_curl_command(
             PowerManagerApis.set_wakeup_source_config(
                 build_wakeup_override_entries(original_config, {
-                    "VOICE": True,
+                    "CEC": True,
                 })
             )
         )
         log_warning(f"Set response: {set_resp}")
         if not is_ok(set_resp):
-            log_error("TCID06_VoiceExternalWake Failed ❌ (failed to enable VOICE wake source)")
+            log_error("TCID06_CECExternalWake Failed ❌ (failed to enable CEC wake source)")
             return False
 
         config_resp = send_curl_command(PowerManagerApis.get_wakeup_source_config)
         log_warning(f"Configured wakeup response: {config_resp}")
         configured = parse_wakeup_config(config_resp)
         if not isinstance(configured, list):
-            log_error("TCID06_VoiceExternalWake Failed ❌ (unable to read configured wakeup state)")
+            log_error("TCID06_CECExternalWake Failed ❌ (unable to read configured wakeup state)")
             return False
-        if get_source_enabled(configured, "VOICE") is not True:
-            log_error("TCID06_VoiceExternalWake Failed ❌ (VOICE not enabled before deep sleep)")
+        if get_source_enabled(configured, "CEC") is not True:
+            log_error("TCID06_CECExternalWake Failed ❌ (CEC not enabled before deep sleep)")
             return False
-        deep_resp = send_curl_command(PowerManagerApis.set_power_state("DEEP_SLEEP", standby_reason="PM-PLUGIN-031", timeout=10))
+        deep_resp = send_curl_command(PowerManagerApis.set_power_state("DEEP_SLEEP", standby_reason="PM-PLUGIN-030", timeout=10))
         log_warning(f"Deep sleep response: {deep_resp}")
         if not is_ok(deep_resp):
-            log_error("TCID06_VoiceExternalWake Failed ❌ (failed to enter DEEP_SLEEP)")
+            log_error("TCID06_CECExternalWake Failed ❌ (failed to enter DEEP_SLEEP)")
             return False
 
         time.sleep(3)
-        if not _post_deepsleep("DeepSleep_Wakeup_VOICE.yaml"):
-            log_error("TCID06_VoiceExternalWake Failed ❌ (failed to post VOICE wake simulation)")
+        if not _post_deepsleep("DeepSleep_Wakeup_CEC.yaml"):
+            log_error("TCID06_CECExternalWake Failed ❌ (failed to post CEC wake simulation)")
             return False
 
         state = _wait_for_awake_state()
         if not isinstance(state, dict):
-            log_error("TCID06_VoiceExternalWake Failed ❌ (device did not report a post-wake power state)")
+            log_error("TCID06_CECExternalWake Failed ❌ (device did not report a post-wake power state)")
             return False
 
-        reason = _wait_for_wakeup_reason("VOICE")
-        if reason != "VOICE":
-            log_error("TCID06_VoiceExternalWake Failed ❌ (last wakeup reason was not VOICE)")
+        reason = _wait_for_wakeup_reason("CEC")
+        if reason != "CEC":
+            log_error("TCID06_CECExternalWake Failed ❌ (last wakeup reason was not CEC)")
             return False
 
         keycode_resp = send_curl_command(PowerManagerApis.get_last_wakeup_keycode)
         log_warning(f"Wakeup keycode response: {keycode_resp}")
         keycode = parse_last_wakeup_keycode(keycode_resp)
         if keycode != 0:
-            log_error("TCID06_VoiceExternalWake Failed ❌ (VOICE wake should not report a non-zero keycode)")
+            log_error("TCID06_CECExternalWake Failed ❌ (CEC wake should not report a non-zero keycode)")
             return False
 
         post_config_resp = send_curl_command(PowerManagerApis.get_wakeup_source_config)
         log_warning(f"Post-wake config response: {post_config_resp}")
         post_config = parse_wakeup_config(post_config_resp)
         if not isinstance(post_config, list):
-            log_error("TCID06_VoiceExternalWake Failed ❌ (invalid wakeup config after VOICE wake)")
+            log_error("TCID06_CECExternalWake Failed ❌ (invalid wakeup config after CEC wake)")
             return False
-        if get_source_enabled(post_config, "VOICE") is not True:
-            log_error("TCID06_VoiceExternalWake Failed ❌ (VOICE not enabled after wake)")
+        if get_source_enabled(post_config, "CEC") is not True:
+            log_error("TCID06_CECExternalWake Failed ❌ (CEC not enabled after wake)")
             return False
     finally:
         restore_entries = [
@@ -124,10 +124,10 @@ def run_test():
             for source, enabled in wakeup_map(original_config).items()
         ]
         send_curl_command(PowerManagerApis.set_wakeup_source_config(restore_entries))
-        send_curl_command(PowerManagerApis.set_power_state("ON", standby_reason="PM-PLUGIN-031-restore"))
+        send_curl_command(PowerManagerApis.set_power_state("ON", standby_reason="PM-PLUGIN-030-restore"))
 
     elapsed_time = time.perf_counter() - start_time
-    msg = "TCID06_VoiceExternalWake Passed ✅"
+    msg = "TCID06_CECExternalWake Passed ✅"
     if os.environ.get("POWERMANAGER_TIMING_ENABLED"):
         log_success(f"{msg} time consumed: {elapsed_time:.3f}s")
     else:
