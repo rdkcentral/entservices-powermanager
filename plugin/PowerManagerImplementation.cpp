@@ -352,7 +352,7 @@ namespace Plugin {
                                       // If isSync is `true` nested state change requests are blocked using `selfLock`
                                       // until previous state change is complete (i,e nested state change requests will be blocked)
 
-        LOGINFO(">> newState: %s, reason %s", util::str(newState), reason.c_str());
+        LOGINFO("predebug >> newState: %s, reason %s", util::str(newState), reason.c_str());
 
         selfLock.Lock();
 
@@ -367,9 +367,10 @@ namespace Plugin {
             LOGINFO("selfLock Released isSync: na");
             return errorCode;
         }
-
+        LOGINFO("predebug currstate %s, newstate %s", util::str(currState), util::str(newState));
         // Process request only if requested state is not same as current state
         if (currState != newState) {
+            LOGINFO("predebug current state not match with new state");
             char telemetryPwrChange[64];
             snprintf(telemetryPwrChange, sizeof(telemetryPwrChange), "Power Mode Change from %s to %s", util::str(currState), util::str(newState));
             t2_event_s((char*)"SYST_INFO_POWER_CHANGE_split", telemetryPwrChange);
@@ -429,10 +430,11 @@ namespace Plugin {
 
             _apiLock.Unlock();
 
+            LOGINFO("predebug submitPowerModePreChangeEvent in");
             // Dispatch pre power mode change notifications, we cannot take in apiLock here
             // as clients could call any PowerManager plugin APIs
             submitPowerModePreChangeEvent(currState, newState, transactionId, timeOut);
-
+             LOGINFO("predebug submitPowerModePreChangeEvent out timer starts");
             // Starts pre modeChange timer, and waits for Ack from clients for given timeOut duration
             // On all clients acknowledging or upon timeout (whichever happens first), Completion handler gets triggered
             // The thread context in which completion handler is triggered could be
@@ -443,12 +445,12 @@ namespace Plugin {
             //  4. Caller thread of last acknowledging client
             modeChangeController->Schedule(timeOut * 1000,
                 [this, keyCode, currState, newState, reason, isSync](bool isTimedout, bool isAborted) mutable {
-                    LOGINFO(">> CompletionHandler isTimedout: %d, isAborted: %d", isTimedout, isAborted);
+                    LOGINFO("predebug >> CompletionHandler isTimedout: %d, isAborted: %d", isTimedout, isAborted);
 
                     if (!isAborted) {
                         powerModePreChangeCompletionHandler(keyCode, currState, newState, reason);
                     } else {
-                        LOGWARN("modeChangeController was already deleted, do not process CompletionHandler");
+                        LOGWARN("predebug modeChangeController was already deleted, do not process CompletionHandler");
                     }
 
                     // Release the refCount taken just before _modeChangeController->Schedule
@@ -457,15 +459,15 @@ namespace Plugin {
                     // For sync state change requests, the selfLock is held until this point. Release it now.
                     if (isSync) {
                         selfLock.Unlock();
-                        LOGINFO("selfLock Released isSync: true");
+                        LOGINFO("predebug selfLock Released isSync: true");
                     }
 
-                    LOGINFO("<< CompletionHandler");
+                    LOGINFO("<< predebug CompletionHandler");
                 });
         } else {
-            LOGINFO("Requested power state is same as current power state, no action required");
+            LOGINFO("predebug Requested power state is same as current power state, no action required");
         }
-
+       
         // For Async state change requests, release the lock immediately, allowing nested state changes if required
         // Example: DEEP_SLEEP is in transition (mediarite has delayed PowerState by 15 seconds), and user attemps to turn ON the device
         if (!isSync) {
@@ -473,14 +475,14 @@ namespace Plugin {
             LOGINFO("selfLock Released isSync: false");
         }
 
-        LOGINFO("<< keyCode: %d, newState: %s, errorCode: %d", keyCode, util::str(newState), Core::ERROR_NONE);
+        LOGINFO("<< predebug keyCode: %d, newState: %s, errorCode: %d", keyCode, util::str(newState), Core::ERROR_NONE);
 
         return Core::ERROR_NONE;
     }
 
     void PowerManagerImplementation::submitPowerModePreChangeEvent(const PowerState currentState, const PowerState newState, const int transactionId, const int timeOut)
     {
-        LOGINFO(">> currentState : %s, newState : %s, transactionId : %d", util::str(currentState), util::str(newState), transactionId);
+        LOGINFO(">> predebug currentState : %s, newState : %s, transactionId : %d", util::str(currentState), util::str(newState), transactionId);
         for (auto& notification : _preModeChangeNotifications) {
             Core::IWorkerPool::Instance().Submit(
                 PowerManagerImplementation::LambdaJob::Create(this,
@@ -489,7 +491,7 @@ namespace Plugin {
                     }));
         }
 
-        LOGINFO("<< currentState : %s, newState : %s, transactionId : %d", util::str(currentState), util::str(newState), transactionId);
+        LOGINFO("<< predebug currentState : %s, newState : %s, transactionId : %d", util::str(currentState), util::str(newState), transactionId);
     }
 
     Core::hresult PowerManagerImplementation::GetTemperatureThresholds(float& high, float& critical) const
