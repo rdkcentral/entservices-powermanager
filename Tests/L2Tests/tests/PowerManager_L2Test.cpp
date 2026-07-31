@@ -1715,6 +1715,12 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_LongestDelayAcksFirst_L2)
                             return PWRMGR_SUCCESS;
                         }));
 
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_TERM())
+                    .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_TERM())
+                    .WillOnce(::testing::Return(DEEPSLEEPMGR_SUCCESS));
+
                 auto startTime = std::chrono::steady_clock::now();
 
                 status = PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-test");
@@ -1836,6 +1842,12 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_AllClientsAckImmediately_L2)
                             return PWRMGR_SUCCESS;
                         }));
 
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_TERM())
+                    .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_TERM())
+                    .WillOnce(::testing::Return(DEEPSLEEPMGR_SUCCESS));
+
                 auto startTime = std::chrono::steady_clock::now();
 
                 PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-test");
@@ -1938,6 +1950,12 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_FourClientsTimeout_L2)
                             EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
                             return PWRMGR_SUCCESS;
                         }));
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_TERM())
+                    .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_TERM())
+                    .WillOnce(::testing::Return(DEEPSLEEPMGR_SUCCESS));
 
                 auto startTime = std::chrono::steady_clock::now();
 
@@ -2053,6 +2071,12 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_RescheduleBeforeSchedule_L2)
                             return PWRMGR_SUCCESS;
                         }));
 
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_TERM())
+                    .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_TERM())
+                    .WillOnce(::testing::Return(DEEPSLEEPMGR_SUCCESS));
+
                 status = PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-test");
                 EXPECT_EQ(status, Core::ERROR_NONE);
 
@@ -2146,6 +2170,12 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_TimerExpired_L2)
                             EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
                             return PWRMGR_SUCCESS;
                         }));
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_TERM())
+                    .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_TERM())
+                    .WillOnce(::testing::Return(DEEPSLEEPMGR_SUCCESS));
 
                 status = PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-test");
                 EXPECT_EQ(status, Core::ERROR_NONE);
@@ -2243,6 +2273,12 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_ExpiredClientsRemoved_L2)
                             return PWRMGR_SUCCESS;
                         }));
 
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_TERM())
+                    .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_TERM())
+                    .WillOnce(::testing::Return(DEEPSLEEPMGR_SUCCESS));
+
                 auto startTime = std::chrono::steady_clock::now();
 
                 status = PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-test");
@@ -2254,18 +2290,19 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_ExpiredClientsRemoved_L2)
                 int transactionId = mNotification.GetTransactionId();
                 TEST_LOG("Received transactionId: %d", transactionId);
 
-                // Set delays: Client1: 1s, Client2: 3s, Client3: 5s
+                // Set delays: Client1: 1s, Client2: 4s, Client3: 6s
                 status = PowerManagerPlugin->DelayPowerModeChangeBy(clientId1, transactionId, 1);
                 EXPECT_EQ(status, Core::ERROR_NONE);
-                status = PowerManagerPlugin->DelayPowerModeChangeBy(clientId2, transactionId, 3);
+                status = PowerManagerPlugin->DelayPowerModeChangeBy(clientId2, transactionId, 4);
                 EXPECT_EQ(status, Core::ERROR_NONE);
-                status = PowerManagerPlugin->DelayPowerModeChangeBy(clientId3, transactionId, 5);
+                status = PowerManagerPlugin->DelayPowerModeChangeBy(clientId3, transactionId, 6);
                 EXPECT_EQ(status, Core::ERROR_NONE);
 
                 // Wait 1.5s - Client1 should expire
                 std::this_thread::sleep_for(std::chrono::milliseconds(1500));
 
                 // Client3 ACKs - triggers recalculation which should remove expired Client1
+                // Remaining: Client2 has 2.5s left (4s - 1.5s)
                 status = PowerManagerPlugin->PowerModePreChangeComplete(clientId3, transactionId);
                 EXPECT_EQ(status, Core::ERROR_NONE);
 
@@ -2277,9 +2314,10 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_ExpiredClientsRemoved_L2)
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
 
                 TEST_LOG("Total duration: %ld ms", duration);
-                // Should timeout at ~3.5s (Client2's expiry)
-                EXPECT_LT(duration, 4500);
-                EXPECT_GT(duration, 3000);
+                // Should timeout at ~4s (Client2's original expiry)
+                // Total: 1.5s wait + 2.5s remaining = 4s
+                EXPECT_LT(duration, 5000);
+                EXPECT_GT(duration, 3500);
 
                 PowerManagerPlugin->RemovePowerModePreChangeClient(clientId1);
                 PowerManagerPlugin->RemovePowerModePreChangeClient(clientId2);
