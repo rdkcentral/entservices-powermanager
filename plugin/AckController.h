@@ -20,6 +20,7 @@
 #pragma once
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <unordered_set>
 #include <unordered_map>
 
@@ -40,8 +41,8 @@
  *        - Scheduled timer times out.
  *        - Scheduled without any clients awaiting.
  *
- * IMPORTANT: This class is not thread-safe. It expects thread safety
- *            from the instantiating class.
+ * IMPORTANT: This class provides internal thread safety for Schedule, Reschedule,
+ *            Ack, and recalculateTimeout operations using a mutex.
  */
 class AckController : public std::enable_shared_from_this<AckController> {
     using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
@@ -59,7 +60,9 @@ public:
         , _timeout(WPEFramework::Core::Time::Now())
         , _handler(nullptr)
         , _running(false)
+        , _mutex()
     {
+        LOGINFO("PowerManager: Created for powerState: %d, transactionId: %d", powerState, _transactionId);
     }
 
     /**
@@ -69,6 +72,7 @@ public:
      */
     ~AckController()
     {
+        LOGINFO("PowerManager: Destroyed, transactionId: %d, pending: %d", _transactionId, int(_pending.size()));
         revoke();
     }
 
@@ -92,7 +96,7 @@ public:
     void AckAwait(const uint32_t clientId)
     {
         _pending.insert(clientId);
-        LOGINFO("Append clientId: %u, transactionId: %d, pending %d", clientId, _transactionId, int(_pending.size()));
+        LOGINFO("PowerManager: Append clientId: %u, transactionId: %d, pending: %d", clientId, _transactionId, int(_pending.size()));
     }
 
     /**
@@ -105,6 +109,7 @@ public:
      */
     uint32_t Ack(const uint32_t clientId, const int transactionId)
     {
+        std::lock_guard<std::mutex> lock(_mutex);
         uint32_t status = WPEFramework::Core::ERROR_NONE;
 
         do {
@@ -123,18 +128,21 @@ public:
             }
 
             _pending.erase(clientId);
-            _clientDelays.erase(clientId);  // Remove client's delay
+            _clientExpiries.erase(clientId);  // Remove client's expiry
+            LOGINFO("PowerManager: Client %u acknowledged, remaining pending: %d", clientId, int(_pending.size()));
 
             if (_pending.empty() && _running) {
                 _running = false;
+                LOGINFO("PowerManager: All clients acknowledged, triggering completion handler");
                 runHandler(false);
             } else if (_running) {
-                // Recalculate timeout based on remaining clients' delays
+                // Recalculate timeout based on remaining clients' expiries
+                LOGINFO("PowerManager: Recalculating timeout for remaining %d clients", int(_pending.size()));
                 recalculateTimeout();
             }
         } while (false);
 
-        LOGINFO("AckController::Ack: clientId: %u, transactionId: %d, status: %d, pending %d",
+        LOGINFO("PowerManager: clientId: %u, transactionId: %d, status: %d, pending: %d",
             clientId, transactionId, status, int(_pending.size()));
         return status;
     }
@@ -194,12 +202,14 @@ public:
      */
     void Schedule(const uint64_t offsetInMilliseconds, std::function<void(bool, bool)> handler)
     {
+        std::lock_guard<std::mutex> lock(_mutex);
         ASSERT(nullptr == _handler);
 
-        LOGINFO("time offset: %" PRIu64 "ms, pending: %d", offsetInMilliseconds, int(_pending.size()));
+        LOGINFO("PowerManager: transactionId: %d, timeout: %" PRIu64 "ms, pending: %d", _transactionId, offsetInMilliseconds, int(_pending.size()));
 
         if (_pending.empty() || 0 == offsetInMilliseconds) {
             // no clients acks to wait for, trigger completion handler immediately
+            LOGINFO("PowerManager: No pending clients or zero timeout, triggering handler immediately");
             handler(false, false);
         } else {
             std::weak_ptr<AckController> wPtr = shared_from_this();
@@ -217,7 +227,7 @@ public:
                 bool isRevoked  = self ? false : true;
                 bool isTimedout = true;
 
-                LOGINFO("AckTimer handler isTimedout: 1, isRevoked: %d", isRevoked);
+                LOGINFO("PowerManager: Timer handler isTimedout: 1, isRevoked: %d", isRevoked);
 
                 if (!isRevoked) {
                     if (self->_running) {
@@ -245,16 +255,18 @@ public:
      */
     uint32_t Reschedule(const uint32_t clientId, const int transactionId, const int offsetInMilliseconds)
     {
+        std::lock_guard<std::mutex> lock(_mutex);
         uint32_t status = WPEFramework::Core::ERROR_NONE;
-        ASSERT(nullptr != _handler);
 
         do {
-            auto newTimeout = WPEFramework::Core::Time::Now().Add(offsetInMilliseconds);
+            auto now = WPEFramework::Core::Time::Now();
+            auto clientExpiry = now.Add(offsetInMilliseconds);
 
-            // If Reschedule is called even before Schedule, cache the timeout value
-            // use timeout value later when Schedule gets called
+            // If Reschedule is called even before Schedule, cache the expiry time
+            // use expiry value later when Schedule gets called
             if (!_running) {
-                _timeout = std::max(_timeout, newTimeout);
+                _timeout = std::max(_timeout, clientExpiry);
+                _clientExpiries[clientId] = clientExpiry;
                 status = WPEFramework::Core::ERROR_NONE;
                 break;
             }
@@ -272,21 +284,37 @@ public:
                 break;
             }
 
-            // Store the client's requested delay
-            _clientDelays[clientId] = offsetInMilliseconds;
+            // Check if current timer has already expired
+            if (now >= _timeout) {
+                LOGWARN("PowerManager: Timer already expired, ignoring reschedule for client %u", clientId);
+                status = WPEFramework::Core::ERROR_ILLEGAL_STATE;
+                break;
+            }
 
-            // set new timeout only if it's greater than previous timeout, else fail silently
-            if (newTimeout > _timeout) {
-                _timeout = newTimeout;
-                _workerPool.Reschedule(newTimeout, _timerJob);
-                LOGINFO("Rescheduled to new timeout %" PRIu64 " ms from now", offsetInMilliseconds);
+            // Remove expired clients before processing
+            removeExpiredClients();
+
+            // Store the client's absolute expiry time
+            _clientExpiries[clientId] = clientExpiry;
+            LOGINFO("PowerManager: Stored expiry for client %u: %d ms from now", clientId, offsetInMilliseconds);
+
+            // Calculate remaining time on current timer
+            uint64_t remainingMs = (now < _timeout) ? 
+                (_timeout.Ticks() - now.Ticks()) / WPEFramework::Core::Time::TicksPerMillisecond : 0;
+
+            // Only reschedule if client's expiry is greater than remaining timeout
+            if (clientExpiry > _timeout) {
+                _timeout = clientExpiry;
+                _workerPool.Reschedule(clientExpiry, _timerJob);
+                LOGINFO("PowerManager: Extended timeout from %" PRIu64 " ms to %d ms for client %u", 
+                    remainingMs, offsetInMilliseconds, clientId);
             } else {
-                LOGWARN("Skipping new timeout %" PRIu64 " is less than previous timeout %" PRIu64,
-                    newTimeout.Ticks(), _timeout.Ticks());
+                LOGINFO("PowerManager: Client %u expiry (%d ms) within current timeout (%" PRIu64 " ms remaining)",
+                    clientId, offsetInMilliseconds, remainingMs);
             }
         } while (false);
 
-        LOGINFO("clientId: %u, transactionId: %d, offset: %d, status: %d",
+        LOGINFO("PowerManager: clientId: %u, transactionId: %d, offset: %d, status: %d",
             clientId, transactionId, offsetInMilliseconds, status);
 
         return status;
@@ -299,24 +327,71 @@ private:
      */
     void recalculateTimeout()
     {
-        uint64_t maxDelayMs = _defaultTimeoutMs;
+        auto now = WPEFramework::Core::Time::Now();
+        
+        // Remove expired clients first
+        removeExpiredClients();
+        
+        if (_pending.empty()) {
+            LOGINFO("PowerManager: No pending clients after removing expired ones");
+            return;
+        }
 
-        // Find the maximum delay among remaining pending clients
+        // Find the maximum expiry time among remaining pending clients
+        WPEFramework::Core::Time maxExpiry = now.Add(_defaultTimeoutMs);
+        uint32_t maxExpiryClientId = 0;
+
         for (const auto& clientId : _pending) {
-            auto it = _clientDelays.find(clientId);
-            if (it != _clientDelays.end()) {
-                maxDelayMs = std::max(maxDelayMs, it->second);
+            auto it = _clientExpiries.find(clientId);
+            if (it != _clientExpiries.end()) {
+                if (it->second > maxExpiry) {
+                    maxExpiry = it->second;
+                    maxExpiryClientId = clientId;
+                }
             }
         }
 
-        auto newTimeout = WPEFramework::Core::Time::Now().Add(maxDelayMs);
+        uint64_t currentRemainingMs = (now < _timeout) ? 
+            (_timeout.Ticks() - now.Ticks()) / WPEFramework::Core::Time::TicksPerMillisecond : 0;
+        uint64_t newRemainingMs = (now < maxExpiry) ? 
+            (maxExpiry.Ticks() - now.Ticks()) / WPEFramework::Core::Time::TicksPerMillisecond : 0;
 
-        // Only reschedule if new timeout is less than current timeout
-        if (newTimeout < _timeout) {
-            _timeout = newTimeout;
-            _workerPool.Reschedule(newTimeout, _timerJob);
-            LOGINFO("Recalculated timeout to %" PRIu64 " ms based on remaining %d clients",
-                maxDelayMs, int(_pending.size()));
+        // Only reschedule if new timeout is less than current timeout (optimization)
+        if (maxExpiry < _timeout) {
+            _timeout = maxExpiry;
+            _workerPool.Reschedule(maxExpiry, _timerJob);
+            LOGINFO("PowerManager: Timeout reduced: %" PRIu64 " ms → %" PRIu64 " ms (client %u has max expiry), pending: %d",
+                currentRemainingMs, newRemainingMs, maxExpiryClientId, int(_pending.size()));
+        } else {
+            LOGINFO("PowerManager: Timeout unchanged: current %" PRIu64 " ms <= new %" PRIu64 " ms, pending: %d",
+                currentRemainingMs, newRemainingMs, int(_pending.size()));
+        }
+    }
+
+    /**
+     * @brief Removes clients whose expiry time has already passed.
+     */
+    void removeExpiredClients()
+    {
+        auto now = WPEFramework::Core::Time::Now();
+        std::vector<uint32_t> expiredClients;
+
+        for (const auto& clientId : _pending) {
+            auto it = _clientExpiries.find(clientId);
+            if (it != _clientExpiries.end() && it->second <= now) {
+                expiredClients.push_back(clientId);
+            }
+        }
+
+        for (const auto& clientId : expiredClients) {
+            LOGWARN("PowerManager: Removing expired client %u from pending list", clientId);
+            _pending.erase(clientId);
+            _clientExpiries.erase(clientId);
+        }
+
+        if (!expiredClients.empty()) {
+            LOGINFO("PowerManager: Removed %zu expired client(s), remaining pending: %d", 
+                expiredClients.size(), int(_pending.size()));
         }
     }
 
@@ -326,9 +401,12 @@ private:
      */
     void runHandler(bool isTimedout)
     {
-        LOGINFO("isTimedout: %d, pending: %d", isTimedout, int(_pending.size()));
+        LOGINFO("PowerManager: transactionId: %d, isTimedout: %d, pending: %d", _transactionId, isTimedout, int(_pending.size()));
         if (!isTimedout) {
+            LOGINFO("PowerManager: All clients acknowledged, revoking timer");
             _workerPool.Revoke(_timerJob);
+        } else {
+            LOGWARN("PowerManager: Timeout occurred with %d clients still pending", int(_pending.size()));
         }
         bool isRevoked = false;
         _handler(isTimedout, isRevoked);
@@ -342,6 +420,7 @@ private:
     void revoke()
     {
         if (_running) {
+            LOGINFO("PowerManager: Revoking, transactionId: %d, pending: %d", _transactionId, int(_pending.size()));
             _running = false;
             if (_timerJob.IsValid()) {
                 _workerPool.Revoke(_timerJob);
@@ -361,13 +440,14 @@ private:
     WPEFramework::Core::IWorkerPool& _workerPool;          // Thunder worker pool
     PowerState _powerState;                                // target / next powerState to change
     std::unordered_set<uint32_t> _pending;                 // Set of pending acknowledgements.
-    std::unordered_map<uint32_t, uint64_t> _clientDelays;  // Map of clientId to requested delay in milliseconds
+    std::unordered_map<uint32_t, WPEFramework::Core::Time> _clientExpiries;  // Map of clientId to absolute expiry time
     uint64_t _defaultTimeoutMs;                            // Default timeout in milliseconds
     int _transactionId;                                    // Unique transaction ID for each AckController instance.
     WPEFramework::Core::Time _timeout;                     // Absolute timeout value for _timerJob (not duration)
     TimerJob _timerJob;                                    // job scheduler to timeout
     std::function<void(bool, bool)> _handler;              // Completion handler to be called on timeout or all acknowledgements.
     std::atomic<bool> _running;                            // Flag to synchronize timer timeout callback and Ack* APIs.
+    mutable std::mutex _mutex;                             // Mutex for thread safety
 
     static int _nextTransactionId; // static counter for unique transaction ID generation.
 };
