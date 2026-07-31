@@ -1998,3 +1998,305 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_FourClientsTimeout_L2)
         }
     }
 }
+
+/******************************************************
+** Test: DelayRecalculation_RescheduleBeforeSchedule_L2
+** Description: Verify reschedule called before Schedule (async PreChange notification)
+** Scenario:
+** 1. Register 2 clients for pre-change notifications
+** 2. Client calls DelayPowerModeChangeBy in PreChange notification (before Schedule)
+** 3. Both clients ACK immediately
+** Expected: Expiry cached and used correctly, completes quickly
+*******************************************************/
+TEST_F(PowerManager_L2Test, DelayRecalculation_RescheduleBeforeSchedule_L2)
+{
+    Core::ProxyType<RPC::InvokeServerType<1, 0, 4>> mEngine_PowerManager;
+    Core::ProxyType<RPC::CommunicatorClient> mClient_PowerManager;
+    PluginHost::IShell *mController_PowerManager;
+    uint32_t signalled = POWERMANAGERL2TEST_STATE_INVALID;
+
+    TEST_LOG("Creating mEngine_PowerManager");
+    mEngine_PowerManager = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
+    mClient_PowerManager = Core::ProxyType<RPC::CommunicatorClient>::Create(Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(mEngine_PowerManager));
+
+    TEST_LOG("Creating mEngine_PowerManager Announcements");
+#if ((THUNDER_VERSION == 2) || ((THUNDER_VERSION == 4) && (THUNDER_VERSION_MINOR == 2)))
+    mEngine_PowerManager->Announcements(mClient_PowerManager->Announcement());
+#endif
+
+    if (!mClient_PowerManager.IsValid())
+    {
+        TEST_LOG("Invalid mClient_PowerManager");
+    }
+    else
+    {
+        mController_PowerManager = mClient_PowerManager->Open<PluginHost::IShell>(_T("org.rdk.PowerManager"), ~0, 3000);
+        if (mController_PowerManager)
+        {
+            auto PowerManagerPlugin = mController_PowerManager->QueryInterface<Exchange::IPowerManager>();
+
+            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
+            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
+
+            if (PowerManagerPlugin)
+            {
+                uint32_t clientId1 = 0, clientId2 = 0;
+                uint32_t status = PowerManagerPlugin->AddPowerModePreChangeClient("l2-client1", clientId1);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                status = PowerManagerPlugin->AddPowerModePreChangeClient("l2-client2", clientId2);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
+                    .WillOnce(::testing::Invoke(
+                        [](PWRMgr_PowerState_t powerState) {
+                            EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                            return PWRMGR_SUCCESS;
+                        }));
+
+                status = PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-test");
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT, POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+
+                int transactionId = mNotification.GetTransactionId();
+                TEST_LOG("Received transactionId: %d", transactionId);
+
+                // Client1 calls DelayPowerModeChangeBy (may be before Schedule completes)
+                status = PowerManagerPlugin->DelayPowerModeChangeBy(clientId1, transactionId, 3);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                // Both clients ACK immediately
+                status = PowerManagerPlugin->PowerModePreChangeComplete(clientId1, transactionId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                status = PowerManagerPlugin->PowerModePreChangeComplete(clientId2, transactionId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+
+                PowerManagerPlugin->RemovePowerModePreChangeClient(clientId1);
+                PowerManagerPlugin->RemovePowerModePreChangeClient(clientId2);
+                PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
+                PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
+                PowerManagerPlugin->Release();
+            }
+            else
+            {
+                TEST_LOG("PowerManagerPlugin is NULL");
+            }
+            mController_PowerManager->Release();
+        }
+        else
+        {
+            TEST_LOG("mController_PowerManager is NULL");
+        }
+    }
+}
+
+/******************************************************
+** Test: DelayRecalculation_TimerExpired_L2
+** Description: Verify reschedule fails when timer already expired
+** Scenario:
+** 1. Register 1 client for pre-change notifications
+** 2. Transition to DEEP_SLEEP
+** 3. Wait for timer to expire (1.2s > 1s default)
+** 4. Try to reschedule after expiry
+** Expected: Returns ERROR_ILLEGAL_STATE
+*******************************************************/
+TEST_F(PowerManager_L2Test, DelayRecalculation_TimerExpired_L2)
+{
+    Core::ProxyType<RPC::InvokeServerType<1, 0, 4>> mEngine_PowerManager;
+    Core::ProxyType<RPC::CommunicatorClient> mClient_PowerManager;
+    PluginHost::IShell *mController_PowerManager;
+    uint32_t signalled = POWERMANAGERL2TEST_STATE_INVALID;
+
+    TEST_LOG("Creating mEngine_PowerManager");
+    mEngine_PowerManager = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
+    mClient_PowerManager = Core::ProxyType<RPC::CommunicatorClient>::Create(Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(mEngine_PowerManager));
+
+    TEST_LOG("Creating mEngine_PowerManager Announcements");
+#if ((THUNDER_VERSION == 2) || ((THUNDER_VERSION == 4) && (THUNDER_VERSION_MINOR == 2)))
+    mEngine_PowerManager->Announcements(mClient_PowerManager->Announcement());
+#endif
+
+    if (!mClient_PowerManager.IsValid())
+    {
+        TEST_LOG("Invalid mClient_PowerManager");
+    }
+    else
+    {
+        mController_PowerManager = mClient_PowerManager->Open<PluginHost::IShell>(_T("org.rdk.PowerManager"), ~0, 3000);
+        if (mController_PowerManager)
+        {
+            auto PowerManagerPlugin = mController_PowerManager->QueryInterface<Exchange::IPowerManager>();
+
+            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
+            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
+
+            if (PowerManagerPlugin)
+            {
+                uint32_t clientId = 0;
+                uint32_t status = PowerManagerPlugin->AddPowerModePreChangeClient("l2-client1", clientId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
+                    .WillOnce(::testing::Invoke(
+                        [](PWRMgr_PowerState_t powerState) {
+                            EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                            return PWRMGR_SUCCESS;
+                        }));
+
+                status = PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-test");
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT, POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+
+                int transactionId = mNotification.GetTransactionId();
+                TEST_LOG("Received transactionId: %d", transactionId);
+
+                // Wait for timer to expire (default 1s)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+
+                // Try to reschedule after timer expired - should fail
+                status = PowerManagerPlugin->DelayPowerModeChangeBy(clientId, transactionId, 5);
+                EXPECT_EQ(status, Core::ERROR_ILLEGAL_STATE);
+                TEST_LOG("DelayPowerModeChangeBy returned ERROR_ILLEGAL_STATE as expected");
+
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+
+                PowerManagerPlugin->RemovePowerModePreChangeClient(clientId);
+                PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
+                PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
+                PowerManagerPlugin->Release();
+            }
+            else
+            {
+                TEST_LOG("PowerManagerPlugin is NULL");
+            }
+            mController_PowerManager->Release();
+        }
+        else
+        {
+            TEST_LOG("mController_PowerManager is NULL");
+        }
+    }
+}
+
+/******************************************************
+** Test: DelayRecalculation_ExpiredClientsRemoved_L2
+** Description: Verify expired clients are automatically removed during recalculation
+** Scenario:
+** 1. Register 3 clients for pre-change notifications
+** 2. Client1: 1s, Client2: 3s, Client3: 5s delays
+** 3. Wait 1.5s - Client1 expires
+** 4. Client3 ACKs - triggers recalculation which removes expired Client1
+** 5. Wait for Client2's timeout
+** Expected: Total duration ~3.5s (Client2's expiry), not 5s
+*******************************************************/
+TEST_F(PowerManager_L2Test, DelayRecalculation_ExpiredClientsRemoved_L2)
+{
+    Core::ProxyType<RPC::InvokeServerType<1, 0, 4>> mEngine_PowerManager;
+    Core::ProxyType<RPC::CommunicatorClient> mClient_PowerManager;
+    PluginHost::IShell *mController_PowerManager;
+    uint32_t signalled = POWERMANAGERL2TEST_STATE_INVALID;
+
+    TEST_LOG("Creating mEngine_PowerManager");
+    mEngine_PowerManager = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
+    mClient_PowerManager = Core::ProxyType<RPC::CommunicatorClient>::Create(Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(mEngine_PowerManager));
+
+    TEST_LOG("Creating mEngine_PowerManager Announcements");
+#if ((THUNDER_VERSION == 2) || ((THUNDER_VERSION == 4) && (THUNDER_VERSION_MINOR == 2)))
+    mEngine_PowerManager->Announcements(mClient_PowerManager->Announcement());
+#endif
+
+    if (!mClient_PowerManager.IsValid())
+    {
+        TEST_LOG("Invalid mClient_PowerManager");
+    }
+    else
+    {
+        mController_PowerManager = mClient_PowerManager->Open<PluginHost::IShell>(_T("org.rdk.PowerManager"), ~0, 3000);
+        if (mController_PowerManager)
+        {
+            auto PowerManagerPlugin = mController_PowerManager->QueryInterface<Exchange::IPowerManager>();
+
+            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
+            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
+
+            if (PowerManagerPlugin)
+            {
+                uint32_t clientId1 = 0, clientId2 = 0, clientId3 = 0;
+                uint32_t status = PowerManagerPlugin->AddPowerModePreChangeClient("l2-client1", clientId1);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                status = PowerManagerPlugin->AddPowerModePreChangeClient("l2-client2", clientId2);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                status = PowerManagerPlugin->AddPowerModePreChangeClient("l2-client3", clientId3);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
+                    .WillOnce(::testing::Invoke(
+                        [](PWRMgr_PowerState_t powerState) {
+                            EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                            return PWRMGR_SUCCESS;
+                        }));
+
+                auto startTime = std::chrono::steady_clock::now();
+
+                status = PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-test");
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT, POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+
+                int transactionId = mNotification.GetTransactionId();
+                TEST_LOG("Received transactionId: %d", transactionId);
+
+                // Set delays: Client1: 1s, Client2: 3s, Client3: 5s
+                status = PowerManagerPlugin->DelayPowerModeChangeBy(clientId1, transactionId, 1);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                status = PowerManagerPlugin->DelayPowerModeChangeBy(clientId2, transactionId, 3);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                status = PowerManagerPlugin->DelayPowerModeChangeBy(clientId3, transactionId, 5);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                // Wait 1.5s - Client1 should expire
+                std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+
+                // Client3 ACKs - triggers recalculation which should remove expired Client1
+                status = PowerManagerPlugin->PowerModePreChangeComplete(clientId3, transactionId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                // Wait for Client2's timeout
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+
+                auto endTime = std::chrono::steady_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+                TEST_LOG("Total duration: %ld ms", duration);
+                // Should timeout at ~3.5s (Client2's expiry)
+                EXPECT_LT(duration, 4500);
+                EXPECT_GT(duration, 3000);
+
+                PowerManagerPlugin->RemovePowerModePreChangeClient(clientId1);
+                PowerManagerPlugin->RemovePowerModePreChangeClient(clientId2);
+                PowerManagerPlugin->RemovePowerModePreChangeClient(clientId3);
+                PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
+                PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
+                PowerManagerPlugin->Release();
+            }
+            else
+            {
+                TEST_LOG("PowerManagerPlugin is NULL");
+            }
+            mController_PowerManager->Release();
+        }
+        else
+        {
+            TEST_LOG("mController_PowerManager is NULL");
+        }
+    }
+}

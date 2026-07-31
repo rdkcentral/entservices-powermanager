@@ -882,6 +882,15 @@ namespace Plugin {
         uint32_t errorCode = Core::ERROR_INVALID_PARAMETER;
 
         LOGINFO(">> clientId: %u, transactionId: %d, delayPeriod: %d", clientId, transactionId, delayPeriod);
+
+        // Validate delay period - must be positive (> 0)
+        // If client wants to proceed immediately, they should just call PowerModePreChangeComplete
+        if (delayPeriod <= 0) {
+            LOGERR("Invalid delayPeriod: %d. Delay must be positive (> 0 seconds)", delayPeriod);
+            LOGINFO("<< errorcode: %u", errorCode);
+            return errorCode;
+        }
+
         _apiLock.Lock();
 
         if (_modeChangeController) {
