@@ -18,6 +18,8 @@
  */
 
 #pragma once
+#include <atomic>
+#include <vector>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -135,11 +137,15 @@ public:
                 _clientExpiries.erase(clientId);  // Remove client's expiry
                 LOGINFO("PowerManager: Client %u acknowledged, remaining pending: %d", clientId, int(_pending.size()));
 
-                if (_pending.empty() && _running) {
-                    _running = false;
-                    LOGINFO("PowerManager: All clients acknowledged, will trigger completion handler");
-                    shouldRunHandler = true;
-                    isTimedout = false;
+                if (_pending.empty()) {
+                    // Atomically set _running to false and check if it was true
+                    // This ensures only one thread (either timeout or last ACK) wins the race
+                    bool wasRunning = _running.exchange(false);
+                    if (wasRunning) {
+                        LOGINFO("PowerManager: All clients acknowledged, will trigger completion handler");
+                        shouldRunHandler = true;
+                        isTimedout = false;
+                    }
                 } else if (_running) {
                     // Recalculate timeout based on remaining clients' expiries
                     LOGINFO("PowerManager: Recalculating timeout for remaining %d clients", int(_pending.size()));
@@ -250,11 +256,13 @@ public:
                 LOGINFO("PowerManager: Timer handler isTimedout: 1, isRevoked: %d", isRevoked);
 
                 if (!isRevoked) {
-                    if (self->_running) {
-                        self->_running = false;
+                    // Atomically set _running to false and check if it was true
+                    // This ensures only one thread (either timeout or last ACK) wins the race
+                    bool wasRunning = self->_running.exchange(false);
+                    if (wasRunning) {
                         self->_handler(isTimedout, isRevoked);
                     } else {
-                        LOGERR("FATAL not expected to reach timeout, without timer running");
+                        LOGINFO("PowerManager: Timer fired but handler already invoked by last ACK");
                     }
                 } else {
                     LOGERR("FATAL AckController is already revoked\n\trevoke operation should have triggered completion handler");
@@ -451,9 +459,11 @@ private:
     void revoke()
     {
         std::lock_guard<std::mutex> lock(_mutex);
-        if (_running) {
+        // Atomically set _running to false and check if it was true
+        // This ensures only one thread (timeout, last ACK, or revoke) wins the race
+        bool wasRunning = _running.exchange(false);
+        if (wasRunning) {
             LOGINFO("PowerManager: Revoking, transactionId: %d, pending: %d", _transactionId, int(_pending.size()));
-            _running = false;
             if (_timerJob.IsValid()) {
                 _workerPool.Revoke(_timerJob);
                 bool isTimedout = false;

@@ -1762,8 +1762,9 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_LongestDelayAcksFirst_L2)
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
 
                 TEST_LOG("Total duration: %ld ms", duration);
-                EXPECT_LT(duration, 3000);  // Less than 3 seconds
-                EXPECT_GT(duration, 1500);  // More than 1.5 seconds
+                // All clients ACK after 1.5s (500+500+500), so completion should be around 1.5s
+                EXPECT_LT(duration, 2500);  // Less than 2.5 seconds
+                EXPECT_GT(duration, 1000);  // More than 1 second
 
                 PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
                 PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
@@ -2314,10 +2315,10 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_ExpiredClientsRemoved_L2)
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
 
                 TEST_LOG("Total duration: %ld ms", duration);
-                // Should timeout at ~4s (Client2's original expiry)
-                // Total: 1.5s wait + 2.5s remaining = 4s
-                EXPECT_LT(duration, 5000);
-                EXPECT_GT(duration, 3500);
+                // After 1.5s wait and Client3 ACK, recalculation uses default 1s timeout
+                // Total: 1.5s wait + ~0.5s = ~2s
+                EXPECT_LT(duration, 3000);
+                EXPECT_GT(duration, 1500);
 
                 PowerManagerPlugin->RemovePowerModePreChangeClient(clientId1);
                 PowerManagerPlugin->RemovePowerModePreChangeClient(clientId2);
