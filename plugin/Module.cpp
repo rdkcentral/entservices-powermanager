@@ -21,14 +21,3 @@
 
 MODULE_NAME_DECLARATION(BUILD_REFERENCE)
 
-namespace {
-    struct Initializer {
-        Initializer() {
-            TELEMETRY_ANNOUNCE(SYST_INFO_POWER_CHANGE_split);
-            TELEMETRY_ANNOUNCE(SYST_ERR_SetPwrStateFail);
-            TELEMETRY_ANNOUNCE(SYS_INFO_STANDBYMODE_split);
-            TELEMETRY_ANNOUNCE(SYST_INFO_DS_WakeUp);
-            TELEMETRY_ANNOUNCE(SYST_ERR_DSModeFail);
-        }
-    } static instance;
-}
