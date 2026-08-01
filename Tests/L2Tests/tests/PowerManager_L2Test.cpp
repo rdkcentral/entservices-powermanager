@@ -1715,12 +1715,6 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_LongestDelayAcksFirst_L2)
                             return PWRMGR_SUCCESS;
                         }));
 
-                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_TERM())
-                    .WillOnce(::testing::Return(PWRMGR_SUCCESS));
-
-                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_TERM())
-                    .WillOnce(::testing::Return(DEEPSLEEPMGR_SUCCESS));
-
                 auto startTime = std::chrono::steady_clock::now();
 
                 status = PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-test");
@@ -1843,12 +1837,6 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_AllClientsAckImmediately_L2)
                             return PWRMGR_SUCCESS;
                         }));
 
-                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_TERM())
-                    .WillOnce(::testing::Return(PWRMGR_SUCCESS));
-
-                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_TERM())
-                    .WillOnce(::testing::Return(DEEPSLEEPMGR_SUCCESS));
-
                 auto startTime = std::chrono::steady_clock::now();
 
                 PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-test");
@@ -1951,12 +1939,6 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_FourClientsTimeout_L2)
                             EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
                             return PWRMGR_SUCCESS;
                         }));
-
-                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_TERM())
-                    .WillOnce(::testing::Return(PWRMGR_SUCCESS));
-
-                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_TERM())
-                    .WillOnce(::testing::Return(DEEPSLEEPMGR_SUCCESS));
 
                 auto startTime = std::chrono::steady_clock::now();
 
@@ -2072,12 +2054,6 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_RescheduleBeforeSchedule_L2)
                             return PWRMGR_SUCCESS;
                         }));
 
-                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_TERM())
-                    .WillOnce(::testing::Return(PWRMGR_SUCCESS));
-
-                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_TERM())
-                    .WillOnce(::testing::Return(DEEPSLEEPMGR_SUCCESS));
-
                 status = PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-test");
                 EXPECT_EQ(status, Core::ERROR_NONE);
 
@@ -2171,12 +2147,6 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_TimerExpired_L2)
                             EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
                             return PWRMGR_SUCCESS;
                         }));
-
-                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_TERM())
-                    .WillOnce(::testing::Return(PWRMGR_SUCCESS));
-
-                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_TERM())
-                    .WillOnce(::testing::Return(DEEPSLEEPMGR_SUCCESS));
 
                 status = PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-test");
                 EXPECT_EQ(status, Core::ERROR_NONE);
@@ -2273,12 +2243,6 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_ExpiredClientsRemoved_L2)
                             EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
                             return PWRMGR_SUCCESS;
                         }));
-
-                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_TERM())
-                    .WillOnce(::testing::Return(PWRMGR_SUCCESS));
-
-                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_TERM())
-                    .WillOnce(::testing::Return(DEEPSLEEPMGR_SUCCESS));
 
                 auto startTime = std::chrono::steady_clock::now();
 
