@@ -70,7 +70,7 @@ public:
     /**
      * @brief Destroys an AckController instance.
      *        If running, the controller will be revoked.
-     *        The completion handler will not be called.
+     *        The completion handler will be called with isRevoked=true.
      */
     ~AckController()
     {
@@ -262,10 +262,10 @@ public:
                     if (wasRunning) {
                         self->_handler(isTimedout, isRevoked);
                     } else {
-                        LOGINFO("PowerManager: Timer fired but handler already invoked by last ACK");
+                        LOGINFO("PowerManager: Timer fired but handler already invoked by last ACK or revoked");
                     }
                 } else {
-                    LOGERR("FATAL AckController is already revoked\n\trevoke operation should have triggered completion handler");
+                    LOGINFO("PowerManager: Timer fired but AckController was already destroyed (revoked)");
                 }
             });
                 _workerPool.Schedule(_timeout, _timerJob);
@@ -452,15 +452,14 @@ private:
 
     /**
      * @brief Stops or revokes the AckController if it is already running.
-     *        After revoke the completion handler will not be called.
+     *        The completion handler will be called with isRevoked=true if running.
      *        This method is deliberately void; use `IsRunning` to check the status.
      *        Thread-safe: Protected by mutex to prevent race with timer callback.
      */
     void revoke()
     {
         std::lock_guard<std::mutex> lock(_mutex);
-        // Atomically set _running to false and check if it was true
-        // This ensures only one thread (timeout, last ACK, or revoke) wins the race
+        // Atomically set _running to false to prevent any thread from invoking handler
         bool wasRunning = _running.exchange(false);
         if (wasRunning) {
             LOGINFO("PowerManager: Revoking, transactionId: %d, pending: %d", _transactionId, int(_pending.size()));
@@ -468,6 +467,8 @@ private:
                 _workerPool.Revoke(_timerJob);
                 bool isTimedout = false;
                 bool isRevoked  = true;
+                // Call handler while holding mutex (same as old behavior)
+                // This minimizes the race window but has potential deadlock risk
                 _handler(isTimedout, isRevoked);
             }
         }
