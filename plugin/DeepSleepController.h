@@ -19,6 +19,7 @@
 #pragma once
 
 #include "Module.h"
+#include <atomic>      // for atomic
 #include <map>         // for map
 #include <memory>      // for unique_ptr, operator!=
 #include <stdint.h>    // for uint32_t
@@ -201,14 +202,15 @@ public:
 
 private:
     bool read_integer_conf(const char* file_name, uint32_t& val);
-    void enterDeepSleepDelayed();
-    void enterDeepSleepNow();
+    void enterDeepSleepDelayed(std::shared_ptr<std::atomic<bool>> abortFlag);
+    void enterDeepSleepNow(std::shared_ptr<std::atomic<bool>> abortFlag);
     void deepSleepTimerWakeup();
     void performActivate(uint32_t timeOut, bool nwStandbyMode);
     bool waitForAbortableDelay(const std::chrono::seconds& delay);
     void requestAbortDeepSleep();
     void clearAbortDeepSleep();
     bool isAbortDeepSleepRequested();
+    void performActivate(uint32_t timeOut, bool nwStandbyMode, std::shared_ptr<std::atomic<bool>> abortFlag);
 
 private:
     INotification& _parent;
@@ -222,7 +224,7 @@ private:
     WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> _deepSleepDelayJob; // Job to handle delay before entering deepsleep
 
     bool _nwStandbyMode; // Flag to indicate if network standby mode is enabled
-
     std::shared_ptr<AbortState> _abortState;
     std::shared_ptr<std::mutex> _timingMutex;
+    std::shared_ptr<std::atomic<bool>> _activateCancelled; // Set to true in destructor to cancel in-flight activation
 };
