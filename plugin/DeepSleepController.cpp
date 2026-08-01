@@ -187,12 +187,15 @@ DeepSleepController::DeepSleepController(INotification& parent, std::shared_ptr<
     , _deepSleepDelaySec(0)
     , _deepSleepWakeupTimeoutSec(0)
     , _nwStandbyMode(false)
+    , _activateCancelled(std::make_shared<std::atomic<bool>>(false))
 {
     LOGINFO(">> CTOR <<");
 }
 
 DeepSleepController::~DeepSleepController()
 {
+    // Signal any in-flight activation lambda to abort after its pre-sleep delay
+    *_activateCancelled = true;
     LOGINFO(">> DTOR");
     if (_deepSleepDelayJob.IsValid()) {
         // Cancel the delay timer if it is still active
@@ -217,9 +220,10 @@ uint32_t DeepSleepController::GetLastWakeupKeyCode(int& keyCode) const
 uint32_t DeepSleepController::Activate(uint32_t timeOut, bool nwStandbyMode)
 {
     LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
-    _workerPool.Submit(LambdaJob::Create([this, timeOut, nwStandbyMode]() {
+    auto abortFlag = _activateCancelled;
+    _workerPool.Submit(LambdaJob::Create([this, timeOut, nwStandbyMode, abortFlag]() {
         LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
-        performActivate(timeOut, nwStandbyMode);
+        performActivate(timeOut, nwStandbyMode, abortFlag);
     }));
 
     return WPEFramework::Core::ERROR_NONE;
@@ -269,18 +273,23 @@ bool DeepSleepController::read_integer_conf(const char* file_name, uint32_t& val
     return ok;
 }
 
-void DeepSleepController::enterDeepSleepDelayed()
+void DeepSleepController::enterDeepSleepDelayed(std::shared_ptr<std::atomic<bool>> abortFlag)
 {
     _deepSleepDelayJob.Release();
 
     LOGINFO("Deep Sleep timer expired: entering deep sleep mode");
-    enterDeepSleepNow();
+    enterDeepSleepNow(abortFlag);
 }
 
-void DeepSleepController::enterDeepSleepNow()
+void DeepSleepController::enterDeepSleepNow(std::shared_ptr<std::atomic<bool>> abortFlag)
 {
     LOGINFO("Enter to Deep sleep Mode..stop Receiver with sleep 1 before DS");
     sleep(1);
+
+    if (*abortFlag) {
+        LOGINFO("DeepSleep activation cancelled during pre-sleep delay, aborting");
+        return;
+    }
 
     uint32_t errorCode = WPEFramework::Core::ERROR_NONE;
     bool failed     = true;
@@ -343,7 +352,7 @@ void DeepSleepController::deepSleepTimerWakeup()
     _parent.onDeepSleepTimerWakeup(_deepSleepWakeupTimeoutSec);
 }
 
-void DeepSleepController::performActivate(uint32_t timeOut, bool nwStandbyMode)
+void DeepSleepController::performActivate(uint32_t timeOut, bool nwStandbyMode, std::shared_ptr<std::atomic<bool>> abortFlag)
 {
     LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
     if (!IsDeepSleepInProgress()) {
@@ -370,8 +379,8 @@ void DeepSleepController::performActivate(uint32_t timeOut, bool nwStandbyMode)
         }
 
         if (_deepSleepDelaySec) {
-            _deepSleepDelayJob = LambdaJob::Create([this]() {
-                enterDeepSleepDelayed();
+            _deepSleepDelayJob = LambdaJob::Create([this, abortFlag]() {
+                enterDeepSleepDelayed(abortFlag);
             });
 
             WPEFramework::Core::WorkerPool::Instance().Schedule(
@@ -379,7 +388,7 @@ void DeepSleepController::performActivate(uint32_t timeOut, bool nwStandbyMode)
                     WPEFramework::Core::Time::Now().Add(_deepSleepDelaySec * 1000)),
                 _deepSleepDelayJob);
         } else {
-            enterDeepSleepNow();
+            enterDeepSleepNow(abortFlag);
         }
     } else {
         LOGERR("Deep sleep operation is already in progress");

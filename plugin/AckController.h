@@ -147,9 +147,17 @@ public:
                         isTimedout = false;
                     }
                 } else if (_running) {
-                    // Recalculate timeout based on remaining clients' expiries
+                    // Recalculate timeout; if expired-client removal empties _pending, trigger handler
                     LOGINFO("PowerManager: Recalculating timeout for remaining %d clients", int(_pending.size()));
-                    recalculateTimeout();
+                    bool allDone = recalculateTimeout();
+                    if (allDone) {
+                        bool wasRunning = _running.exchange(false);
+                        if (wasRunning) {
+                            LOGINFO("PowerManager: All clients expired/removed, will trigger completion handler");
+                            shouldRunHandler = true;
+                            isTimedout = false;
+                        }
+                    }
                 }
             } while (false);
 
@@ -318,16 +326,6 @@ public:
                 break;
             }
 
-            // Check if current timer has already expired
-            if (now >= _timeout) {
-                LOGWARN("PowerManager: Timer already expired, ignoring reschedule for client %u", clientId);
-                status = WPEFramework::Core::ERROR_ILLEGAL_STATE;
-                break;
-            }
-
-            // Remove expired clients before processing
-            removeExpiredClients();
-
             // Store the client's absolute expiry time
             _clientExpiries[clientId] = clientExpiry;
             LOGINFO("PowerManager: Stored expiry for client %u: %d ms from now", clientId, offsetInMilliseconds);
@@ -361,8 +359,9 @@ private:
      * @brief Recalculates the timeout based on remaining clients' delays.
      *        Uses the maximum delay among remaining clients, or default timeout if no delays set.
      *        IMPORTANT: Must be called while holding _mutex lock.
+     *        @return true if all pending clients were removed (expired), false otherwise.
      */
-    void recalculateTimeout()
+    bool recalculateTimeout()
     {
         auto now = WPEFramework::Core::Time::Now();
         
@@ -371,7 +370,7 @@ private:
         
         if (_pending.empty()) {
             LOGINFO("PowerManager: No pending clients after removing expired ones");
-            return;
+            return true;  // Signal caller to trigger completion handler
         }
 
         // Find the maximum expiry time among remaining pending clients
@@ -403,6 +402,7 @@ private:
             LOGINFO("PowerManager: Timeout unchanged: current %" PRIu64 " ms <= new %" PRIu64 " ms, pending: %d",
                 currentRemainingMs, newRemainingMs, int(_pending.size()));
         }
+        return false;
     }
 
     /**
