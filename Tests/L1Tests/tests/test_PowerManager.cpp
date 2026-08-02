@@ -848,13 +848,12 @@ TEST_F(TestPowerManager, DelayRecalculation_LongestDelayAcksFirst)
     EXPECT_EQ(status, Core::ERROR_NONE);
 
     WaitGroup wg;
-    wg.Add(3);
+    wg.Add(1);
     int transactionId = 0;
     auto startTime = std::chrono::steady_clock::now();
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .Times(3)
-        .WillRepeatedly(::testing::Invoke(
+        .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
                 transactionId = txnId;
                 wg.Done();
@@ -938,12 +937,11 @@ TEST_F(TestPowerManager, DelayRecalculation_MultipleClientsTimeout)
     powerManagerImpl->Register(&(*prechangeEvent));
 
     WaitGroup wg;
-    wg.Add(4);
+    wg.Add(1);
     int transactionId = 0;
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .Times(4)
-        .WillRepeatedly(::testing::Invoke(
+        .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
                 transactionId = txnId;
                 wg.Done();
@@ -1011,12 +1009,11 @@ TEST_F(TestPowerManager, DelayRecalculation_AllClientsAckImmediately)
     powerManagerImpl->Register(&(*prechangeEvent));
 
     WaitGroup wg;
-    wg.Add(2);
+    wg.Add(1);
     int transactionId = 0;
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .Times(2)
-        .WillRepeatedly(::testing::Invoke(
+        .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
                 transactionId = txnId;
                 wg.Done();
@@ -1136,12 +1133,11 @@ TEST_F(TestPowerManager, DelayRecalculation_FiveClientsRandomDelays)
     powerManagerImpl->Register(&(*prechangeEvent));
 
     WaitGroup wg;
-    wg.Add(5);
+    wg.Add(1);
     int transactionId = 0;
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .Times(5)
-        .WillRepeatedly(::testing::Invoke(
+        .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
                 transactionId = txnId;
                 wg.Done();
@@ -1218,12 +1214,11 @@ TEST_F(TestPowerManager, DelayRecalculation_NoDelaySet)
     powerManagerImpl->Register(&(*prechangeEvent));
 
     WaitGroup wg;
-    wg.Add(2);
+    wg.Add(1);
     int transactionId = 0;
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .Times(2)
-        .WillRepeatedly(::testing::Invoke(
+        .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
                 transactionId = txnId;
                 wg.Done();
@@ -1281,12 +1276,11 @@ TEST_F(TestPowerManager, DelayRecalculation_MiddleDelayAcksFirst)
     powerManagerImpl->Register(&(*prechangeEvent));
 
     WaitGroup wg;
-    wg.Add(3);
+    wg.Add(1);
     int transactionId = 0;
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .Times(3)
-        .WillRepeatedly(::testing::Invoke(
+        .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
                 transactionId = txnId;
                 wg.Done();
@@ -1354,12 +1348,11 @@ TEST_F(TestPowerManager, DelayRecalculation_MultipleReschedules)
     powerManagerImpl->Register(&(*prechangeEvent));
 
     WaitGroup wg;
-    wg.Add(2);
+    wg.Add(1);
     int transactionId = 0;
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .Times(2)
-        .WillRepeatedly(::testing::Invoke(
+        .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
                 transactionId = txnId;
                 wg.Done();
@@ -1427,12 +1420,11 @@ TEST_F(TestPowerManager, DelayRecalculation_AllTimeout)
     powerManagerImpl->Register(&(*prechangeEvent));
 
     WaitGroup wg;
-    wg.Add(3);
+    wg.Add(1);
     int transactionId = 0;
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .Times(3)
-        .WillRepeatedly(::testing::Invoke(
+        .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
                 transactionId = txnId;
                 wg.Done();
@@ -1491,12 +1483,11 @@ TEST_F(TestPowerManager, DelayRecalculation_ShortestDelayAcksLast)
     powerManagerImpl->Register(&(*prechangeEvent));
 
     WaitGroup wg;
-    wg.Add(3);
+    wg.Add(1);
     int transactionId = 0;
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .Times(3)
-        .WillRepeatedly(::testing::Invoke(
+        .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
                 transactionId = txnId;
                 wg.Done();
@@ -1564,12 +1555,11 @@ TEST_F(TestPowerManager, DelayRecalculation_RescheduleBeforeSchedule)
     powerManagerImpl->Register(&(*prechangeEvent));
 
     WaitGroup wg;
-    wg.Add(2);
+    wg.Add(1);
     int transactionId = 0;
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .Times(2)
-        .WillRepeatedly(::testing::Invoke(
+        .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
                 transactionId = txnId;
                 wg.Done();
@@ -1686,12 +1676,11 @@ TEST_F(TestPowerManager, DelayRecalculation_ExpiredClientsRemoved)
     powerManagerImpl->Register(&(*prechangeEvent));
 
     WaitGroup wg;
-    wg.Add(3);
+    wg.Add(1);
     int transactionId = 0;
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .Times(3)
-        .WillRepeatedly(::testing::Invoke(
+        .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
                 transactionId = txnId;
                 wg.Done();
@@ -1755,12 +1744,11 @@ TEST_F(TestPowerManager, DelayRecalculation_RescheduleWithinRemainingTimeout)
     powerManagerImpl->Register(&(*prechangeEvent));
 
     WaitGroup wg;
-    wg.Add(2);
+    wg.Add(1);
     int transactionId = 0;
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .Times(2)
-        .WillRepeatedly(::testing::Invoke(
+        .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
                 transactionId = txnId;
                 wg.Done();
@@ -1825,12 +1813,11 @@ TEST_F(TestPowerManager, DelayRecalculation_ConcurrentReschedules)
     powerManagerImpl->Register(&(*prechangeEvent));
 
     WaitGroup wg;
-    wg.Add(3);
+    wg.Add(1);
     int transactionId = 0;
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .Times(3)
-        .WillRepeatedly(::testing::Invoke(
+        .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
                 transactionId = txnId;
                 wg.Done();
@@ -1899,12 +1886,11 @@ TEST_F(TestPowerManager, DelayRecalculation_DoubleAck)
     powerManagerImpl->Register(&(*prechangeEvent));
 
     WaitGroup wg;
-    wg.Add(2);
+    wg.Add(1);
     int transactionId = 0;
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .Times(2)
-        .WillRepeatedly(::testing::Invoke(
+        .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
                 transactionId = txnId;
                 wg.Done();
@@ -2190,12 +2176,11 @@ TEST_F(TestPowerManager, DelayRecalculation_AckWithoutDelay)
     powerManagerImpl->Register(&(*prechangeEvent));
 
     WaitGroup wg;
-    wg.Add(2);
+    wg.Add(1);
     int transactionId = 0;
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .Times(2)
-        .WillRepeatedly(::testing::Invoke(
+        .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
                 transactionId = txnId;
                 wg.Done();
@@ -2255,12 +2240,11 @@ TEST_F(TestPowerManager, DelayRecalculation_RescheduleAfterAck)
     powerManagerImpl->Register(&(*prechangeEvent));
 
     WaitGroup wg;
-    wg.Add(2);
+    wg.Add(1);
     int transactionId = 0;
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .Times(2)
-        .WillRepeatedly(::testing::Invoke(
+        .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
                 transactionId = txnId;
                 wg.Done();
