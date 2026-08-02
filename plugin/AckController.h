@@ -61,7 +61,7 @@ public:
         , _transactionId(++_nextTransactionId)
         , _timeout(WPEFramework::Core::Time::Now())
         , _handler(nullptr)
-        , _running(false)
+        , _state(State::IDLE)
         , _mutex()
     {
         LOGINFO("PowerManager: Created for powerState: %d, transactionId: %d", powerState, _transactionId);
@@ -138,21 +138,17 @@ public:
                 LOGINFO("PowerManager: Client %u acknowledged, remaining pending: %d", clientId, int(_pending.size()));
 
                 if (_pending.empty()) {
-                    // Atomically set _running to false and check if it was true
-                    // This ensures only one thread (either timeout or last ACK) wins the race
-                    bool wasRunning = _running.exchange(false);
-                    if (wasRunning) {
+                    if (updateTimerState(State::DONE)) {
                         LOGINFO("PowerManager: All clients acknowledged, will trigger completion handler");
                         shouldRunHandler = true;
                         isTimedout = false;
                     }
-                } else if (_running) {
+                } else if (_state == State::RUNNING) {
                     // Recalculate timeout; if expired-client removal empties _pending, trigger handler
                     LOGINFO("PowerManager: Recalculating timeout for remaining %d clients", int(_pending.size()));
                     bool allDone = recalculateTimeout();
                     if (allDone) {
-                        bool wasRunning = _running.exchange(false);
-                        if (wasRunning) {
+                        if (updateTimerState(State::DONE)) {
                             LOGINFO("PowerManager: All clients expired/removed, will trigger completion handler");
                             shouldRunHandler = true;
                             isTimedout = false;
@@ -204,7 +200,7 @@ public:
      */
     bool IsRunning() const
     {
-        return _running && _timerJob.IsValid();
+        return _state == State::RUNNING && _timerJob.IsValid();
     }
 
     /**
@@ -247,7 +243,7 @@ public:
                 shouldCallImmediately = true;
             } else {
                 std::weak_ptr<AckController> wPtr = shared_from_this();
-                _running                          = true;
+                _state                            = State::RUNNING;
                 _handler                          = std::move(handler);
                 _defaultTimeoutMs                 = offsetInMilliseconds;
 
@@ -264,10 +260,7 @@ public:
                 LOGINFO("PowerManager: Timer handler isTimedout: 1, isRevoked: %d", isRevoked);
 
                 if (!isRevoked) {
-                    // Atomically set _running to false and check if it was true
-                    // This ensures only one thread (either timeout or last ACK) wins the race
-                    bool wasRunning = self->_running.exchange(false);
-                    if (wasRunning) {
+                    if (self->updateTimerState(State::DONE)) {
                         self->_handler(isTimedout, isRevoked);
                     } else {
                         LOGINFO("PowerManager: Timer fired but handler already invoked by last ACK or revoked");
@@ -306,10 +299,15 @@ public:
 
             // If Reschedule is called even before Schedule, cache the expiry time
             // use expiry value later when Schedule gets called
-            if (!_running) {
+            if (_state == State::IDLE) {
                 _timeout = std::max(_timeout, clientExpiry);
                 _clientExpiries[clientId] = clientExpiry;
                 status = WPEFramework::Core::ERROR_NONE;
+                break;
+            }
+            if (_state == State::DONE) {
+                LOGERR("PowerManager: Timer already expired or completed, cannot reschedule");
+                status = WPEFramework::Core::ERROR_ILLEGAL_STATE;
                 break;
             }
 
@@ -355,6 +353,17 @@ public:
     }
 
 private:
+    /**
+     * @brief Updates the timer state atomically.
+     * @param desiredState The desired state to transition to.
+     * @return True if the state was successfully updated, false otherwise.
+     */
+    bool updateTimerState(State desiredState)
+    {
+        State expected = State::RUNNING;
+        return _state.compare_exchange_strong(expected, desiredState);
+    }
+
     /**
      * @brief Recalculates the timeout based on remaining clients' delays.
      *        Uses the maximum delay among remaining clients, or default timeout if no delays set.
@@ -459,9 +468,7 @@ private:
     void revoke()
     {
         std::lock_guard<std::mutex> lock(_mutex);
-        // Atomically set _running to false to prevent any thread from invoking handler
-        bool wasRunning = _running.exchange(false);
-        if (wasRunning) {
+        if (updateTimerState(State::DONE)) {
             LOGINFO("PowerManager: Revoking, transactionId: %d, pending: %d", _transactionId, int(_pending.size()));
             if (_timerJob.IsValid()) {
                 _workerPool.Revoke(_timerJob);
@@ -479,6 +486,7 @@ private:
 
 private:
     using TimerJob = WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch>;
+    enum class State : uint8_t { IDLE, RUNNING, DONE };
 
     WPEFramework::Core::IWorkerPool& _workerPool;          // Thunder worker pool
     PowerState _powerState;                                // target / next powerState to change
@@ -489,7 +497,7 @@ private:
     WPEFramework::Core::Time _timeout;                     // Absolute timeout value for _timerJob (not duration)
     TimerJob _timerJob;                                    // job scheduler to timeout
     std::function<void(bool, bool)> _handler;              // Completion handler to be called on timeout or all acknowledgements.
-    std::atomic<bool> _running;                            // Flag to synchronize timer timeout callback and Ack* APIs.
+    std::atomic<State> _state;                             // IDLE → RUNNING → DONE; guards handler invocation race.
     mutable std::mutex _mutex;                             // Mutex for thread safety
 
     static int _nextTransactionId; // static counter for unique transaction ID generation.
