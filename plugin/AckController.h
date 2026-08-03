@@ -48,6 +48,7 @@
  */
 class AckController : public std::enable_shared_from_this<AckController> {
     using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
+    enum class State : uint8_t { IDLE, RUNNING, DONE };
 
 public:
     /**
@@ -486,7 +487,6 @@ private:
 
 private:
     using TimerJob = WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch>;
-    enum class State : uint8_t { IDLE, RUNNING, DONE };
 
     WPEFramework::Core::IWorkerPool& _workerPool;          // Thunder worker pool
     PowerState _powerState;                                // target / next powerState to change
