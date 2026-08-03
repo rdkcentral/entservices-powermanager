@@ -344,15 +344,21 @@ void DeepSleepController::enterDeepSleepNow(std::shared_ptr<std::atomic<bool>> a
 
     if (failed) {
         LOGERR("Failed to enter deep sleep mode error code: %u", errorCode);
-        _parent.onDeepSleepFailed();
+        if (!*abortFlag) {
+            _parent.onDeepSleepFailed();
+        }
         return;
     }
     LOGINFO("DeepSleep success; performing wakeup action");
     if (userWakeup) {
         LOGINFO("DeeSleep wakeupReason: user action");
-        _parent.onDeepSleepUserWakeup(userWakeup);
+        if (!*abortFlag) {
+            _parent.onDeepSleepUserWakeup(userWakeup);
+        }
     } else {
-        deepSleepTimerWakeup();
+        if (!*abortFlag) {
+            deepSleepTimerWakeup();
+        }
     }
 }
 
