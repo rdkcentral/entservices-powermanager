@@ -86,7 +86,7 @@ class PwrMgr_Notification : public Exchange::IPowerManager::IRebootNotification,
         END_INTERFACE_MAP
 
     public:
-        PwrMgr_Notification() : m_transactionId(0) {}
+        PwrMgr_Notification() : m_transactionId(0), m_event_signalled(0) {}
         ~PwrMgr_Notification(){}
 
        template <typename T>
@@ -1731,7 +1731,7 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_LongestDelayAcksFirst_L2)
                 EXPECT_EQ(status, Core::ERROR_NONE);
                 status = PowerManagerPlugin->DelayPowerModeChangeBy(clientId2, transactionId, 2);
                 EXPECT_EQ(status, Core::ERROR_NONE);
-                status = PowerManagerPlugin->DelayPowerModeChangeBy(clientId3, transactionId, 1);
+                status = PowerManagerPlugin->DelayPowerModeChangeBy(clientId3, transactionId, 3);
                 EXPECT_EQ(status, Core::ERROR_NONE);
 
                 // Client1 (5s) ACKs after 500ms
@@ -1744,7 +1744,7 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_LongestDelayAcksFirst_L2)
                 status = PowerManagerPlugin->PowerModePreChangeComplete(clientId2, transactionId);
                 EXPECT_EQ(status, Core::ERROR_NONE);
 
-                // Client3 (1s) ACKs after another 500ms
+                // Client3 (3s) ACKs after another 500ms
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 status = PowerManagerPlugin->PowerModePreChangeComplete(clientId3, transactionId);
                 EXPECT_EQ(status, Core::ERROR_NONE);

@@ -679,7 +679,7 @@ TEST_F(TestPowerManager, PowerModePreChangeUnregisterBeforeAck)
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
-                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 

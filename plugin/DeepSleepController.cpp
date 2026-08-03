@@ -284,7 +284,15 @@ void DeepSleepController::enterDeepSleepDelayed(std::shared_ptr<std::atomic<bool
 void DeepSleepController::enterDeepSleepNow(std::shared_ptr<std::atomic<bool>> abortFlag)
 {
     LOGINFO("Enter to Deep sleep Mode..stop Receiver with sleep 1 before DS");
-    sleep(1);
+    // Check abort flag every 100ms during the 1s pre-sleep delay so teardown
+    // can cancel the activation promptly without waiting the full second.
+    for (int i = 0; i < 10; i++) {
+        if (*abortFlag) {
+            LOGINFO("DeepSleep activation cancelled during pre-sleep delay, aborting");
+            return;
+        }
+        usleep(100000); // 100ms
+    }
 
     if (*abortFlag) {
         LOGINFO("DeepSleep activation cancelled during pre-sleep delay, aborting");
@@ -321,15 +329,21 @@ void DeepSleepController::enterDeepSleepNow(std::shared_ptr<std::atomic<bool>> a
 
     if (failed) {
         LOGERR("Failed to enter deep sleep mode error code: %u", errorCode);
-        _parent.onDeepSleepFailed();
+        if (!*abortFlag) {
+            _parent.onDeepSleepFailed();
+        }
         return;
     }
     LOGINFO("DeepSleep success; performing wakeup action");
     if (userWakeup) {
         LOGINFO("DeeSleep wakeupReason: user action");
-        _parent.onDeepSleepUserWakeup(userWakeup);
+        if (!*abortFlag) {
+            _parent.onDeepSleepUserWakeup(userWakeup);
+        }
     } else {
-        deepSleepTimerWakeup();
+        if (!*abortFlag) {
+            deepSleepTimerWakeup();
+        }
     }
 }
 
