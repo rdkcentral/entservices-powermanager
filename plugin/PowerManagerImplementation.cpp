@@ -76,6 +76,12 @@ namespace Plugin {
 
     PowerManagerImplementation::~PowerManagerImplementation()
     {
+        // Abort any pending power transition to prevent completion callbacks after teardown.
+        _apiLock.Lock();
+        _modeChangeController.reset();
+        _apiLock.Unlock();
+        // Abort in-flight deep sleep and wait for the worker to exit before members are destroyed.
+        _deepSleepController.Shutdown();
         LOGINFO(">> DTOR <<");
     }
 

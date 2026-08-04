@@ -18,13 +18,15 @@
  */
 #pragma once
 
-#include <atomic>      // for atomic
-#include <map>         // for map
-#include <memory>      // for unique_ptr, operator!=
-#include <stdint.h>    // for uint32_t
-#include <string>      // for string
-#include <type_traits> // for is_base_of
-#include <utility>     // for forward, move
+#include <atomic>           // for atomic
+#include <condition_variable>
+#include <map>              // for map
+#include <memory>           // for unique_ptr, operator!=
+#include <mutex>
+#include <stdint.h>         // for uint32_t
+#include <string>           // for string
+#include <type_traits>      // for is_base_of
+#include <utility>          // for forward, move
 
 #include <core/Proxy.h>               // for ProxyType
 #include <core/Trace.h>               // for ASSERT
@@ -162,6 +164,9 @@ public:
     // deactivate deep sleep mode
     uint32_t Deactivate();
 
+    // Abort any in-flight activation and block until the worker exits.
+    void Shutdown();
+
     // perform maintenance reboot
     void MaintenanceReboot();
 
@@ -180,10 +185,10 @@ public:
 
 private:
     bool read_integer_conf(const char* file_name, uint32_t& val);
-    void enterDeepSleepDelayed(std::shared_ptr<std::atomic<bool>> abortFlag);
-    void enterDeepSleepNow(std::shared_ptr<std::atomic<bool>> abortFlag);
+    void enterDeepSleepDelayed();
+    void enterDeepSleepNow();
     void deepSleepTimerWakeup();
-    void performActivate(uint32_t timeOut, bool nwStandbyMode, std::shared_ptr<std::atomic<bool>> abortFlag);
+    void performActivate(uint32_t timeOut, bool nwStandbyMode);
 
 private:
     INotification& _parent;
@@ -196,6 +201,9 @@ private:
 
     WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> _deepSleepDelayJob; // Job to handle delay before entering deepsleep
 
-    bool _nwStandbyMode; // Flag to indicate if network standby mode is enabled
-    std::shared_ptr<std::atomic<bool>> _activateCancelled; // Set to true in destructor to cancel in-flight activation
+    bool _nwStandbyMode;
+    std::atomic<bool> _activateCancelled;
+    std::mutex _workerMtx;
+    std::condition_variable _workerCv;
+    bool _workerRunning;
 };

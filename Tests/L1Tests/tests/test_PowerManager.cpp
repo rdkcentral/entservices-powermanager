@@ -861,8 +861,8 @@ TEST_F(TestPowerManager, DelayRecalculation_LongestDelayAcksFirst)
     status = powerManagerImpl->DelayPowerModeChangeBy(clientId2, transactionId, 2);
     EXPECT_EQ(status, Core::ERROR_NONE);
 
-    // Client3 requests 1s delay
-    status = powerManagerImpl->DelayPowerModeChangeBy(clientId3, transactionId, 1);
+    // Client3 requests 3s delay
+    status = powerManagerImpl->DelayPowerModeChangeBy(clientId3, transactionId, 3);
     EXPECT_EQ(status, Core::ERROR_NONE);
 
     // Client1 (5s) ACKs first after 500ms
@@ -875,7 +875,7 @@ TEST_F(TestPowerManager, DelayRecalculation_LongestDelayAcksFirst)
     status = powerManagerImpl->PowerModePreChangeComplete(clientId2, transactionId);
     EXPECT_EQ(status, Core::ERROR_NONE);
 
-    // Client3 (1s) ACKs after another 500ms
+    // Client3 (3s) ACKs after another 500ms
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
     status = powerManagerImpl->PowerModePreChangeComplete(clientId3, transactionId);
     EXPECT_EQ(status, Core::ERROR_NONE);
