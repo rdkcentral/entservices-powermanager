@@ -1048,8 +1048,6 @@ TEST_F(PowerManager_L2Test, DeepSleepIgnore)
             if (PowerManagerPlugin)
             {
                 uint32_t status;
-                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
-                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
 
                 status = PowerManagerPlugin->SetDeepSleepTimer(10);
                 EXPECT_EQ(status, Core::ERROR_NONE);
@@ -1057,6 +1055,9 @@ TEST_F(PowerManager_L2Test, DeepSleepIgnore)
                 int keyCode = 0;
                 status      = PowerManagerPlugin->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-test-client");
                 EXPECT_EQ(status, Core::ERROR_NONE);
+
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
 
                 PowerState newState  = PowerState::POWER_STATE_UNKNOWN;
                 PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
@@ -1137,10 +1138,10 @@ TEST_F(PowerManager_L2Test, NetworkStandby)
                             return PWRMGR_SUCCESS;
                         }));
 
+                PowerManagerPlugin->SetNetworkStandbyMode(false);
+
                 signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_NW_STANDBYMODECHANGED);
                 EXPECT_TRUE(signalled & POWERMANAGERL2TEST_NW_STANDBYMODECHANGED);
-
-                PowerManagerPlugin->SetNetworkStandbyMode(false);
 
                 bool standbyMode = false;
 
@@ -1209,9 +1210,6 @@ TEST_F(PowerManager_L2Test,DeepSleepInvalidWakeup)
                 uint32_t status = PowerManagerPlugin->SetDeepSleepTimer(deepSleepTimeout);
                 EXPECT_EQ(status, Core::ERROR_NONE);
 
-                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
-                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
-
                 EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
                     .Times(2)
                     .WillOnce(::testing::Invoke(
@@ -1249,6 +1247,9 @@ TEST_F(PowerManager_L2Test,DeepSleepInvalidWakeup)
                 int keyCode = 0;
                 status      = PowerManagerPlugin->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-test");
                 EXPECT_EQ(status, Core::ERROR_NONE);
+
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
 
                 signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
                 EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
@@ -1831,11 +1832,33 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_AllClientsAckImmediately_L2)
                 PowerManagerPlugin->AddPowerModePreChangeClient("l2-client2", clientId2);
 
                 EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
+                    .Times(2)
                     .WillOnce(::testing::Invoke(
                         [](PWRMgr_PowerState_t powerState) {
                             EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
                             return PWRMGR_SUCCESS;
+                        }))
+                    .WillOnce(::testing::Invoke(
+                        [](PWRMgr_PowerState_t powerState) {
+                            EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                            return PWRMGR_SUCCESS;
                         }));
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_SetDeepSleep(::testing::_, ::testing::_, ::testing::_))
+                    .WillOnce(::testing::Invoke(
+                        [](uint32_t, bool* isGPIOWakeup, bool) {
+                            *isGPIOWakeup = false;
+                            return DEEPSLEEPMGR_SUCCESS;
+                        }));
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_GetLastWakeupReason(::testing::_))
+                    .WillOnce(::testing::Invoke(
+                        [](DeepSleep_WakeupReason_t* wakeupReason) {
+                            return DeepSleep_Return_Status_t(-1);
+                        }));
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_DeepSleepWakeup())
+                    .WillOnce(testing::Return(DEEPSLEEPMGR_SUCCESS));
 
                 auto startTime = std::chrono::steady_clock::now();
 
@@ -1863,10 +1886,14 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_AllClientsAckImmediately_L2)
                 TEST_LOG("Total duration: %ld ms", duration);
                 EXPECT_LT(duration, 1000);  // Less than 1 second
 
+                // Wait for deep sleep to complete and device to wake up into LIGHT_SLEEP
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+
                 PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
                 PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
                 PowerManagerPlugin->GetPowerState(currentState, prevState);
-                EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+                EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
 
                 PowerManagerPlugin->RemovePowerModePreChangeClient(clientId1);
                 PowerManagerPlugin->RemovePowerModePreChangeClient(clientId2);
@@ -1934,11 +1961,33 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_FourClientsTimeout_L2)
                 PowerManagerPlugin->AddPowerModePreChangeClient("l2-client4", clientId4);
 
                 EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
+                    .Times(2)
                     .WillOnce(::testing::Invoke(
                         [](PWRMgr_PowerState_t powerState) {
                             EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
                             return PWRMGR_SUCCESS;
+                        }))
+                    .WillOnce(::testing::Invoke(
+                        [](PWRMgr_PowerState_t powerState) {
+                            EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                            return PWRMGR_SUCCESS;
                         }));
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_SetDeepSleep(::testing::_, ::testing::_, ::testing::_))
+                    .WillOnce(::testing::Invoke(
+                        [](uint32_t, bool* isGPIOWakeup, bool) {
+                            *isGPIOWakeup = false;
+                            return DEEPSLEEPMGR_SUCCESS;
+                        }));
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_GetLastWakeupReason(::testing::_))
+                    .WillOnce(::testing::Invoke(
+                        [](DeepSleep_WakeupReason_t* wakeupReason) {
+                            return DeepSleep_Return_Status_t(-1);
+                        }));
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_DeepSleepWakeup())
+                    .WillOnce(testing::Return(DEEPSLEEPMGR_SUCCESS));
 
                 auto startTime = std::chrono::steady_clock::now();
 
@@ -1974,10 +2023,14 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_FourClientsTimeout_L2)
                 EXPECT_LT(duration, 3000);  // Less than 3 seconds
                 EXPECT_GT(duration, 1500);  // More than 1.5 seconds
 
+                // Wait for deep sleep to complete and device to wake up into LIGHT_SLEEP
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+
                 PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
                 PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
                 PowerManagerPlugin->GetPowerState(currentState, prevState);
-                EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+                EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
 
                 PowerManagerPlugin->RemovePowerModePreChangeClient(clientId1);
                 PowerManagerPlugin->RemovePowerModePreChangeClient(clientId2);
