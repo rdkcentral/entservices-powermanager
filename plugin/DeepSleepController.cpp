@@ -52,6 +52,12 @@ using PowerState   = WPEFramework::Exchange::IPowerManager::PowerState;
 using IPlatform    = hal::deepsleep::IPlatform;
 using util         = PowerUtils;
 
+struct DeepSleepController::SyncState {
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool running = false;
+};
+
 std::map<std::string, DeepSleepWakeupSettings::tzValue> DeepSleepWakeupSettings::_maptzValues;
 
 uint32_t DeepSleepWakeupSettings::getTZDiffInSec() const
@@ -190,7 +196,7 @@ DeepSleepController::DeepSleepController(INotification& parent, std::shared_ptr<
     , _deepSleepWakeupTimeoutSec(0)
     , _nwStandbyMode(false)
     , _activateCancelled(false)
-    , _running(false)
+    , _sync(new SyncState())
 {
     LOGINFO(">> CTOR <<");
 }
@@ -204,8 +210,9 @@ DeepSleepController::~DeepSleepController()
 
 void DeepSleepController::Shutdown()
 {
+    if (!_sync) return; // moved-from state
     {
-        std::lock_guard<std::mutex> lk(_mtx);
+        std::lock_guard<std::mutex> lk(_sync->mtx);
         _activateCancelled = true;
     }
     if (_deepSleepDelayJob.IsValid()) {
@@ -213,8 +220,8 @@ void DeepSleepController::Shutdown()
         _deepSleepDelayJob.Release();
         LOGINFO("Deepsleep delayed job cancelled");
     }
-    std::unique_lock<std::mutex> lk(_mtx);
-    _cv.wait(lk, [this] { return !_running; });
+    std::unique_lock<std::mutex> lk(_sync->mtx);
+    _sync->cv.wait(lk, [this] { return !_sync->running; });
 }
 
 uint32_t DeepSleepController::GetLastWakeupReason(WakeupReason& wakeupReason) const
@@ -294,12 +301,12 @@ void DeepSleepController::enterDeepSleepDelayed()
 void DeepSleepController::enterDeepSleepNow()
 {
     {
-        std::lock_guard<std::mutex> lk(_mtx);
+        std::lock_guard<std::mutex> lk(_sync->mtx);
         if (_activateCancelled) {
             LOGINFO("DeepSleep activation already cancelled, aborting");
             return;
         }
-        _running = true;
+        _sync->running = true;
     }
 
     LOGINFO("Enter to Deep sleep Mode..stop Receiver with sleep 1 before DS");
@@ -363,10 +370,10 @@ void DeepSleepController::enterDeepSleepNow()
     }
 
     {
-        std::lock_guard<std::mutex> lk(_mtx);
-        _running = false;
+        std::lock_guard<std::mutex> lk(_sync->mtx);
+        _sync->running = false;
     }
-    _cv.notify_all();
+    _sync->cv.notify_all();
 }
 
 void DeepSleepController::deepSleepTimerWakeup()

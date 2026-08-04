@@ -18,10 +18,8 @@
  */
 #pragma once
 
-#include <condition_variable>
 #include <map>         // for map
 #include <memory>      // for unique_ptr, operator!=
-#include <mutex>
 #include <stdint.h>    // for uint32_t
 #include <string>           // for string
 #include <type_traits>      // for is_base_of
@@ -125,6 +123,7 @@ class DeepSleepController {
 
 public:
     ~DeepSleepController();
+    DeepSleepController(DeepSleepController&&) = default;
     class INotification {
     public:
         virtual ~INotification() = default;
@@ -202,7 +201,6 @@ private:
 
     bool _nwStandbyMode;
     volatile bool _activateCancelled;
-    std::mutex _mtx;
-    std::condition_variable _cv;
-    bool _running = false;
+    struct SyncState;
+    std::unique_ptr<SyncState> _sync;
 };
