@@ -18,12 +18,11 @@
  */
 #pragma once
 
-#include <atomic>           // for atomic
 #include <condition_variable>
-#include <map>              // for map
-#include <memory>           // for unique_ptr, operator!=
+#include <map>         // for map
+#include <memory>      // for unique_ptr, operator!=
 #include <mutex>
-#include <stdint.h>         // for uint32_t
+#include <stdint.h>    // for uint32_t
 #include <string>           // for string
 #include <type_traits>      // for is_base_of
 #include <utility>          // for forward, move
@@ -202,8 +201,8 @@ private:
     WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> _deepSleepDelayJob; // Job to handle delay before entering deepsleep
 
     bool _nwStandbyMode;
-    std::atomic<bool> _activateCancelled;
-    std::mutex _workerMtx;
-    std::condition_variable _workerCv;
-    bool _workerRunning;
+    volatile bool _activateCancelled;
+    std::mutex _mtx;
+    std::condition_variable _cv;
+    bool _running = false;
 };

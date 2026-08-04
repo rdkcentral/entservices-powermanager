@@ -18,7 +18,9 @@
  */
 
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
+#include <mutex>
 #include <errno.h>    // for errno
 #include <fstream>    // for ifstream
 #include <functional> // for function
@@ -188,7 +190,7 @@ DeepSleepController::DeepSleepController(INotification& parent, std::shared_ptr<
     , _deepSleepWakeupTimeoutSec(0)
     , _nwStandbyMode(false)
     , _activateCancelled(false)
-    , _workerRunning(false)
+    , _running(false)
 {
     LOGINFO(">> CTOR <<");
 }
@@ -202,14 +204,17 @@ DeepSleepController::~DeepSleepController()
 
 void DeepSleepController::Shutdown()
 {
-    _activateCancelled = true;
+    {
+        std::lock_guard<std::mutex> lk(_mtx);
+        _activateCancelled = true;
+    }
     if (_deepSleepDelayJob.IsValid()) {
         _workerPool.Revoke(_deepSleepDelayJob);
         _deepSleepDelayJob.Release();
         LOGINFO("Deepsleep delayed job cancelled");
     }
-    std::unique_lock<std::mutex> lk(_workerMtx);
-    _workerCv.wait(lk, [this] { return !_workerRunning; });
+    std::unique_lock<std::mutex> lk(_mtx);
+    _cv.wait(lk, [this] { return !_running; });
 }
 
 uint32_t DeepSleepController::GetLastWakeupReason(WakeupReason& wakeupReason) const
@@ -289,8 +294,12 @@ void DeepSleepController::enterDeepSleepDelayed()
 void DeepSleepController::enterDeepSleepNow()
 {
     {
-        std::lock_guard<std::mutex> lk(_workerMtx);
-        _workerRunning = true;
+        std::lock_guard<std::mutex> lk(_mtx);
+        if (_activateCancelled) {
+            LOGINFO("DeepSleep activation already cancelled, aborting");
+            return;
+        }
+        _running = true;
     }
 
     LOGINFO("Enter to Deep sleep Mode..stop Receiver with sleep 1 before DS");
@@ -354,10 +363,10 @@ void DeepSleepController::enterDeepSleepNow()
     }
 
     {
-        std::lock_guard<std::mutex> lk(_workerMtx);
-        _workerRunning = false;
+        std::lock_guard<std::mutex> lk(_mtx);
+        _running = false;
     }
-    _workerCv.notify_all();
+    _cv.notify_all();
 }
 
 void DeepSleepController::deepSleepTimerWakeup()
