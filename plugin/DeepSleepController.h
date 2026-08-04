@@ -138,15 +138,6 @@ class DeepSleepController {
 
 public:
     ~DeepSleepController();
-    
-    // Delete copy constructor and copy assignment
-    DeepSleepController(const DeepSleepController&) = delete;
-    DeepSleepController& operator=(const DeepSleepController&) = delete;
-    
-    // Allow move constructor and move assignment
-    DeepSleepController(DeepSleepController&&) = default;
-    DeepSleepController& operator=(DeepSleepController&&) = default;
-    
     class INotification {
     public:
         virtual ~INotification() = default;
