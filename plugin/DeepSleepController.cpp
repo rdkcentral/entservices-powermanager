@@ -58,6 +58,8 @@ struct DeepSleepController::SyncState {
     bool running = false;
 };
 
+DeepSleepController::DeepSleepController(DeepSleepController&&) = default;
+
 std::map<std::string, DeepSleepWakeupSettings::tzValue> DeepSleepWakeupSettings::_maptzValues;
 
 uint32_t DeepSleepWakeupSettings::getTZDiffInSec() const

@@ -123,7 +123,7 @@ class DeepSleepController {
 
 public:
     ~DeepSleepController();
-    DeepSleepController(DeepSleepController&&) = default;
+    DeepSleepController(DeepSleepController&&);
     class INotification {
     public:
         virtual ~INotification() = default;
