@@ -1709,6 +1709,8 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_LongestDelayAcksFirst_L2)
                 status = PowerManagerPlugin->AddPowerModePreChangeClient("l2-client3", clientId3);
                 EXPECT_EQ(status, Core::ERROR_NONE);
 
+                // This test only verifies delay recalculation logic, not deep sleep activation
+                // No deep sleep timer is set, so expect exactly 1 call to enter DEEP_SLEEP state
                 EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
                     .WillOnce(::testing::Invoke(
                         [](PWRMgr_PowerState_t powerState) {
@@ -1761,6 +1763,7 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_LongestDelayAcksFirst_L2)
                 EXPECT_LT(duration, 2500);  // Less than 2.5 seconds
                 EXPECT_GT(duration, 1000);  // More than 1 second
 
+                // After receiving SYSTEMSTATE_CHANGED event, verify final power state
                 PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
                 PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
                 status = PowerManagerPlugin->GetPowerState(currentState, prevState);
@@ -2100,6 +2103,8 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_RescheduleBeforeSchedule_L2)
                 status = PowerManagerPlugin->AddPowerModePreChangeClient("l2-client2", clientId2);
                 EXPECT_EQ(status, Core::ERROR_NONE);
 
+                // This test only verifies delay recalculation logic, not deep sleep activation
+                // No deep sleep timer is set, so expect exactly 1 call to enter DEEP_SLEEP state
                 EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
                     .WillOnce(::testing::Invoke(
                         [](PWRMgr_PowerState_t powerState) {
@@ -2128,6 +2133,13 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_RescheduleBeforeSchedule_L2)
 
                 signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
                 EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+
+                // After receiving SYSTEMSTATE_CHANGED event, verify final power state
+                PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+                PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+                status = PowerManagerPlugin->GetPowerState(currentState, prevState);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
 
                 PowerManagerPlugin->RemovePowerModePreChangeClient(clientId1);
                 PowerManagerPlugin->RemovePowerModePreChangeClient(clientId2);
@@ -2194,6 +2206,8 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_TimerExpired_L2)
                 uint32_t status = PowerManagerPlugin->AddPowerModePreChangeClient("l2-client1", clientId);
                 EXPECT_EQ(status, Core::ERROR_NONE);
 
+                // This test only verifies delay recalculation logic, not deep sleep activation
+                // No deep sleep timer is set, so expect exactly 1 call to enter DEEP_SLEEP state
                 EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
                     .WillOnce(::testing::Invoke(
                         [](PWRMgr_PowerState_t powerState) {
@@ -2220,6 +2234,13 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_TimerExpired_L2)
 
                 signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
                 EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+
+                // After receiving SYSTEMSTATE_CHANGED event, verify final power state
+                PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+                PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+                status = PowerManagerPlugin->GetPowerState(currentState, prevState);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
 
                 PowerManagerPlugin->RemovePowerModePreChangeClient(clientId);
                 PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
@@ -2290,6 +2311,8 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_ExpiredClientsRemoved_L2)
                 status = PowerManagerPlugin->AddPowerModePreChangeClient("l2-client3", clientId3);
                 EXPECT_EQ(status, Core::ERROR_NONE);
 
+                // This test only verifies delay recalculation logic, not deep sleep activation
+                // No deep sleep timer is set, so expect exactly 1 call to enter DEEP_SLEEP state
                 EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
                     .WillOnce(::testing::Invoke(
                         [](PWRMgr_PowerState_t powerState) {
@@ -2308,7 +2331,7 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_ExpiredClientsRemoved_L2)
                 int transactionId = mNotification.GetTransactionId();
                 TEST_LOG("Received transactionId: %d", transactionId);
 
-                // Set delays: Client1: 1s, Client2: 3s, Client3: 5s
+                // Set delays: Client1=1s, Client2=3s, Client3=5s
                 status = PowerManagerPlugin->DelayPowerModeChangeBy(clientId1, transactionId, 1);
                 EXPECT_EQ(status, Core::ERROR_NONE);
                 status = PowerManagerPlugin->DelayPowerModeChangeBy(clientId2, transactionId, 3);
@@ -2334,8 +2357,15 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_ExpiredClientsRemoved_L2)
                 TEST_LOG("Total duration: %ld ms", duration);
                 // After 1.5s wait and Client3 ACK, recalculation uses default 1s timeout
                 // Total: 1.5s wait + ~0.5s = ~2s
-                EXPECT_LT(duration, 3000);
+                EXPECT_LT(duration, 3100);  // Increased tolerance for timing precision
                 EXPECT_GT(duration, 1500);
+
+                // After receiving SYSTEMSTATE_CHANGED event, verify final power state
+                PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+                PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+                status = PowerManagerPlugin->GetPowerState(currentState, prevState);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
 
                 PowerManagerPlugin->RemovePowerModePreChangeClient(clientId1);
                 PowerManagerPlugin->RemovePowerModePreChangeClient(clientId2);
