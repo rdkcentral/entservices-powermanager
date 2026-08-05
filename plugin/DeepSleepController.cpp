@@ -188,6 +188,7 @@ DeepSleepController::DeepSleepController(INotification& parent, std::shared_ptr<
     , _deepSleepWakeupTimeoutSec(0)
     , _nwStandbyMode(false)
     , _abortState(std::make_shared<AbortState>())
+    , _timingMutex(std::make_shared<std::mutex>())
 {
     LOGINFO(">> CTOR <<");
 }
@@ -373,8 +374,11 @@ void DeepSleepController::performActivate(uint32_t timeOut, bool nwStandbyMode)
         clearAbortDeepSleep();
 
         // latch
-        _deepSleepState     = DeepSleepState::InProgress;
-        _deepsleepStartTime = MonotonicClock::now();
+        _deepSleepState = DeepSleepState::InProgress;
+        {
+            std::lock_guard<std::mutex> lock(*_timingMutex);
+            _deepsleepStartTime = MonotonicClock::now();
+        }
 
         // Perform the deep sleep operation
         _nwStandbyMode             = nwStandbyMode;

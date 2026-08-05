@@ -378,13 +378,13 @@ namespace Plugin {
             isSync = isSyncStateChange(currState, newState);
 
             if (POWER_STATE_STANDBY_DEEP_SLEEP == currState) {
+                auto elapsed = _deepSleepController.Elapsed();
                 if (_deepSleepController.IsDeepSleepInProgress()
-                    && (_deepSleepController.Elapsed() < std::chrono::seconds(kTransientDeepsleepThresholdSec))) {
+                    && (elapsed < std::chrono::seconds(kTransientDeepsleepThresholdSec))) {
 
                     LOGINFO("deepsleep in  progress  ignoring %s request, elapsed: %" PRId64 " sec",
-                            util::str(newState), std::chrono::duration_cast<std::chrono::seconds>(_deepSleepController.Elapsed()).count());
+                            util::str(newState), std::chrono::duration_cast<std::chrono::seconds>(elapsed).count());
                     t2_event_d((char*)"SYST_ERR_SetPwrStateFail", 1);
- 
 
                     selfLock.Unlock();
                     LOGINFO("selfLock Released isSync: na");

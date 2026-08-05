@@ -184,10 +184,18 @@ public:
 
     inline std::chrono::steady_clock::duration Elapsed()
     {
-        if (_deepsleepStartTime.time_since_epoch() == std::chrono::steady_clock::duration::zero()) {
+        Timestamp deepsleepStartTime;
+
+        {
+            std::lock_guard<std::mutex> lock(*_timingMutex);
+            deepsleepStartTime = _deepsleepStartTime;
+        }
+
+        if (deepsleepStartTime.time_since_epoch() == std::chrono::steady_clock::duration::zero()) {
             return std::chrono::steady_clock::duration::zero();
         }
-        return MonotonicClock::now() - _deepsleepStartTime;
+
+        return MonotonicClock::now() - deepsleepStartTime;
     }
 
 private:
@@ -215,4 +223,5 @@ private:
     bool _nwStandbyMode; // Flag to indicate if network standby mode is enabled
 
     std::shared_ptr<AbortState> _abortState;
+    std::shared_ptr<std::mutex> _timingMutex;
 };
