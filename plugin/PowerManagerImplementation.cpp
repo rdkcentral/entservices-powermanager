@@ -39,9 +39,14 @@ using WakeupSourceConfigIteratorImpl = WPEFramework::Core::Service<WPEFramework:
 
 int WPEFramework::Plugin::PowerManagerImplementation::PreModeChangeController::_nextTransactionId = 0;
 uint32_t WPEFramework::Plugin::PowerManagerImplementation::_nextClientId                          = 0;
+uint32_t WPEFramework::Plugin::PowerManagerImplementation::_nextAckClientId                       = 0;
 
 #ifndef POWER_MODE_PRECHANGE_TIMEOUT_SEC
 #define POWER_MODE_PRECHANGE_TIMEOUT_SEC 1
+#endif
+
+#ifndef POWER_MODE_CHANGE_ACK_TIMEOUT_SEC
+#define POWER_MODE_CHANGE_ACK_TIMEOUT_SEC 1
 #endif
 
 // Device is considered to be in transient deep sleep state if
@@ -64,6 +69,7 @@ namespace Plugin {
         , m_powerStateBeforeRebootValid(false)
         , _controller(nullptr)
         , _modeChangeController(nullptr)
+        , _modeChangeAckController(nullptr)
         , _deepSleepController(DeepSleepController::Create(*this))
         , _powerController(PowerController::Create(_deepSleepController))
         , _thermalController(ThermalController::Create(*this))
@@ -284,6 +290,22 @@ namespace Plugin {
         return errorCode;
     }
 
+    Core::hresult PowerManagerImplementation::Register(Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested* notification)
+    {
+        LOGINFO(">>");
+        Core::hresult errorCode = Register(_modeChangeAckNotifications, notification);
+        LOGINFO("<< IPowerModeChangeAcknowledgementRequested %p, errorcode: %u", notification, errorCode);
+        return errorCode;
+    }
+
+    Core::hresult PowerManagerImplementation::Unregister(const Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested* notification)
+    {
+        LOGINFO(">>");
+        Core::hresult errorCode = Unregister(_modeChangeAckNotifications, notification);
+        LOGINFO("<< IPowerModeChangeAcknowledgementRequested %p, errorcode: %u", notification, errorCode);
+        return errorCode;
+    }
+
     Core::hresult PowerManagerImplementation::GetPowerState(PowerState& currentState, PowerState& prevState) const
     {
         LOGINFO(">>");
@@ -486,6 +508,20 @@ namespace Plugin {
                 PowerManagerImplementation::LambdaJob::Create(this,
                     [notification, currentState, newState, transactionId, timeOut]() {
                         notification->OnPowerModePreChange(currentState, newState, transactionId, timeOut);
+                    }));
+        }
+
+        LOGINFO("<< currentState : %s, newState : %s, transactionId : %d", util::str(currentState), util::str(newState), transactionId);
+    }
+
+    void PowerManagerImplementation::submitPowerModeChangeAcknowledgementRequestedEvent(const PowerState currentState, const PowerState newState, const int transactionId, const string& reason)
+    {
+        LOGINFO(">> currentState : %s, newState : %s, transactionId : %d", util::str(currentState), util::str(newState), transactionId);
+        for (auto& notification : _modeChangeAckNotifications) {
+            Core::IWorkerPool::Instance().Submit(
+                PowerManagerImplementation::LambdaJob::Create(this,
+                    [notification, currentState, newState, transactionId, reason]() {
+                        notification->OnPowerModeChangeAcknowledgementRequested(currentState, newState, transactionId, reason);
                     }));
         }
 
@@ -847,6 +883,62 @@ namespace Plugin {
     {
         LOGINFO(">> keyCode: %d, powerState: %s", keyCode, util::str(newState));
 
+        _apiLock.Lock();
+
+        if (_modeChangeAckController) {
+            LOGWARN("Ack round already in progress for %s state, cancelling stale round", util::str(_modeChangeAckController->powerState()));
+            _modeChangeAckController.reset();
+        }
+
+        _modeChangeAckController = std::shared_ptr<PreModeChangeController>(new PreModeChangeController(newState));
+        const int transactionId  = _modeChangeAckController->TransactionId(); // transactionId is unique per acknowledgement round
+
+        // Add all acknowledgement clients to ack await list (who we expect `PowerModeChangeAcknowledgement` from)
+        for (const auto& client : _modeChangeAckClients) {
+            _modeChangeAckController->AckAwait(client.first);
+        }
+
+        // Preserve the same sync-state-change carve-out as the pre-change round (see `isSyncStateChange`),
+        // so `SetPowerState`'s `selfLock` ordering guarantee is not affected by this additional round.
+        const uint32_t timeOut = isSyncStateChange(currentState, newState) ? 0 : POWER_MODE_CHANGE_ACK_TIMEOUT_SEC;
+
+        // Like in `Job` class we avoid impl destruction before handler is invoked
+        this->AddRef();
+
+        auto ackController = _modeChangeAckController;
+
+        _apiLock.Unlock();
+
+        // Dispatch acknowledgement requested notifications, we cannot hold `_apiLock` here
+        // as clients could call any PowerManager plugin APIs
+        submitPowerModeChangeAcknowledgementRequestedEvent(currentState, newState, transactionId, reason);
+
+        // Starts the ack timer, and waits for Ack from clients for given timeOut duration.
+        // On all clients acknowledging or upon timeout (whichever happens first), the acknowledgement
+        // completion handler gets triggered, which will actually apply the power state change.
+        ackController->Schedule(timeOut * 1000,
+            [this, keyCode, currentState, newState, reason](bool isTimedout, bool isAborted) mutable {
+                LOGINFO(">> AckCompletionHandler isTimedout: %d, isAborted: %d", isTimedout, isAborted);
+
+                if (!isAborted) {
+                    powerModeChangeAcknowledgementCompletionHandler(keyCode, currentState, newState, reason);
+                } else {
+                    LOGWARN("modeChangeAckController was already deleted, do not process AckCompletionHandler");
+                }
+
+                // Release the refCount taken just before `_modeChangeAckController->Schedule`
+                this->Release();
+
+                LOGINFO("<< AckCompletionHandler");
+            });
+
+        LOGINFO("<<");
+    }
+
+    void PowerManagerImplementation::powerModeChangeAcknowledgementCompletionHandler(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason)
+    {
+        LOGINFO(">> keyCode: %d, powerState: %s", keyCode, util::str(newState));
+
         setDevicePowerState(keyCode, currentState, newState, reason);
 
         LOGINFO("<<");
@@ -862,6 +954,25 @@ namespace Plugin {
 
         if (_modeChangeController) {
             errorCode = _modeChangeController->Ack(clientId, transactionId);
+        }
+
+        _apiLock.Unlock();
+
+        LOGINFO("<< errorcode: %u", errorCode);
+
+        return errorCode;
+    }
+
+    Core::hresult PowerManagerImplementation::PowerModeChangeAcknowledgement(const uint32_t acknowledgeClientId, const int transactionId)
+    {
+        uint32_t errorCode = Core::ERROR_INVALID_PARAMETER;
+
+        LOGINFO(">> acknowledgeClientId: %u, transactionId: %d", acknowledgeClientId, transactionId);
+
+        _apiLock.Lock();
+
+        if (_modeChangeAckController) {
+            errorCode = _modeChangeAckController->Ack(acknowledgeClientId, transactionId);
         }
 
         _apiLock.Unlock();
@@ -924,6 +1035,41 @@ namespace Plugin {
         return Core::ERROR_NONE;
     }
 
+    Core::hresult PowerManagerImplementation::AddPowerModeChangeAcknowledgementClient(const string& clientName, uint32_t& acknowledgeClientId)
+    {
+        LOGINFO(">> client: %s, acknowledgeClientId: %u", clientName.c_str(), acknowledgeClientId);
+
+        if (clientName.empty()) {
+            LOGERR("AddPowerModeChangeAcknowledgementClient called with empty clientName");
+            return Core::ERROR_INVALID_PARAMETER;
+        }
+
+        _apiLock.Lock();
+
+        auto it = std::find_if(_modeChangeAckClients.cbegin(), _modeChangeAckClients.cend(),
+            [&clientName](const std::pair<uint32_t, string>& client) {
+                return client.second == clientName;
+            });
+
+        if (it == _modeChangeAckClients.end()) {
+            acknowledgeClientId                        = ++_nextAckClientId;
+            _modeChangeAckClients[acknowledgeClientId] = clientName;
+        } else {
+            // client is already registered, return the acknowledgeClientId
+            acknowledgeClientId = it->first;
+        }
+
+        _apiLock.Unlock();
+
+        for (auto& clients : _modeChangeAckClients) {
+            LOGINFO("Registered client: %s, acknowledgeClientId: %u", clients.second.c_str(), clients.first);
+        }
+
+        LOGINFO("<< errorCode: 0");
+
+        return Core::ERROR_NONE;
+    }
+
     Core::hresult PowerManagerImplementation::RemovePowerModePreChangeClient(const uint32_t clientId)
     {
         uint32_t errorCode = Core::ERROR_INVALID_PARAMETER;
@@ -949,6 +1095,35 @@ namespace Plugin {
         _apiLock.Unlock();
 
         LOGINFO("<< client: %s, clientId: %u, errorcode: %u", clientName.c_str(), clientId, errorCode);
+
+        return errorCode;
+    }
+
+    Core::hresult PowerManagerImplementation::RemovePowerModeChangeAcknowledgementClient(const uint32_t acknowledgeClientId)
+    {
+        uint32_t errorCode = Core::ERROR_INVALID_PARAMETER;
+        std::string clientName;
+
+        LOGINFO(">> acknowledgeClientId: %d", acknowledgeClientId);
+
+        _apiLock.Lock();
+
+        auto it = _modeChangeAckClients.find(acknowledgeClientId);
+
+        if (it != _modeChangeAckClients.end()) {
+            clientName = it->second;
+            _modeChangeAckClients.erase(it);
+
+            // self-ack if called while an acknowledgement round is in progress
+            if (_modeChangeAckController) {
+                _modeChangeAckController->Ack(acknowledgeClientId);
+            }
+            errorCode = Core::ERROR_NONE;
+        }
+
+        _apiLock.Unlock();
+
+        LOGINFO("<< client: %s, acknowledgeClientId: %u, errorcode: %u", clientName.c_str(), acknowledgeClientId, errorCode);
 
         return errorCode;
     }
