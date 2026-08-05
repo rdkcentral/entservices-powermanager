@@ -330,7 +330,7 @@ void DeepSleepController::enterDeepSleepNow()
         usleep(100000); // 100ms
     }
     cancelled = cancelled || _activateCancelled;
-    LOGINFO("Pre-sleep delay completed, cancelled=%d, _activateCancelled=%d", cancelled, _activateCancelled.load());
+    LOGINFO("Pre-sleep delay completed, cancelled=%d, _activateCancelled=%d", cancelled, (int)_activateCancelled);
 
     if (!cancelled) {
         uint32_t errorCode = WPEFramework::Core::ERROR_NONE;
@@ -367,7 +367,7 @@ void DeepSleepController::enterDeepSleepNow()
                 _parent.onDeepSleepFailed();
             }
         } else {
-            LOGINFO("DeepSleep success; performing wakeup action, userWakeup=%d, _activateCancelled=%d", userWakeup, _activateCancelled.load());
+            LOGINFO("DeepSleep success; performing wakeup action, userWakeup=%d, _activateCancelled=%d", userWakeup, (int)_activateCancelled);
             if (userWakeup) {
                 LOGINFO("DeeSleep wakeupReason: user action");
                 if (!_activateCancelled) {
@@ -410,7 +410,7 @@ void DeepSleepController::deepSleepTimerWakeup()
 
         std::string wakeupReasonStr = WPEFramework::Core::ERROR_NONE == errorCode ? util::str(wakeupReason) : "UNKOWN";
 
-        LOGERR("DeepSleep wakeupReason: %s, timeout: %ds, elapsed: %llds, pending: %lldms", wakeupReasonStr.c_str(),
+        LOGERR("DeepSleep wakeupReason: %s, timeout: %ds, elapsed: %lds, pending: %ldms", wakeupReasonStr.c_str(),
             _deepSleepWakeupTimeoutSec, std::chrono::duration_cast<std::chrono::seconds>(Elapsed()).count(), pending);
     }
     // irrespective of wakeup reason / status / elapsed duration always notify deepsleep wakeup
