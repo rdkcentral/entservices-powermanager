@@ -212,9 +212,14 @@ DeepSleepController::~DeepSleepController()
 
 void DeepSleepController::Shutdown()
 {
-    if (!_sync) return; // moved-from state
+    LOGINFO(">> Shutdown called");
+    if (!_sync) {
+        LOGINFO("<< Shutdown: already in moved-from state");
+        return; // moved-from state
+    }
     {
         std::lock_guard<std::mutex> lk(_sync->mtx);
+        LOGINFO("Setting _activateCancelled=true, _sync->running=%d", _sync->running);
         _activateCancelled = true;
     }
     if (_deepSleepDelayJob.IsValid()) {
@@ -222,8 +227,10 @@ void DeepSleepController::Shutdown()
         _deepSleepDelayJob.Release();
         LOGINFO("Deepsleep delayed job cancelled");
     }
+    LOGINFO("Waiting for worker thread to complete...");
     std::unique_lock<std::mutex> lk(_sync->mtx);
     _sync->cv.wait(lk, [this] { return !_sync->running; });
+    LOGINFO("<< Shutdown completed");
 }
 
 uint32_t DeepSleepController::GetLastWakeupReason(WakeupReason& wakeupReason) const
@@ -315,10 +322,15 @@ void DeepSleepController::enterDeepSleepNow()
 
     bool cancelled = false;
     for (int i = 0; i < 10; i++) {
-        if (_activateCancelled) { cancelled = true; break; }
+        if (_activateCancelled) { 
+            LOGINFO("DeepSleep activation cancelled during pre-sleep delay at iteration %d", i);
+            cancelled = true; 
+            break; 
+        }
         usleep(100000); // 100ms
     }
     cancelled = cancelled || _activateCancelled;
+    LOGINFO("Pre-sleep delay completed, cancelled=%d, _activateCancelled=%d", cancelled, _activateCancelled.load());
 
     if (!cancelled) {
         uint32_t errorCode = WPEFramework::Core::ERROR_NONE;
@@ -355,15 +367,23 @@ void DeepSleepController::enterDeepSleepNow()
                 _parent.onDeepSleepFailed();
             }
         } else {
-            LOGINFO("DeepSleep success; performing wakeup action");
+            LOGINFO("DeepSleep success; performing wakeup action, userWakeup=%d, _activateCancelled=%d", userWakeup, _activateCancelled.load());
             if (userWakeup) {
                 LOGINFO("DeeSleep wakeupReason: user action");
                 if (!_activateCancelled) {
+                    LOGINFO("Calling onDeepSleepUserWakeup");
                     _parent.onDeepSleepUserWakeup(userWakeup);
+                    LOGINFO("onDeepSleepUserWakeup completed");
+                } else {
+                    LOGINFO("Skipping onDeepSleepUserWakeup because _activateCancelled=true");
                 }
             } else {
                 if (!_activateCancelled) {
+                    LOGINFO("Calling deepSleepTimerWakeup");
                     deepSleepTimerWakeup();
+                    LOGINFO("deepSleepTimerWakeup completed");
+                } else {
+                    LOGINFO("Skipping deepSleepTimerWakeup because _activateCancelled=true");
                 }
             }
         }

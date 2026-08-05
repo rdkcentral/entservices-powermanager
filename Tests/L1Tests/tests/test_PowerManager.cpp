@@ -2318,14 +2318,18 @@ TEST_F(TestPowerManager, DeepSleepIgnore)
 
 TEST_F(TestPowerManager, DeepSleepUserWakeup)
 {
+    printf("[TEST] DeepSleepUserWakeup: Test started\n");
+    
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
+                printf("[TEST] PLAT_API_SetPowerState called with state: DEEP_SLEEP\n");
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
                 return PWRMGR_SUCCESS;
             }))
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
+                printf("[TEST] PLAT_API_SetPowerState called with state: LIGHT_SLEEP\n");
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
@@ -2336,30 +2340,37 @@ TEST_F(TestPowerManager, DeepSleepUserWakeup)
     EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
             [](const PowerState prevState, const PowerState newState) {
+                printf("[TEST] OnPowerModeChanged #1: prevState=%d, newState=%d (DEEP_SLEEP)\n", (int)prevState, (int)newState);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
         .WillOnce(::testing::Invoke(
             [&](const PowerState prevState, const PowerState newState) {
+                printf("[TEST] OnPowerModeChanged #2: prevState=%d, newState=%d (LIGHT_SLEEP) - calling wg.Done()\n", (int)prevState, (int)newState);
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
                 wg.Done();
+                printf("[TEST] wg.Done() completed\n");
             }));
 
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_SetDeepSleep(::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
             [](uint32_t deep_sleep_timeout, bool* isGPIOWakeup, bool networkStandby) {
+                printf("[TEST] PLAT_DS_SetDeepSleep called: timeout=%u, networkStandby=%d\n", deep_sleep_timeout, networkStandby);
                 EXPECT_EQ(deep_sleep_timeout, 10U);
                 EXPECT_TRUE(nullptr != isGPIOWakeup);
                 EXPECT_EQ(networkStandby, false);
                 // Simulate user triggered wakeup
                 *isGPIOWakeup = true;
+                printf("[TEST] PLAT_DS_SetDeepSleep: Sleeping for %u seconds to simulate deep sleep...\n", deep_sleep_timeout / 2);
                 std::this_thread::sleep_for(std::chrono::seconds(deep_sleep_timeout / 2));
+                printf("[TEST] PLAT_DS_SetDeepSleep: Sleep completed, returning with isGPIOWakeup=true\n");
                 return DEEPSLEEPMGR_SUCCESS;
             }));
 
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_GetLastWakeupReason(::testing::_))
         .WillOnce(::testing::Invoke(
             [](DeepSleep_WakeupReason_t* wakeupReason) {
+                printf("[TEST] PLAT_DS_GetLastWakeupReason called\n");
                 *wakeupReason = DEEPSLEEP_WAKEUPREASON_GPIO;
                 return DEEPSLEEPMGR_SUCCESS;
             }));
@@ -2367,32 +2378,45 @@ TEST_F(TestPowerManager, DeepSleepUserWakeup)
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_DeepSleepWakeup())
         .WillOnce(testing::Return(DEEPSLEEPMGR_SUCCESS));
 
+    printf("[TEST] Registering mode changed notification\n");
     uint32_t status = powerManagerImpl->Register(&(*modeChanged));
     EXPECT_EQ(status, Core::ERROR_NONE);
 
+    printf("[TEST] Setting deep sleep timer to 10 seconds\n");
     status = powerManagerImpl->SetDeepSleepTimer(10);
     EXPECT_EQ(status, Core::ERROR_NONE);
 
+    printf("[TEST] Calling SetPowerState(DEEP_SLEEP)\n");
     int keyCode = 0;
     status      = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
     EXPECT_EQ(status, Core::ERROR_NONE);
+    printf("[TEST] SetPowerState returned successfully\n");
 
     PowerState newState  = PowerState::POWER_STATE_UNKNOWN;
     PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
 
+    printf("[TEST] Getting current power state\n");
     status = powerManagerImpl->GetPowerState(newState, prevState);
     EXPECT_EQ(status, Core::ERROR_NONE);
     EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+    printf("[TEST] Current state confirmed as DEEP_SLEEP\n");
 
+    printf("[TEST] Waiting for wakeup event (wg.Wait())...\n");
     wg.Wait();
+    printf("[TEST] wg.Wait() completed - wakeup event received!\n");
 
+    printf("[TEST] Getting last wakeup reason\n");
     WakeupReason wakeupReason = WakeupReason::WAKEUP_REASON_UNKNOWN;
     status                    = powerManagerImpl->GetLastWakeupReason(wakeupReason);
     EXPECT_EQ(status, Core::ERROR_NONE);
     EXPECT_EQ(wakeupReason, WakeupReason::WAKEUP_REASON_GPIO);
+    printf("[TEST] Wakeup reason confirmed as GPIO\n");
 
+    printf("[TEST] Unregistering mode changed notification\n");
     status = powerManagerImpl->Unregister(&(*modeChanged));
     EXPECT_EQ(status, Core::ERROR_NONE);
+    
+    printf("[TEST] DeepSleepUserWakeup: Test completed successfully\n");
 }
 
 // Only difference from above test-case is a user trigger for SetPowerState ON
