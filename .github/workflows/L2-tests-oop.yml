@@ -133,6 +133,12 @@ jobs:
           &&
           cmake --install build/ThunderTools
 
+      - name: Apply patches Thunder
+        run: |
+          cd $GITHUB_WORKSPACE/Thunder
+          patch -p1 < $GITHUB_WORKSPACE/entservices-testframework/patches/LockFixedBuffer_compat_R4.4.6.patch
+          cd -
+
       - name: Build Thunder
         run: >
           cmake
