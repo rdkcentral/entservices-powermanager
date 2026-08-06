@@ -309,88 +309,67 @@ void DeepSleepController::enterDeepSleepDelayed()
 
 void DeepSleepController::enterDeepSleepNow()
 {
+    // CHECKPOINT: Single point to check if shutdown was initiated
+    // If we pass this checkpoint, we commit to completing the deep sleep flow
+    // Shutdown() will wait for us to finish gracefully via _sync->running flag
     {
         std::lock_guard<std::mutex> lk(_sync->mtx);
         if (_activateCancelled) {
-            LOGINFO("DeepSleep activation already cancelled, aborting");
+            LOGINFO("Shutdown initiated before deep sleep entry, aborting");
             return;
         }
         _sync->running = true;
     }
 
+    LOGINFO("Checkpoint passed, proceeding with deep sleep flow");
     LOGINFO("Enter to Deep sleep Mode..stop Receiver with sleep 1 before DS");
+    sleep(1);
 
-    bool cancelled = false;
-    for (int i = 0; i < 10; i++) {
-        if (_activateCancelled) { 
-            LOGINFO("DeepSleep activation cancelled during pre-sleep delay at iteration %d", i);
-            cancelled = true; 
-            break; 
-        }
-        usleep(100000); // 100ms
-    }
-    cancelled = cancelled || _activateCancelled;
-    LOGINFO("Pre-sleep delay completed, cancelled=%d, _activateCancelled=%d", cancelled, (int)_activateCancelled);
+    // Past checkpoint - complete the flow without further cancellation checks
+    uint32_t errorCode = WPEFramework::Core::ERROR_NONE;
+    bool failed     = true;
+    int retryCount  = 5;
+    bool userWakeup = 0;
+    LOGINFO("Device entering Deep sleep with nwStandbyMode: %s", (_nwStandbyMode ? "Enabled" : "Disabled"));
 
-    if (!cancelled) {
-        uint32_t errorCode = WPEFramework::Core::ERROR_NONE;
-        bool failed     = true;
-        int retryCount  = 5;
-        bool userWakeup = 0;
-        LOGINFO("Device entering Deep sleep with nwStandbyMode: %s", (_nwStandbyMode ? "Enabled" : "Disabled"));
+    while (retryCount && failed) {
+        errorCode = platform().SetDeepSleep(_deepSleepWakeupTimeoutSec, userWakeup, _nwStandbyMode);
 
-        while (retryCount && failed) {
-            errorCode = platform().SetDeepSleep(_deepSleepWakeupTimeoutSec, userWakeup, _nwStandbyMode);
-
-            failed = WPEFramework::Core::ERROR_NONE != errorCode;
-
-            if (failed) {
-                _deepSleepState = DeepSleepState::Failed;
-                retryCount--;
-
-                if ((errorCode == WPEFramework::Core::ERROR_ABORTED) && (retryCount > 0)) {
-                    LOGINFO("Failed to enter deep sleep mode: %u, retry after 5s", errorCode);
-                    sleep(5);
-                } else {
-                    LOGINFO("No retry for deep sleep error code: %u", errorCode);
-                    break;
-                }
-            } else {
-                _deepSleepState = DeepSleepState::Completed;
-                LOGINFO("Device entered to Deep sleep Mode..");
-            }
-        }
+        failed = WPEFramework::Core::ERROR_NONE != errorCode;
 
         if (failed) {
-            LOGERR("Failed to enter deep sleep mode error code: %u", errorCode);
-            if (!_activateCancelled) {
-                _parent.onDeepSleepFailed();
+            _deepSleepState = DeepSleepState::Failed;
+            retryCount--;
+
+            if ((errorCode == WPEFramework::Core::ERROR_ABORTED) && (retryCount > 0)) {
+                LOGINFO("Failed to enter deep sleep mode: %u, retry after 5s", errorCode);
+                sleep(5);
+            } else {
+                LOGINFO("No retry for deep sleep error code: %u", errorCode);
+                break;
             }
         } else {
-            LOGINFO("DeepSleep success; performing wakeup action, userWakeup=%d, _activateCancelled=%d", userWakeup, (int)_activateCancelled);
-            if (userWakeup) {
-                LOGINFO("DeeSleep wakeupReason: user action");
-                if (!_activateCancelled) {
-                    LOGINFO("Calling onDeepSleepUserWakeup");
-                    _parent.onDeepSleepUserWakeup(userWakeup);
-                    LOGINFO("onDeepSleepUserWakeup completed");
-                } else {
-                    LOGINFO("Skipping onDeepSleepUserWakeup because _activateCancelled=true");
-                }
-            } else {
-                if (!_activateCancelled) {
-                    LOGINFO("Calling deepSleepTimerWakeup");
-                    deepSleepTimerWakeup();
-                    LOGINFO("deepSleepTimerWakeup completed");
-                } else {
-                    LOGINFO("Skipping deepSleepTimerWakeup because _activateCancelled=true");
-                }
-            }
+            _deepSleepState = DeepSleepState::Completed;
+            LOGINFO("Device entered to Deep sleep Mode..");
         }
-    } else {
-        LOGINFO("DeepSleep activation cancelled during pre-sleep delay, aborting");
     }
 
+    if (failed) {
+        LOGERR("Failed to enter deep sleep mode error code: %u", errorCode);
+        _parent.onDeepSleepFailed();
+    } else {
+        LOGINFO("DeepSleep success; performing wakeup action, userWakeup=%d", userWakeup);
+        if (userWakeup) {
+            LOGINFO("DeepSleep wakeupReason: user action");
+            _parent.onDeepSleepUserWakeup(userWakeup);
+        } else {
+            LOGINFO("Calling deepSleepTimerWakeup");
+            deepSleepTimerWakeup();
+            LOGINFO("deepSleepTimerWakeup completed");
+        }
+    }
+
+    // Mark worker thread as completed so Shutdown() can proceed
     {
         std::lock_guard<std::mutex> lk(_sync->mtx);
         _sync->running = false;
