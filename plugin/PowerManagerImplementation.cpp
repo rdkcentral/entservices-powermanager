@@ -76,13 +76,32 @@ namespace Plugin {
 
     PowerManagerImplementation::~PowerManagerImplementation()
     {
-        // Abort any pending power transition to prevent completion callbacks after teardown.
-        _apiLock.Lock();
-        _modeChangeController.reset();
-        _apiLock.Unlock();
-        // Abort in-flight deep sleep and wait for the worker to exit before members are destroyed.
-        _deepSleepController.Shutdown();
         LOGINFO(">> DTOR <<");
+    }
+
+    Core::hresult PowerManagerImplementation::Configure(PluginHost::IShell* service)
+    {
+        Core::hresult result = Core::ERROR_NONE;
+
+        if (service == nullptr) {
+            // Deinitialize: nullptr indicates graceful shutdown
+            LOGINFO(">> Configure(nullptr) - Deinitializing");
+            
+            // Abort any pending power transition to prevent completion callbacks after teardown.
+            _apiLock.Lock();
+            _modeChangeController.reset();
+            _apiLock.Unlock();
+            
+            // Abort in-flight deep sleep and wait for the worker to exit before members are destroyed.
+            _deepSleepController.Shutdown();
+            
+            LOGINFO("<< Deinitialization completed");
+        } else {
+            // Initialize: service pointer indicates initialization (not currently used)
+            LOGINFO("Configure(service) - Initialize not implemented");
+        }
+
+        return result;
     }
 
     void PowerManagerImplementation::dispatchPowerModeChangedEvent(const PowerState& prevState, const PowerState& newState)

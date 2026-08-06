@@ -29,6 +29,7 @@
 #include <plugins/plugins.h>
 
 #include <interfaces/IPowerManager.h>
+#include <interfaces/IConfiguration.h>
 
 #include "AckController.h"
 
@@ -44,7 +45,7 @@ using TimeSinceWakeup    = WPEFramework::Exchange::IPowerManager::TimeSinceWakeu
 
 namespace WPEFramework {
 namespace Plugin {
-    class PowerManagerImplementation : public Exchange::IPowerManager, public DeepSleepController::INotification, public ThermalController::INotification {
+    class PowerManagerImplementation : public Exchange::IPowerManager, public Exchange::IConfiguration, public DeepSleepController::INotification, public ThermalController::INotification {
     public:
         using PreModeChangeController = AckController;
 
@@ -60,6 +61,7 @@ namespace Plugin {
 
         BEGIN_INTERFACE_MAP(PowerManagerImplementation)
         INTERFACE_ENTRY(Exchange::IPowerManager)
+        INTERFACE_ENTRY(Exchange::IConfiguration)
         END_INTERFACE_MAP
 
     public:
@@ -165,6 +167,9 @@ namespace Plugin {
         Core::hresult DelayPowerModeChangeBy(const uint32_t clientId, const int transactionId, const int delayPeriod) override;
         Core::hresult AddPowerModePreChangeClient(const string& clientName, uint32_t& clientId) override;
         Core::hresult RemovePowerModePreChangeClient(const uint32_t clientId) override;
+
+        // IConfiguration interface - for graceful shutdown
+        Core::hresult Configure(PluginHost::IShell* service) override;
 
         static PowerManagerImplementation* _instance;
 
