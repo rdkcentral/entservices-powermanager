@@ -23,6 +23,7 @@
 
 #include <interfaces/IPowerManager.h>
 #include <interfaces/json/JPowerManager.h>
+#include <interfaces/IConfiguration.h>
 
 #include "UtilsLogging.h"
 
