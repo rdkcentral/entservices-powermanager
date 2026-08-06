@@ -125,7 +125,7 @@ namespace Plugin {
             Exchange::JPowerManager::Unregister(*this);
 
             // Query IConfiguration interface for graceful shutdown
-            auto* configInterface = _powerManager->QueryInterface<PluginHost::IPlugin::IConfiguration>();
+            auto* configInterface = _powerManager->QueryInterface<Exchange::IConfiguration>();
             if (configInterface != nullptr) {
                 // Call Configure(nullptr) to trigger graceful shutdown (XCast pattern)
                 uint32_t result = configInterface->Configure(nullptr);
