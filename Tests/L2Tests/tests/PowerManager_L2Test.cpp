@@ -1710,8 +1710,9 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_LongestDelayAcksFirst_L2)
                 EXPECT_EQ(status, Core::ERROR_NONE);
 
                 // This test only verifies delay recalculation logic, not deep sleep activation
-                // No deep sleep timer is set
-                // In OOP mode: expect 2 calls - one for DEEP_SLEEP entry, one for cleanup on plugin destruction
+                // In OOP mode: expect 2 calls:
+                // 1. DEEP_SLEEP entry
+                // 2. LIGHT_SLEEP wakeup (worker completes during Configure(nullptr))
                 EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
                     .Times(2)
                     .WillOnce(::testing::Invoke(
@@ -1719,7 +1720,11 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_LongestDelayAcksFirst_L2)
                             EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
                             return PWRMGR_SUCCESS;
                         }))
-                    .WillOnce(::testing::Return(PWRMGR_SUCCESS));  // Cleanup transition
+                    .WillOnce(::testing::Invoke(
+                        [](PWRMgr_PowerState_t powerState) {
+                            EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                            return PWRMGR_SUCCESS;
+                        }));
 
                 auto startTime = std::chrono::steady_clock::now();
 
@@ -2107,8 +2112,9 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_RescheduleBeforeSchedule_L2)
                 EXPECT_EQ(status, Core::ERROR_NONE);
 
                 // This test only verifies delay recalculation logic, not deep sleep activation
-                // No deep sleep timer is set
-                // In OOP mode: expect 2 calls - one for DEEP_SLEEP entry, one for cleanup on plugin destruction
+                // In OOP mode: expect 2 calls:
+                // 1. DEEP_SLEEP entry
+                // 2. LIGHT_SLEEP wakeup (worker completes during Configure(nullptr))
                 EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
                     .Times(2)
                     .WillOnce(::testing::Invoke(
@@ -2116,7 +2122,11 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_RescheduleBeforeSchedule_L2)
                             EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
                             return PWRMGR_SUCCESS;
                         }))
-                    .WillOnce(::testing::Return(PWRMGR_SUCCESS));  // Cleanup transition
+                    .WillOnce(::testing::Invoke(
+                        [](PWRMgr_PowerState_t powerState) {
+                            EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                            return PWRMGR_SUCCESS;
+                        }));
 
                 status = PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-test");
                 EXPECT_EQ(status, Core::ERROR_NONE);
@@ -2213,8 +2223,9 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_TimerExpired_L2)
                 EXPECT_EQ(status, Core::ERROR_NONE);
 
                 // This test only verifies delay recalculation logic, not deep sleep activation
-                // No deep sleep timer is set
-                // In OOP mode: expect 2 calls - one for DEEP_SLEEP entry, one for cleanup on plugin destruction
+                // In OOP mode: expect 2 calls:
+                // 1. DEEP_SLEEP entry
+                // 2. LIGHT_SLEEP wakeup (worker completes during Configure(nullptr))
                 EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
                     .Times(2)
                     .WillOnce(::testing::Invoke(
@@ -2222,7 +2233,11 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_TimerExpired_L2)
                             EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
                             return PWRMGR_SUCCESS;
                         }))
-                    .WillOnce(::testing::Return(PWRMGR_SUCCESS));  // Cleanup transition
+                    .WillOnce(::testing::Invoke(
+                        [](PWRMgr_PowerState_t powerState) {
+                            EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                            return PWRMGR_SUCCESS;
+                        }));
 
                 status = PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-test");
                 EXPECT_EQ(status, Core::ERROR_NONE);

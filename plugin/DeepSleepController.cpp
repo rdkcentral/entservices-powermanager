@@ -354,6 +354,7 @@ void DeepSleepController::enterDeepSleepNow()
         }
     }
 
+    // Call parent callbacks
     if (failed) {
         LOGERR("Failed to enter deep sleep mode error code: %u", errorCode);
         _parent.onDeepSleepFailed();
@@ -369,7 +370,8 @@ void DeepSleepController::enterDeepSleepNow()
         }
     }
 
-    // Mark worker thread as completed so Shutdown() can proceed
+    // Mark worker as completed AFTER all callbacks finish
+    // Shutdown() waits for this flag, ensuring all parent methods complete before destruction
     {
         std::lock_guard<std::mutex> lk(_sync->mtx);
         _sync->running = false;
