@@ -103,7 +103,7 @@ jobs:
         with:
           repository: rdkcentral/entservices-testframework
           path: entservices-testframework
-          ref: feature/RDKEMW-22169
+          ref: develop
 
       - name: Checkout entservices-powermanager
         if: ${{ inputs.caller_source == 'local' }}
@@ -152,6 +152,7 @@ jobs:
           -DBINDING=127.0.0.1
           -DPORT=9998
           -DEXCEPTIONS_ENABLE=ON
+          -DCONFIG_PATH="$GITHUB_WORKSPACE/install/etc/WPEFramework/plugins"
           &&
           cmake --build build/Thunder -j8
           &&
