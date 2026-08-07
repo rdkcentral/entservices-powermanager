@@ -546,9 +546,15 @@ TEST_F(TestPowerManager, GetCoreTemperature)
 TEST_F(TestPowerManager, PowerModePreChangeAck)
 {
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -625,9 +631,15 @@ TEST_F(TestPowerManager, PowerModePreChangeAck)
 TEST_F(TestPowerManager, PowerModePreChangeAckTimeout)
 {
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -684,9 +696,15 @@ TEST_F(TestPowerManager, PowerModePreChangeAckTimeout)
 TEST_F(TestPowerManager, PowerModePreChangeUnregisterBeforeAck)
 {
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -823,9 +841,15 @@ TEST_F(TestPowerManager, DelayRecalculation_LongestDelayAcksFirst)
     // Client1: 5s delay, Client2: 2s delay, Client3: 1s delay
     // Client1 ACKs at 500ms → timeout should reduce from 5s to 2s
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -915,9 +939,15 @@ TEST_F(TestPowerManager, DelayRecalculation_MultipleClientsTimeout)
     // Client1: 3s, Client2: 2s, Client3: 1s, Client4: no delay
     // Client1 and Client2 ACK, Client3 and Client4 timeout
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -989,9 +1019,15 @@ TEST_F(TestPowerManager, DelayRecalculation_AllClientsAckImmediately)
     // Scenario: All clients set delays but ACK immediately
     // Should complete immediately without waiting for delays
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -1050,9 +1086,15 @@ TEST_F(TestPowerManager, DelayRecalculation_SingleClientWithDelay)
     // Scenario: Single client with delay, ACKs early
     // Should complete when client ACKs, not wait for full delay
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -1110,9 +1152,15 @@ TEST_F(TestPowerManager, DelayRecalculation_FiveClientsRandomDelays)
     // Client1: 6s, Client2: 4s, Client3: 3s, Client4: 2s, Client5: 1s
     // ACK order: Client1, Client3, Client5, Client2, Client4 never ACKs
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -1194,9 +1242,15 @@ TEST_F(TestPowerManager, DelayRecalculation_NoDelaySet)
     // Scenario: No clients set delays, should use default timeout
     // All clients in pending list but no custom delays
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -1255,9 +1309,15 @@ TEST_F(TestPowerManager, DelayRecalculation_MiddleDelayAcksFirst)
     // Client1: 1s, Client2: 5s, Client3: 3s
     // Client3 (3s) ACKs first → timeout should reduce to 5s (Client2)
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -1328,9 +1388,15 @@ TEST_F(TestPowerManager, DelayRecalculation_MultipleReschedules)
     // Scenario: Client calls DelayPowerModeChangeBy multiple times
     // Should use the latest delay value
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -1399,9 +1465,15 @@ TEST_F(TestPowerManager, DelayRecalculation_AllTimeout)
     // Scenario: All clients set delays but none ACK
     // Should timeout at the longest delay
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -1462,9 +1534,15 @@ TEST_F(TestPowerManager, DelayRecalculation_ShortestDelayAcksLast)
     // Client1: 5s, Client2: 3s, Client3: 1s
     // Client1 and Client2 ACK first, Client3 (1s) ACKs last
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -1535,9 +1613,15 @@ TEST_F(TestPowerManager, DelayRecalculation_RescheduleBeforeSchedule)
     // Scenario: Client calls DelayPowerModeChangeBy before Schedule is called
     // Should cache the expiry and use it when Schedule is called
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -1596,9 +1680,15 @@ TEST_F(TestPowerManager, DelayRecalculation_TimerAlreadyExpired)
     // Scenario: Client tries to reschedule after timer has expired
     // Should return ERROR_ILLEGAL_STATE
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -1655,9 +1745,15 @@ TEST_F(TestPowerManager, DelayRecalculation_ExpiredClientsRemoved)
     // Client1: 1s, Client2: 3s, Client3: 5s
     // After 2s, Client1 expires and should be removed during recalculation
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -1724,9 +1820,15 @@ TEST_F(TestPowerManager, DelayRecalculation_RescheduleWithinRemainingTimeout)
     // Initial: 5s timeout, after 1s client reschedules to 2s (which is < 4s remaining)
     // Should not extend timeout
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -1792,9 +1894,15 @@ TEST_F(TestPowerManager, DelayRecalculation_ConcurrentReschedules)
     // Scenario: Multiple clients reschedule concurrently (thread safety test)
     // All reschedules should be handled correctly with mutex protection
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -1866,9 +1974,15 @@ TEST_F(TestPowerManager, DelayRecalculation_DoubleAck)
 {
     // Scenario: Client ACKs twice - second ACK should return ERROR_INVALID_PARAMETER
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -1923,9 +2037,15 @@ TEST_F(TestPowerManager, DelayRecalculation_InvalidTransactionId)
 {
     // Scenario: Client uses wrong transaction ID - should return ERROR_INVALID_PARAMETER
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -1979,9 +2099,15 @@ TEST_F(TestPowerManager, DelayRecalculation_InvalidClientId)
 {
     // Scenario: Use non-existent client ID - should return ERROR_INVALID_PARAMETER
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -2035,9 +2161,15 @@ TEST_F(TestPowerManager, DelayRecalculation_ZeroOrNegativeDelay)
 {
     // Scenario: Client requests 0 or negative delay - should be rejected with ERROR_INVALID_PARAMETER
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -2095,9 +2227,15 @@ TEST_F(TestPowerManager, DelayRecalculation_VeryLargeDelay)
 {
     // Scenario: Client requests very large delay (100s) but ACKs early
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -2156,9 +2294,15 @@ TEST_F(TestPowerManager, DelayRecalculation_AckWithoutDelay)
 {
     // Scenario: Client ACKs without calling DelayPowerModeChangeBy
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
@@ -2220,9 +2364,15 @@ TEST_F(TestPowerManager, DelayRecalculation_RescheduleAfterAck)
 {
     // Scenario: Client tries to reschedule after ACK - should return ERROR_INVALID_PARAMETER
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
 
