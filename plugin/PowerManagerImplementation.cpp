@@ -87,12 +87,8 @@ namespace Plugin {
             // Deinitialize: nullptr indicates graceful shutdown
             LOGINFO(">> Configure(nullptr) - Deinitializing");
             
-            // Abort any pending power transition to prevent completion callbacks after teardown.
-            _apiLock.Lock();
-            _modeChangeController.reset();
-            _apiLock.Unlock();
-            
-            // Abort in-flight deep sleep and wait for the worker to exit before members are destroyed.
+            // Wait for in-flight deep sleep to complete before members are destroyed.
+            // This ensures all callbacks finish before shutdown.
             _deepSleepController.Shutdown();
             
             LOGINFO("<< Deinitialization completed");
@@ -513,10 +509,13 @@ namespace Plugin {
     {
         LOGINFO(">> currentState : %s, newState : %s, transactionId : %d", util::str(currentState), util::str(newState), transactionId);
         for (auto& notification : _preModeChangeNotifications) {
+            // AddRef to keep notification alive during async callback execution
+            notification->AddRef();
             Core::IWorkerPool::Instance().Submit(
                 PowerManagerImplementation::LambdaJob::Create(this,
                     [notification, currentState, newState, transactionId, timeOut]() {
                         notification->OnPowerModePreChange(currentState, newState, transactionId, timeOut);
+                        notification->Release();  // Release after callback completes
                     }));
         }
 
