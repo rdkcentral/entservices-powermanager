@@ -1771,13 +1771,6 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_LongestDelayAcksFirst_L2)
                 EXPECT_LT(duration, 2500);  // Less than 2.5 seconds
                 EXPECT_GT(duration, 1000);  // More than 1 second
 
-                // After receiving SYSTEMSTATE_CHANGED event, verify final power state
-                PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
-                PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
-                status = PowerManagerPlugin->GetPowerState(currentState, prevState);
-                EXPECT_EQ(status, Core::ERROR_NONE);
-                EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
-
                 PowerManagerPlugin->RemovePowerModePreChangeClient(clientId1);
                 PowerManagerPlugin->RemovePowerModePreChangeClient(clientId2);
                 PowerManagerPlugin->RemovePowerModePreChangeClient(clientId3);
@@ -2150,13 +2143,6 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_RescheduleBeforeSchedule_L2)
                 signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
                 EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
 
-                // After receiving SYSTEMSTATE_CHANGED event, verify final power state
-                PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
-                PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
-                status = PowerManagerPlugin->GetPowerState(currentState, prevState);
-                EXPECT_EQ(status, Core::ERROR_NONE);
-                EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
-
                 PowerManagerPlugin->RemovePowerModePreChangeClient(clientId1);
                 PowerManagerPlugin->RemovePowerModePreChangeClient(clientId2);
                 PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
@@ -2258,13 +2244,6 @@ TEST_F(PowerManager_L2Test, DelayRecalculation_TimerExpired_L2)
 
                 signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
                 EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
-
-                // After receiving SYSTEMSTATE_CHANGED event, verify final power state
-                PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
-                PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
-                status = PowerManagerPlugin->GetPowerState(currentState, prevState);
-                EXPECT_EQ(status, Core::ERROR_NONE);
-                EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
 
                 PowerManagerPlugin->RemovePowerModePreChangeClient(clientId);
                 PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());

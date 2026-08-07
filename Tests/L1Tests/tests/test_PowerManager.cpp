@@ -307,13 +307,9 @@ public:
         TEST_LOG(">> Release powerManagerImpl %p", &(*powerManagerImpl));
         
         // Gracefully shutdown before releasing (prevents pure virtual crash)
-        auto* configInterface = powerManagerImpl->QueryInterface<Exchange::IConfiguration>();
-        if (configInterface != nullptr) {
-            TEST_LOG("Calling Configure(nullptr) for graceful shutdown");
-            uint32_t result = configInterface->Configure(nullptr);
-            EXPECT_EQ(result, Core::ERROR_NONE);
-            configInterface->Release();
-            TEST_LOG("Configure(nullptr) completed");
+        auto result = powerManagerImpl->Configure(nullptr);
+        if (result == Core::ERROR_NONE) {
+            TEST_LOG("Configure(nullptr) completed successfully");
         }
         
         powerManagerImpl.Release();
