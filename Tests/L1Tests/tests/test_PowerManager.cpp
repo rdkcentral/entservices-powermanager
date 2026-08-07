@@ -723,6 +723,7 @@ TEST_F(TestPowerManager, PowerModePreChangeUnregisterBeforeAck)
     WaitGroup wg;
     wg.Add();
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int transactionId, const int stateChangeAfter) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
@@ -739,7 +740,8 @@ TEST_F(TestPowerManager, PowerModePreChangeUnregisterBeforeAck)
                 // acknowledge after a short delay
                 std::this_thread::sleep_for(std::chrono::milliseconds(250));
                 wg.Done();
-            }));
+            }))
+        .WillOnce(::testing::Return());  // LIGHT_SLEEP wakeup - no action needed
 
     // Even though same state is set multiple times only one pre change notification is invoked
     status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
