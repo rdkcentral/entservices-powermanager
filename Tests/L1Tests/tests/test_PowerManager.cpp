@@ -749,11 +749,18 @@ TEST_F(TestPowerManager, PowerModePreChangeUnregisterBeforeAck)
 
     wg.Wait();
 
-    wg.Add();
+    // Wait for both DEEP_SLEEP and LIGHT_SLEEP wakeup callbacks
+    wg.Add(2);
     EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
             [&](const PowerState currState, const PowerState newState) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+                wg.Done();
+            }))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currState, const PowerState newState) {
+                EXPECT_EQ(currState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
                 wg.Done();
             }));
 
@@ -767,8 +774,8 @@ TEST_F(TestPowerManager, PowerModePreChangeUnregisterBeforeAck)
 
     status = powerManagerImpl->GetPowerState(currentState, prevState);
     EXPECT_EQ(status, Core::ERROR_NONE);
-    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
-    EXPECT_EQ(prevState, initialPowerState());
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+    EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
 
     status = powerManagerImpl->Unregister(&(*prechangeEvent));
     EXPECT_EQ(status, Core::ERROR_NONE);
@@ -1177,7 +1184,7 @@ TEST_F(TestPowerManager, DelayRecalculation_FiveClientsRandomDelays)
     powerManagerImpl->Register(&(*prechangeEvent));
 
     WaitGroup wg;
-    wg.Add(1);
+    wg.Add(2);  // Wait for both DEEP_SLEEP and LIGHT_SLEEP callbacks
     int transactionId = 0;
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
@@ -1187,11 +1194,17 @@ TEST_F(TestPowerManager, DelayRecalculation_FiveClientsRandomDelays)
                 transactionId = txnId;
                 wg.Done();
             }))
-        .WillOnce(::testing::Return());  // LIGHT_SLEEP wakeup during cleanup
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                // LIGHT_SLEEP wakeup
+                wg.Done();
+            }));
 
     auto startTime = std::chrono::steady_clock::now();
     powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
-    wg.Wait();
+    
+    // Wait only for first callback (DEEP_SLEEP) to get transactionId
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     // Set delays
     powerManagerImpl->DelayPowerModeChangeBy(clientId1, transactionId, 6);  // 6s
@@ -1226,10 +1239,13 @@ TEST_F(TestPowerManager, DelayRecalculation_FiveClientsRandomDelays)
     EXPECT_LT(duration, 5500);
     EXPECT_GT(duration, 3500);
 
+    // Wait for both callbacks (DEEP_SLEEP already done, waiting for LIGHT_SLEEP)
+    wg.Wait();
+
     PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
     PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
     powerManagerImpl->GetPowerState(currentState, prevState);
-    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
 
     powerManagerImpl->RemovePowerModePreChangeClient(clientId1);
     powerManagerImpl->RemovePowerModePreChangeClient(clientId2);
@@ -1334,19 +1350,27 @@ TEST_F(TestPowerManager, DelayRecalculation_MiddleDelayAcksFirst)
     powerManagerImpl->Register(&(*prechangeEvent));
 
     WaitGroup wg;
-    wg.Add(1);
+    wg.Add(2);  // Wait for both DEEP_SLEEP and LIGHT_SLEEP callbacks
     int transactionId = 0;
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
                 transactionId = txnId;
+                wg.Done();
+            }))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                // LIGHT_SLEEP wakeup
                 wg.Done();
             }));
 
     auto startTime = std::chrono::steady_clock::now();
     powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
-    wg.Wait();
+    
+    // Wait only for first callback (DEEP_SLEEP) to get transactionId
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     // Set delays
     powerManagerImpl->DelayPowerModeChangeBy(clientId1, transactionId, 1);
@@ -1374,10 +1398,13 @@ TEST_F(TestPowerManager, DelayRecalculation_MiddleDelayAcksFirst)
     EXPECT_LT(duration, 3500);
     EXPECT_GT(duration, 1500);
 
+    // Wait for both callbacks (DEEP_SLEEP already done, waiting for LIGHT_SLEEP)
+    wg.Wait();
+
     PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
     PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
     powerManagerImpl->GetPowerState(currentState, prevState);
-    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
 
     powerManagerImpl->RemovePowerModePreChangeClient(clientId1);
     powerManagerImpl->RemovePowerModePreChangeClient(clientId2);
