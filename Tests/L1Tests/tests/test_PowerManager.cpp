@@ -805,7 +805,7 @@ TEST_F(TestPowerManager, DelayPowerModeChangeByRestriction)
 
                 // DelayPowerModeChangeBy should FAIL for LIGHT_SLEEP transition
                 auto status = powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId, 5);
-                EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+                EXPECT_EQ(status, Core::ERROR_ILLEGAL_STATE);
 
                 // PowerModePreChangeComplete will return ERROR_INVALID_PARAMETER
                 // because client was not added to pending list for non-DEEP_SLEEP
@@ -1181,11 +1181,13 @@ TEST_F(TestPowerManager, DelayRecalculation_FiveClientsRandomDelays)
     int transactionId = 0;
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
                 transactionId = txnId;
                 wg.Done();
-            }));
+            }))
+        .WillOnce(::testing::Return());  // LIGHT_SLEEP wakeup during cleanup
 
     auto startTime = std::chrono::steady_clock::now();
     powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
@@ -1561,11 +1563,13 @@ TEST_F(TestPowerManager, DelayRecalculation_ShortestDelayAcksLast)
     int transactionId = 0;
 
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
                 transactionId = txnId;
                 wg.Done();
-            }));
+            }))
+        .WillOnce(::testing::Return());  // LIGHT_SLEEP wakeup during cleanup
 
     auto startTime = std::chrono::steady_clock::now();
     powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
@@ -2653,9 +2657,9 @@ TEST_F(TestPowerManager, DeepSleepUserWakeupRaceCondition)
                 EXPECT_EQ(newState, PowerState::POWER_STATE_ON);
                 EXPECT_EQ(stateChangeAfter, 1);
 
-                // valid PowerModePreChangeComplete
+                // ON transitions skip ack await list, so PowerModePreChangeComplete returns ERROR_INVALID_PARAMETER
                 auto status = powerManagerImpl->PowerModePreChangeComplete(clientId, transactionId);
-                EXPECT_EQ(status, Core::ERROR_NONE);
+                EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
             }));
 
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_SetDeepSleep(::testing::_, ::testing::_, ::testing::_))
