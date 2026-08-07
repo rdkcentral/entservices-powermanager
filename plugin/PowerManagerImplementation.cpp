@@ -508,7 +508,15 @@ namespace Plugin {
     void PowerManagerImplementation::submitPowerModePreChangeEvent(const PowerState currentState, const PowerState newState, const int transactionId, const int timeOut)
     {
         LOGINFO(">> currentState : %s, newState : %s, transactionId : %d", util::str(currentState), util::str(newState), transactionId);
-        for (auto& notification : _preModeChangeNotifications) {
+        
+        // Make a copy of the notification list under lock to avoid iterator invalidation
+        // if Unregister() is called while we're dispatching callbacks
+        std::list<Exchange::IPowerManager::IModePreChangeNotification*> notificationsCopy;
+        _callbackLock.Lock();
+        notificationsCopy = _preModeChangeNotifications;
+        _callbackLock.Unlock();
+        
+        for (auto& notification : notificationsCopy) {
             // AddRef to keep notification alive during async callback execution
             notification->AddRef();
             Core::IWorkerPool::Instance().Submit(
