@@ -18,7 +18,9 @@
  */
 
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
+#include <mutex>
 #include <errno.h>    // for errno
 #include <fstream>    // for ifstream
 #include <functional> // for function
@@ -49,6 +51,14 @@ using WakeupReason = WPEFramework::Exchange::IPowerManager::WakeupReason;
 using PowerState   = WPEFramework::Exchange::IPowerManager::PowerState;
 using IPlatform    = hal::deepsleep::IPlatform;
 using util         = PowerUtils;
+
+struct DeepSleepController::SyncState {
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool running = false;
+};
+
+DeepSleepController::DeepSleepController(DeepSleepController&&) = default;
 
 std::map<std::string, DeepSleepWakeupSettings::tzValue> DeepSleepWakeupSettings::_maptzValues;
 
@@ -187,6 +197,8 @@ DeepSleepController::DeepSleepController(INotification& parent, std::shared_ptr<
     , _deepSleepDelaySec(0)
     , _deepSleepWakeupTimeoutSec(0)
     , _nwStandbyMode(false)
+    , _activateCancelled(false)
+    , _sync(new SyncState())
 {
     LOGINFO(">> CTOR <<");
 }
@@ -194,13 +206,31 @@ DeepSleepController::DeepSleepController(INotification& parent, std::shared_ptr<
 DeepSleepController::~DeepSleepController()
 {
     LOGINFO(">> DTOR");
+    Shutdown();
+    LOGINFO("<< DTOR");
+}
+
+void DeepSleepController::Shutdown()
+{
+    LOGINFO(">> Shutdown called");
+    if (!_sync) {
+        LOGINFO("<< Shutdown: already in moved-from state");
+        return; // moved-from state
+    }
+    {
+        std::lock_guard<std::mutex> lk(_sync->mtx);
+        LOGINFO("Setting _activateCancelled=true, _sync->running=%d", _sync->running);
+        _activateCancelled = true;
+    }
     if (_deepSleepDelayJob.IsValid()) {
-        // Cancel the delay timer if it is still active
         _workerPool.Revoke(_deepSleepDelayJob);
         _deepSleepDelayJob.Release();
         LOGINFO("Deepsleep delayed job cancelled");
     }
-    LOGINFO("<< DTOR");
+    LOGINFO("Waiting for worker thread to complete...");
+    std::unique_lock<std::mutex> lk(_sync->mtx);
+    _sync->cv.wait(lk, [this] { return !_sync->running; });
+    LOGINFO("<< Shutdown completed");
 }
 
 uint32_t DeepSleepController::GetLastWakeupReason(WakeupReason& wakeupReason) const
@@ -279,9 +309,23 @@ void DeepSleepController::enterDeepSleepDelayed()
 
 void DeepSleepController::enterDeepSleepNow()
 {
+    // CHECKPOINT: Single point to check if shutdown was initiated
+    // If we pass this checkpoint, we commit to completing the deep sleep flow
+    // Shutdown() will wait for us to finish gracefully via _sync->running flag
+    {
+        std::lock_guard<std::mutex> lk(_sync->mtx);
+        if (_activateCancelled) {
+            LOGINFO("Shutdown initiated before deep sleep entry, aborting");
+            return;
+        }
+        _sync->running = true;
+    }
+
+    LOGINFO("Checkpoint passed, proceeding with deep sleep flow");
     LOGINFO("Enter to Deep sleep Mode..stop Receiver with sleep 1 before DS");
     sleep(1);
 
+    // Past checkpoint - complete the flow without further cancellation checks
     uint32_t errorCode = WPEFramework::Core::ERROR_NONE;
     bool failed     = true;
     int retryCount  = 5;
@@ -310,18 +354,29 @@ void DeepSleepController::enterDeepSleepNow()
         }
     }
 
+    // Call parent callbacks
     if (failed) {
         LOGERR("Failed to enter deep sleep mode error code: %u", errorCode);
         _parent.onDeepSleepFailed();
-        return;
-    }
-    LOGINFO("DeepSleep success; performing wakeup action");
-    if (userWakeup) {
-        LOGINFO("DeeSleep wakeupReason: user action");
-        _parent.onDeepSleepUserWakeup(userWakeup);
     } else {
-        deepSleepTimerWakeup();
+        LOGINFO("DeepSleep success; performing wakeup action, userWakeup=%d", userWakeup);
+        if (userWakeup) {
+            LOGINFO("DeepSleep wakeupReason: user action");
+            _parent.onDeepSleepUserWakeup(userWakeup);
+        } else {
+            LOGINFO("Calling deepSleepTimerWakeup");
+            deepSleepTimerWakeup();
+            LOGINFO("deepSleepTimerWakeup completed");
+        }
     }
+
+    // Mark worker as completed AFTER all callbacks finish
+    // Shutdown() waits for this flag, ensuring all parent methods complete before destruction
+    {
+        std::lock_guard<std::mutex> lk(_sync->mtx);
+        _sync->running = false;
+    }
+    _sync->cv.notify_all();
 }
 
 void DeepSleepController::deepSleepTimerWakeup()
@@ -336,7 +391,7 @@ void DeepSleepController::deepSleepTimerWakeup()
 
         std::string wakeupReasonStr = WPEFramework::Core::ERROR_NONE == errorCode ? util::str(wakeupReason) : "UNKOWN";
 
-        LOGERR("DeepSleep wakeupReason: %s, timeout: %ds, elapsed: %llds, pending: %lldms", wakeupReasonStr.c_str(),
+        LOGERR("DeepSleep wakeupReason: %s, timeout: %ds, elapsed: %lds, pending: %ldms", wakeupReasonStr.c_str(),
             _deepSleepWakeupTimeoutSec, std::chrono::duration_cast<std::chrono::seconds>(Elapsed()).count(), pending);
     }
     // irrespective of wakeup reason / status / elapsed duration always notify deepsleep wakeup
@@ -346,6 +401,10 @@ void DeepSleepController::deepSleepTimerWakeup()
 void DeepSleepController::performActivate(uint32_t timeOut, bool nwStandbyMode)
 {
     LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
+    if (_activateCancelled) {
+        LOGINFO("Activation cancelled before deep sleep entry, aborting");
+        return;
+    }
     if (!IsDeepSleepInProgress()) {
 
         // latch

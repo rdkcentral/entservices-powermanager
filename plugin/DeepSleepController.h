@@ -21,9 +21,9 @@
 #include <map>         // for map
 #include <memory>      // for unique_ptr, operator!=
 #include <stdint.h>    // for uint32_t
-#include <string>      // for string
-#include <type_traits> // for is_base_of
-#include <utility>     // for forward, move
+#include <string>           // for string
+#include <type_traits>      // for is_base_of
+#include <utility>          // for forward, move
 
 #include <core/Proxy.h>               // for ProxyType
 #include <core/Trace.h>               // for ASSERT
@@ -123,6 +123,7 @@ class DeepSleepController {
 
 public:
     ~DeepSleepController();
+    DeepSleepController(DeepSleepController&&);
     class INotification {
     public:
         virtual ~INotification() = default;
@@ -161,6 +162,9 @@ public:
     // deactivate deep sleep mode
     uint32_t Deactivate();
 
+    // Abort any in-flight activation and block until the worker exits.
+    void Shutdown();
+
     // perform maintenance reboot
     void MaintenanceReboot();
 
@@ -195,5 +199,8 @@ private:
 
     WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> _deepSleepDelayJob; // Job to handle delay before entering deepsleep
 
-    bool _nwStandbyMode; // Flag to indicate if network standby mode is enabled
+    bool _nwStandbyMode;
+    volatile bool _activateCancelled;
+    struct SyncState;
+    std::unique_ptr<SyncState> _sync;
 };

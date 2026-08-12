@@ -122,6 +122,19 @@ namespace Plugin {
 
             Exchange::JPowerManager::Unregister(*this);
 
+            // Query IConfiguration interface for graceful shutdown
+            auto* configInterface = _powerManager->QueryInterface<Exchange::IConfiguration>();
+            if (configInterface != nullptr) {
+                // Call Configure(nullptr) to trigger graceful shutdown (XCast pattern)
+                uint32_t result = configInterface->Configure(nullptr);
+                if (result != Core::ERROR_NONE) {
+                    LOGERR("Failed to Deinitialize() PowerManagerImpl");
+                } else {
+                    LOGINFO("PowerManagerImpl Deinitialize() successfully");
+                }
+                configInterface->Release();
+            }
+
             // Stop processing:
             RPC::IRemoteConnection* connection   = service->RemoteConnection(_connectionId);
             VARIABLE_IS_NOT_USED uint32_t result = _powerManager->Release();

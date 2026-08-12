@@ -305,6 +305,13 @@ public:
 
         EXPECT_EQ(powerManagerImpl.IsValid(), true);
         TEST_LOG(">> Release powerManagerImpl %p", &(*powerManagerImpl));
+        
+        // Gracefully shutdown before releasing (prevents pure virtual crash)
+        auto result = powerManagerImpl->Configure(nullptr);
+        if (result == Core::ERROR_NONE) {
+            TEST_LOG("Configure(nullptr) completed successfully");
+        }
+        
         powerManagerImpl.Release();
         EXPECT_EQ(powerManagerImpl.IsValid(), false);
         TEST_LOG("<< Released powerManagerImpl");
@@ -539,6 +546,12 @@ TEST_F(TestPowerManager, GetCoreTemperature)
 TEST_F(TestPowerManager, PowerModePreChangeAck)
 {
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
@@ -563,7 +576,7 @@ TEST_F(TestPowerManager, PowerModePreChangeAck)
         .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int transactionId, const int stateChangeAfter) {
                 transaction_id = transactionId;
-                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(stateChangeAfter, 1);
                 // Test invalid parameters FIRST before modifying state
                 // Acknowledge - Change Complete with invalid transactionId
@@ -573,7 +586,7 @@ TEST_F(TestPowerManager, PowerModePreChangeAck)
                 status = powerManagerImpl->PowerModePreChangeComplete(clientId + 10, transactionId);
                 EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
 
-                // Now set valid delays
+                // Now set valid delays (DEEP_SLEEP only)
                 // Delay power mode change by 10 seconds
                 status = powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId, 10);
                 EXPECT_EQ(status, Core::ERROR_NONE);
@@ -590,9 +603,9 @@ TEST_F(TestPowerManager, PowerModePreChangeAck)
             }));
 
     // Even though same state is set multiple times only one pre change notification is invoked
-    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "l1-test");
+    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
     EXPECT_EQ(status, Core::ERROR_NONE);
-    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "l1-test");
+    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
     EXPECT_EQ(status, Core::ERROR_NONE);
 
     wg.Wait();
@@ -605,7 +618,7 @@ TEST_F(TestPowerManager, PowerModePreChangeAck)
 
     status = powerManagerImpl->GetPowerState(currentState, prevState);
     EXPECT_EQ(status, Core::ERROR_NONE);
-    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
     EXPECT_EQ(prevState, initialPowerState());
 
     status = powerManagerImpl->RemovePowerModePreChangeClient(clientId);
@@ -618,6 +631,12 @@ TEST_F(TestPowerManager, PowerModePreChangeAck)
 TEST_F(TestPowerManager, PowerModePreChangeAckTimeout)
 {
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
@@ -639,7 +658,7 @@ TEST_F(TestPowerManager, PowerModePreChangeAckTimeout)
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int transactionId, const int stateChangeAfter) {
-                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(stateChangeAfter, 1);
             }));
 
@@ -648,11 +667,11 @@ TEST_F(TestPowerManager, PowerModePreChangeAckTimeout)
     EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
             [&](const PowerState currState, const PowerState newState) {
-                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 wg.Done();
             }));
 
-    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "l1-test");
+    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
     EXPECT_EQ(status, Core::ERROR_NONE);
 
     wg.Wait();
@@ -664,7 +683,7 @@ TEST_F(TestPowerManager, PowerModePreChangeAckTimeout)
 
     status = powerManagerImpl->GetPowerState(currentState, prevState);
     EXPECT_EQ(status, Core::ERROR_NONE);
-    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
     EXPECT_EQ(prevState, initialPowerState());
 
     status = powerManagerImpl->Unregister(&(*prechangeEvent));
@@ -677,6 +696,12 @@ TEST_F(TestPowerManager, PowerModePreChangeAckTimeout)
 TEST_F(TestPowerManager, PowerModePreChangeUnregisterBeforeAck)
 {
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
@@ -698,12 +723,13 @@ TEST_F(TestPowerManager, PowerModePreChangeUnregisterBeforeAck)
     WaitGroup wg;
     wg.Add();
     EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .Times(2)
         .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int transactionId, const int stateChangeAfter) {
-                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(stateChangeAfter, 1);
 
-                // Delay power mode change by 1 seconds
+                // Delay power mode change by 1 seconds (DEEP_SLEEP only)
                 auto status = powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId, 1);
                 EXPECT_EQ(status, Core::ERROR_NONE);
 
@@ -714,20 +740,28 @@ TEST_F(TestPowerManager, PowerModePreChangeUnregisterBeforeAck)
                 // acknowledge after a short delay
                 std::this_thread::sleep_for(std::chrono::milliseconds(250));
                 wg.Done();
-            }));
+            }))
+        .WillOnce(::testing::Return());  // LIGHT_SLEEP wakeup - no action needed
 
     // Even though same state is set multiple times only one pre change notification is invoked
-    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "l1-test");
+    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
     EXPECT_EQ(status, Core::ERROR_NONE);
-    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "l1-test");
+    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
     EXPECT_EQ(status, Core::ERROR_NONE);
 
     wg.Wait();
 
-    wg.Add();
+    // Wait for both DEEP_SLEEP and LIGHT_SLEEP wakeup callbacks
+    wg.Add(2);
     EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
             [&](const PowerState currState, const PowerState newState) {
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+                wg.Done();
+            }))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currState, const PowerState newState) {
+                EXPECT_EQ(currState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
                 wg.Done();
             }));
@@ -743,13 +777,1689 @@ TEST_F(TestPowerManager, PowerModePreChangeUnregisterBeforeAck)
     status = powerManagerImpl->GetPowerState(currentState, prevState);
     EXPECT_EQ(status, Core::ERROR_NONE);
     EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
-    EXPECT_EQ(prevState, initialPowerState());
+    EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
 
     status = powerManagerImpl->Unregister(&(*prechangeEvent));
     EXPECT_EQ(status, Core::ERROR_NONE);
 
     status = powerManagerImpl->Unregister(&(*modeChangedEvent));
     EXPECT_EQ(status, Core::ERROR_NONE);
+}
+
+TEST_F(TestPowerManager, DelayPowerModeChangeByRestriction)
+{
+    // Test that DelayPowerModeChangeBy only works for DEEP_SLEEP transitions
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId = 0;
+    uint32_t status   = powerManagerImpl->AddPowerModePreChangeClient("l1-test-client", clientId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    status = powerManagerImpl->Register(&(*prechangeEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    WaitGroup wg;
+    wg.Add();
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int transactionId, const int stateChangeAfter) {
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+
+                // DelayPowerModeChangeBy should FAIL for LIGHT_SLEEP transition
+                auto status = powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId, 5);
+                EXPECT_EQ(status, Core::ERROR_ILLEGAL_STATE);
+
+                // PowerModePreChangeComplete will return ERROR_INVALID_PARAMETER
+                // because client was not added to pending list for non-DEEP_SLEEP
+                status = powerManagerImpl->PowerModePreChangeComplete(clientId, transactionId);
+                EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+                wg.Done();
+            }));
+
+    // Trigger LIGHT_SLEEP transition
+    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "l1-test");
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    wg.Wait();
+
+    // Verify state changed immediately (not delayed)
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState    = PowerState::POWER_STATE_UNKNOWN;
+    status = powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+
+    status = powerManagerImpl->RemovePowerModePreChangeClient(clientId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    status = powerManagerImpl->Unregister(&(*prechangeEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_LongestDelayAcksFirst)
+{
+    // Scenario: Client with longest delay ACKs first, timeout should reduce
+    // Client1: 5s delay, Client2: 2s delay, Client3: 1s delay
+    // Client1 ACKs at 500ms → timeout should reduce from 5s to 2s
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId1 = 0, clientId2 = 0, clientId3 = 0;
+    
+    auto status = powerManagerImpl->AddPowerModePreChangeClient("client1", clientId1);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    status = powerManagerImpl->AddPowerModePreChangeClient("client2", clientId2);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    status = powerManagerImpl->AddPowerModePreChangeClient("client3", clientId3);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    status = powerManagerImpl->Register(&(*prechangeEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    WaitGroup wg;
+    wg.Add(1);
+    int transactionId = 0;
+    auto startTime = std::chrono::steady_clock::now();
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }));
+
+    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    wg.Wait();
+
+    // Client1 requests 5s delay
+    status = powerManagerImpl->DelayPowerModeChangeBy(clientId1, transactionId, 5);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // Client2 requests 2s delay
+    status = powerManagerImpl->DelayPowerModeChangeBy(clientId2, transactionId, 2);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // Client3 requests 3s delay
+    status = powerManagerImpl->DelayPowerModeChangeBy(clientId3, transactionId, 3);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // Client1 (5s) ACKs first after 500ms
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    status = powerManagerImpl->PowerModePreChangeComplete(clientId1, transactionId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // Client2 (2s) ACKs after another 500ms
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    status = powerManagerImpl->PowerModePreChangeComplete(clientId2, transactionId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // Client3 (3s) ACKs after another 500ms
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    status = powerManagerImpl->PowerModePreChangeComplete(clientId3, transactionId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // Wait for state change to complete
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    auto endTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    // Should complete in ~2s (not 5s) since Client1 ACKed early
+    EXPECT_LT(duration, 3000);  // Less than 3 seconds
+    EXPECT_GT(duration, 1500);  // More than 1.5 seconds
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    status = powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId1);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId2);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId3);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_MultipleClientsTimeout)
+{
+    // Scenario: Multiple clients with different delays, one never ACKs
+    // Client1: 3s, Client2: 2s, Client3: 1s, Client4: no delay
+    // Client1 and Client2 ACK, Client3 and Client4 timeout
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId1 = 0, clientId2 = 0, clientId3 = 0, clientId4 = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId1);
+    powerManagerImpl->AddPowerModePreChangeClient("client2", clientId2);
+    powerManagerImpl->AddPowerModePreChangeClient("client3", clientId3);
+    powerManagerImpl->AddPowerModePreChangeClient("client4", clientId4);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add(1);
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }));
+
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    wg.Wait();
+
+    // Set delays
+    powerManagerImpl->DelayPowerModeChangeBy(clientId1, transactionId, 3);
+    powerManagerImpl->DelayPowerModeChangeBy(clientId2, transactionId, 2);
+    powerManagerImpl->DelayPowerModeChangeBy(clientId3, transactionId, 1);
+    // Client4 doesn't set delay (uses default)
+
+    auto startTime = std::chrono::steady_clock::now();
+
+    // Client1 ACKs after 500ms
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    powerManagerImpl->PowerModePreChangeComplete(clientId1, transactionId);
+
+    // Client2 ACKs after another 500ms
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    powerManagerImpl->PowerModePreChangeComplete(clientId2, transactionId);
+
+    // Client3 and Client4 never ACK - should timeout at 1s (Client3's delay)
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+
+    auto endTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    // Should timeout at ~2s (Client2's delay after Client1 ACKed)
+    EXPECT_LT(duration, 3000);  // Less than 3 seconds
+    EXPECT_GT(duration, 1500);  // More than 1.5 seconds
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId1);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId2);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId3);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId4);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_AllClientsAckImmediately)
+{
+    // Scenario: All clients set delays but ACK immediately
+    // Should complete immediately without waiting for delays
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId1 = 0, clientId2 = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId1);
+    powerManagerImpl->AddPowerModePreChangeClient("client2", clientId2);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add(1);
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }));
+
+    auto startTime = std::chrono::steady_clock::now();
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    wg.Wait();
+
+    // Both clients request long delays
+    powerManagerImpl->DelayPowerModeChangeBy(clientId1, transactionId, 10);
+    powerManagerImpl->DelayPowerModeChangeBy(clientId2, transactionId, 8);
+
+    // But both ACK immediately
+    powerManagerImpl->PowerModePreChangeComplete(clientId1, transactionId);
+    powerManagerImpl->PowerModePreChangeComplete(clientId2, transactionId);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    auto endTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    // Should complete in <1s (not 10s)
+    EXPECT_LT(duration, 1000);
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId1);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId2);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_SingleClientWithDelay)
+{
+    // Scenario: Single client with delay, ACKs early
+    // Should complete when client ACKs, not wait for full delay
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add();
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }));
+
+    auto startTime = std::chrono::steady_clock::now();
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    wg.Wait();
+
+    // Client requests 5s delay
+    powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId, 5);
+
+    // But ACKs after 1s
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    powerManagerImpl->PowerModePreChangeComplete(clientId, transactionId);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    auto endTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    // Should complete in ~1.5s (not 5s)
+    EXPECT_LT(duration, 2500);
+    EXPECT_GT(duration, 1000);
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_FiveClientsRandomDelays)
+{
+    // Scenario: 5 clients with random delays and ACK patterns
+    // Client1: 6s, Client2: 4s, Client3: 3s, Client4: 2s, Client5: 1s
+    // ACK order: Client1, Client3, Client5, Client2, Client4 never ACKs
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId1 = 0, clientId2 = 0, clientId3 = 0, clientId4 = 0, clientId5 = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId1);
+    powerManagerImpl->AddPowerModePreChangeClient("client2", clientId2);
+    powerManagerImpl->AddPowerModePreChangeClient("client3", clientId3);
+    powerManagerImpl->AddPowerModePreChangeClient("client4", clientId4);
+    powerManagerImpl->AddPowerModePreChangeClient("client5", clientId5);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add(2);  // Wait for both DEEP_SLEEP and LIGHT_SLEEP callbacks
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                // LIGHT_SLEEP wakeup
+                wg.Done();
+            }));
+
+    auto startTime = std::chrono::steady_clock::now();
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    
+    // Wait only for first callback (DEEP_SLEEP) to get transactionId
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    // Set delays
+    powerManagerImpl->DelayPowerModeChangeBy(clientId1, transactionId, 6);  // 6s
+    powerManagerImpl->DelayPowerModeChangeBy(clientId2, transactionId, 4);  // 4s
+    powerManagerImpl->DelayPowerModeChangeBy(clientId3, transactionId, 3);  // 3s
+    powerManagerImpl->DelayPowerModeChangeBy(clientId4, transactionId, 2);  // 2s
+    powerManagerImpl->DelayPowerModeChangeBy(clientId5, transactionId, 1);  // 1s
+
+    // Client1 (6s) ACKs after 500ms → timeout reduces to 4s (Client2)
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    powerManagerImpl->PowerModePreChangeComplete(clientId1, transactionId);
+
+    // Client3 (3s) ACKs after another 500ms → timeout reduces to 4s (Client2 still max)
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    powerManagerImpl->PowerModePreChangeComplete(clientId3, transactionId);
+
+    // Client5 (1s) ACKs after another 500ms → timeout reduces to 4s (Client2 still max)
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    powerManagerImpl->PowerModePreChangeComplete(clientId5, transactionId);
+
+    // Client2 (4s) ACKs after another 500ms → timeout reduces to 2s (Client4)
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    powerManagerImpl->PowerModePreChangeComplete(clientId2, transactionId);
+
+    // Client4 never ACKs - should timeout at 2s from last ACK
+    std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+
+    auto endTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    // Should timeout at ~4.5s (not 6s)
+    EXPECT_LT(duration, 5500);
+    EXPECT_GT(duration, 3500);
+
+    // Wait for both callbacks (DEEP_SLEEP already done, waiting for LIGHT_SLEEP)
+    wg.Wait();
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId1);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId2);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId3);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId4);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId5);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_NoDelaySet)
+{
+    // Scenario: No clients set delays, should use default timeout
+    // All clients in pending list but no custom delays
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId1 = 0, clientId2 = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId1);
+    powerManagerImpl->AddPowerModePreChangeClient("client2", clientId2);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add(1);
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }));
+
+    auto startTime = std::chrono::steady_clock::now();
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    wg.Wait();
+
+    // Don't set any delays - both clients should timeout at default (1s)
+    // Client1 ACKs after 500ms
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    powerManagerImpl->PowerModePreChangeComplete(clientId1, transactionId);
+
+    // Client2 never ACKs - should timeout at default
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+
+    auto endTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    // Should timeout at ~1.5s (default timeout after Client1 ACKed)
+    EXPECT_LT(duration, 2500);
+    EXPECT_GT(duration, 1000);
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId1);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId2);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_MiddleDelayAcksFirst)
+{
+    // Scenario: Client with middle delay ACKs first
+    // Client1: 1s, Client2: 5s, Client3: 3s
+    // Client3 (3s) ACKs first → timeout should reduce to 5s (Client2)
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId1 = 0, clientId2 = 0, clientId3 = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId1);
+    powerManagerImpl->AddPowerModePreChangeClient("client2", clientId2);
+    powerManagerImpl->AddPowerModePreChangeClient("client3", clientId3);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add(2);  // Wait for both DEEP_SLEEP and LIGHT_SLEEP callbacks
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                // LIGHT_SLEEP wakeup
+                wg.Done();
+            }));
+
+    auto startTime = std::chrono::steady_clock::now();
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    
+    // Wait only for first callback (DEEP_SLEEP) to get transactionId
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    // Set delays
+    powerManagerImpl->DelayPowerModeChangeBy(clientId1, transactionId, 1);
+    powerManagerImpl->DelayPowerModeChangeBy(clientId2, transactionId, 5);
+    powerManagerImpl->DelayPowerModeChangeBy(clientId3, transactionId, 3);
+
+    // Client3 (3s middle delay) ACKs first after 500ms
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    powerManagerImpl->PowerModePreChangeComplete(clientId3, transactionId);
+
+    // Client2 (5s) ACKs after another 500ms
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    powerManagerImpl->PowerModePreChangeComplete(clientId2, transactionId);
+
+    // Client1 (1s) ACKs after another 500ms
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    powerManagerImpl->PowerModePreChangeComplete(clientId1, transactionId);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    auto endTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    // Should complete in ~2.5s (not 5s)
+    EXPECT_LT(duration, 3500);
+    EXPECT_GT(duration, 1500);
+
+    // Wait for both callbacks (DEEP_SLEEP already done, waiting for LIGHT_SLEEP)
+    wg.Wait();
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId1);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId2);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId3);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_MultipleReschedules)
+{
+    // Scenario: Client calls DelayPowerModeChangeBy multiple times
+    // Should use the latest delay value
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId1 = 0, clientId2 = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId1);
+    powerManagerImpl->AddPowerModePreChangeClient("client2", clientId2);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add(1);
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }));
+
+    auto startTime = std::chrono::steady_clock::now();
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    wg.Wait();
+
+    // Client1 requests 2s initially
+    powerManagerImpl->DelayPowerModeChangeBy(clientId1, transactionId, 2);
+    
+    // Client1 reschedules to 4s
+    powerManagerImpl->DelayPowerModeChangeBy(clientId1, transactionId, 4);
+    
+    // Client2 requests 1s
+    powerManagerImpl->DelayPowerModeChangeBy(clientId2, transactionId, 1);
+
+    // Client1 ACKs after 500ms
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    powerManagerImpl->PowerModePreChangeComplete(clientId1, transactionId);
+
+    // Client2 ACKs after another 500ms
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    powerManagerImpl->PowerModePreChangeComplete(clientId2, transactionId);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    auto endTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    // Should complete in ~1.5s (not 4s)
+    EXPECT_LT(duration, 2500);
+    EXPECT_GT(duration, 1000);
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId1);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId2);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_AllTimeout)
+{
+    // Scenario: All clients set delays but none ACK
+    // Should timeout at the longest delay
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId1 = 0, clientId2 = 0, clientId3 = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId1);
+    powerManagerImpl->AddPowerModePreChangeClient("client2", clientId2);
+    powerManagerImpl->AddPowerModePreChangeClient("client3", clientId3);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add(1);
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }));
+
+    auto startTime = std::chrono::steady_clock::now();
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    wg.Wait();
+
+    // Set delays
+    powerManagerImpl->DelayPowerModeChangeBy(clientId1, transactionId, 1);
+    powerManagerImpl->DelayPowerModeChangeBy(clientId2, transactionId, 2);
+    powerManagerImpl->DelayPowerModeChangeBy(clientId3, transactionId, 3);
+
+    // No clients ACK - wait for timeout
+    std::this_thread::sleep_for(std::chrono::milliseconds(3500));
+
+    auto endTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    // Should timeout at ~3s (longest delay)
+    EXPECT_LT(duration, 4000);
+    EXPECT_GT(duration, 2500);
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId1);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId2);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId3);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_ShortestDelayAcksLast)
+{
+    // Scenario: Client with shortest delay ACKs last
+    // Client1: 5s, Client2: 3s, Client3: 2s
+    // Client1 and Client2 ACK first, Client3 (2s) ACKs last
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId1 = 0, clientId2 = 0, clientId3 = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId1);
+    powerManagerImpl->AddPowerModePreChangeClient("client2", clientId2);
+    powerManagerImpl->AddPowerModePreChangeClient("client3", clientId3);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup prechangeWg;
+    WaitGroup wakeupWg;
+    prechangeWg.Add(1);
+    wakeupWg.Add(1);
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                prechangeWg.Done();
+            }))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                wakeupWg.Done();
+            }));
+
+    auto startTime = std::chrono::steady_clock::now();
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    prechangeWg.Wait();
+
+    // Set delays
+    powerManagerImpl->DelayPowerModeChangeBy(clientId1, transactionId, 5);
+    powerManagerImpl->DelayPowerModeChangeBy(clientId2, transactionId, 3);
+    powerManagerImpl->DelayPowerModeChangeBy(clientId3, transactionId, 2);
+
+    // Client1 (5s) ACKs after 500ms
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    powerManagerImpl->PowerModePreChangeComplete(clientId1, transactionId);
+
+    // Client2 (3s) ACKs after another 500ms
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    powerManagerImpl->PowerModePreChangeComplete(clientId2, transactionId);
+
+    // Client3 (2s shortest) ACKs last after another 500ms
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    powerManagerImpl->PowerModePreChangeComplete(clientId3, transactionId);
+
+    wakeupWg.Wait();
+
+    auto endTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    // Should complete in ~2.5s (not 5s)
+    EXPECT_LT(duration, 3500);
+    EXPECT_GT(duration, 1500);
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId1);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId2);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId3);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_RescheduleBeforeSchedule)
+{
+    // Scenario: Client calls DelayPowerModeChangeBy before Schedule is called
+    // Should cache the expiry and use it when Schedule is called
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId1 = 0, clientId2 = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId1);
+    powerManagerImpl->AddPowerModePreChangeClient("client2", clientId2);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add(1);
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }));
+
+    auto startTime = std::chrono::steady_clock::now();
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    wg.Wait();
+
+    // Client1 calls DelayPowerModeChangeBy BEFORE Schedule (in PreChange notification)
+    // This should be cached and used when Schedule is called
+    powerManagerImpl->DelayPowerModeChangeBy(clientId1, transactionId, 3);
+    
+    // Both clients ACK immediately
+    powerManagerImpl->PowerModePreChangeComplete(clientId1, transactionId);
+    powerManagerImpl->PowerModePreChangeComplete(clientId2, transactionId);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    auto endTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    // Should complete quickly since both ACKed
+    EXPECT_LT(duration, 1500);
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId1);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId2);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_TimerAlreadyExpired)
+{
+    // Scenario: Client tries to reschedule after timer has expired
+    // Should return ERROR_ILLEGAL_STATE
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId1 = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId1);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add(1);
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .Times(1)
+        .WillRepeatedly(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }));
+
+    auto startTime = std::chrono::steady_clock::now();
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    wg.Wait();
+
+    // Wait for timer to expire (default 1s)
+    std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+
+    // Try to reschedule after timer expired - should fail
+    auto status = powerManagerImpl->DelayPowerModeChangeBy(clientId1, transactionId, 5);
+    EXPECT_EQ(status, Core::ERROR_ILLEGAL_STATE);
+
+    auto endTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    // Should have timed out at ~1s
+    EXPECT_LT(duration, 2000);
+    EXPECT_GT(duration, 1000);
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId1);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_ExpiredClientsRemoved)
+{
+    // Scenario: Some clients' expiry times pass, they should be removed automatically
+    // Client1: 1s, Client2: 3s, Client3: 5s
+    // After 2s, Client1 expires and should be removed during recalculation
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId1 = 0, clientId2 = 0, clientId3 = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId1);
+    powerManagerImpl->AddPowerModePreChangeClient("client2", clientId2);
+    powerManagerImpl->AddPowerModePreChangeClient("client3", clientId3);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add(1);
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }));
+
+    auto startTime = std::chrono::steady_clock::now();
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    wg.Wait();
+
+    // Set delays
+    powerManagerImpl->DelayPowerModeChangeBy(clientId1, transactionId, 1);
+    powerManagerImpl->DelayPowerModeChangeBy(clientId2, transactionId, 3);
+    powerManagerImpl->DelayPowerModeChangeBy(clientId3, transactionId, 5);
+
+    // Wait 1.5s - Client1 should expire
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+
+    // Client3 ACKs - this triggers recalculation which should remove expired Client1
+    powerManagerImpl->PowerModePreChangeComplete(clientId3, transactionId);
+
+    // Wait for Client2's timeout
+    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+
+    auto endTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    // Should timeout at ~3.5s (Client2's expiry)
+    EXPECT_LT(duration, 4500);
+    EXPECT_GT(duration, 3000);
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId1);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId2);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId3);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_RescheduleWithinRemainingTimeout)
+{
+    // Scenario: Client reschedules to a time within current remaining timeout
+    // Initial: 5s timeout, after 1s client reschedules to 2s (which is < 4s remaining)
+    // Should not extend timeout
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId1 = 0, clientId2 = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId1);
+    powerManagerImpl->AddPowerModePreChangeClient("client2", clientId2);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add(1);
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }));
+
+    auto startTime = std::chrono::steady_clock::now();
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    wg.Wait();
+
+    // Client1 requests 5s delay
+    powerManagerImpl->DelayPowerModeChangeBy(clientId1, transactionId, 5);
+
+    // Wait 1s
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+    // Client2 reschedules to 2s (which is < 4s remaining) - should not extend
+    powerManagerImpl->DelayPowerModeChangeBy(clientId2, transactionId, 2);
+
+    // Both clients ACK
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    powerManagerImpl->PowerModePreChangeComplete(clientId1, transactionId);
+    powerManagerImpl->PowerModePreChangeComplete(clientId2, transactionId);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    auto endTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    // Should complete at ~2s (not 5s)
+    EXPECT_LT(duration, 3000);
+    EXPECT_GT(duration, 1500);
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId1);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId2);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_ConcurrentReschedules)
+{
+    // Scenario: Multiple clients reschedule concurrently (thread safety test)
+    // All reschedules should be handled correctly with mutex protection
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId1 = 0, clientId2 = 0, clientId3 = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId1);
+    powerManagerImpl->AddPowerModePreChangeClient("client2", clientId2);
+    powerManagerImpl->AddPowerModePreChangeClient("client3", clientId3);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add(1);
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }));
+
+    auto startTime = std::chrono::steady_clock::now();
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    wg.Wait();
+
+    // Simulate concurrent reschedules from different threads
+    std::thread t1([&]() {
+        powerManagerImpl->DelayPowerModeChangeBy(clientId1, transactionId, 2);
+    });
+    std::thread t2([&]() {
+        powerManagerImpl->DelayPowerModeChangeBy(clientId2, transactionId, 3);
+    });
+    std::thread t3([&]() {
+        powerManagerImpl->DelayPowerModeChangeBy(clientId3, transactionId, 4);
+    });
+
+    t1.join();
+    t2.join();
+    t3.join();
+
+    // All clients ACK
+    powerManagerImpl->PowerModePreChangeComplete(clientId1, transactionId);
+    powerManagerImpl->PowerModePreChangeComplete(clientId2, transactionId);
+    powerManagerImpl->PowerModePreChangeComplete(clientId3, transactionId);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    auto endTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    // Should complete quickly since all ACKed
+    EXPECT_LT(duration, 2000);
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId1);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId2);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId3);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_DoubleAck)
+{
+    // Scenario: Client ACKs twice - second ACK should return ERROR_INVALID_PARAMETER
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId1 = 0, clientId2 = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId1);
+    powerManagerImpl->AddPowerModePreChangeClient("client2", clientId2);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add(1);
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }));
+
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    wg.Wait();
+
+    // Client1 ACKs
+    auto status = powerManagerImpl->PowerModePreChangeComplete(clientId1, transactionId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // Client1 tries to ACK again - should fail
+    status = powerManagerImpl->PowerModePreChangeComplete(clientId1, transactionId);
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+    // Client2 ACKs normally
+    status = powerManagerImpl->PowerModePreChangeComplete(clientId2, transactionId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId1);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId2);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_InvalidTransactionId)
+{
+    // Scenario: Client uses wrong transaction ID - should return ERROR_INVALID_PARAMETER
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add(1);
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .Times(1)
+        .WillRepeatedly(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }));
+
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    wg.Wait();
+
+    // Try to reschedule with wrong transaction ID
+    auto status = powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId + 999, 5);
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+    // Try to ACK with wrong transaction ID
+    status = powerManagerImpl->PowerModePreChangeComplete(clientId, transactionId + 999);
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+    // ACK with correct transaction ID
+    status = powerManagerImpl->PowerModePreChangeComplete(clientId, transactionId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_InvalidClientId)
+{
+    // Scenario: Use non-existent client ID - should return ERROR_INVALID_PARAMETER
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add(1);
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .Times(1)
+        .WillRepeatedly(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }));
+
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    wg.Wait();
+
+    // Try to reschedule with invalid client ID
+    auto status = powerManagerImpl->DelayPowerModeChangeBy(clientId + 999, transactionId, 5);
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+    // Try to ACK with invalid client ID
+    status = powerManagerImpl->PowerModePreChangeComplete(clientId + 999, transactionId);
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+    // ACK with correct client ID
+    status = powerManagerImpl->PowerModePreChangeComplete(clientId, transactionId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_ZeroOrNegativeDelay)
+{
+    // Scenario: Client requests 0 or negative delay - should be rejected with ERROR_INVALID_PARAMETER
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add(1);
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .Times(1)
+        .WillRepeatedly(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }));
+
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    wg.Wait();
+
+    // Request 0 second delay - should be rejected
+    auto status = powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId, 0);
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+    // Request negative delay - should be rejected
+    status = powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId, -5);
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+    // Request valid delay - should be accepted
+    status = powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId, 1);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // ACK normally
+    status = powerManagerImpl->PowerModePreChangeComplete(clientId, transactionId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_VeryLargeDelay)
+{
+    // Scenario: Client requests very large delay (100s) but ACKs early
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add(1);
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .Times(1)
+        .WillRepeatedly(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }));
+
+    auto startTime = std::chrono::steady_clock::now();
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    wg.Wait();
+
+    // Request very large delay (100s)
+    auto status = powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId, 100);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // ACK after 1 second
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    status = powerManagerImpl->PowerModePreChangeComplete(clientId, transactionId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    auto endTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    // Should complete in ~1.5s, not 100s
+    EXPECT_LT(duration, 3000);
+    EXPECT_GT(duration, 1000);
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_AckWithoutDelay)
+{
+    // Scenario: Client ACKs without calling DelayPowerModeChangeBy
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId1 = 0, clientId2 = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId1);
+    powerManagerImpl->AddPowerModePreChangeClient("client2", clientId2);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add(1);
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }));
+
+    auto startTime = std::chrono::steady_clock::now();
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    wg.Wait();
+
+    // Client1 sets delay
+    powerManagerImpl->DelayPowerModeChangeBy(clientId1, transactionId, 3);
+
+    // Client2 ACKs immediately without setting delay
+    auto status = powerManagerImpl->PowerModePreChangeComplete(clientId2, transactionId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // Client1 ACKs
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    status = powerManagerImpl->PowerModePreChangeComplete(clientId1, transactionId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    auto endTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    // Should complete in ~1s, not 3s
+    EXPECT_LT(duration, 2000);
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId1);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId2);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
+}
+
+TEST_F(TestPowerManager, DelayRecalculation_RescheduleAfterAck)
+{
+    // Scenario: Client tries to reschedule after ACK - should return ERROR_INVALID_PARAMETER
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(2)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+    uint32_t clientId1 = 0, clientId2 = 0;
+    
+    powerManagerImpl->AddPowerModePreChangeClient("client1", clientId1);
+    powerManagerImpl->AddPowerModePreChangeClient("client2", clientId2);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    powerManagerImpl->Register(&(*prechangeEvent));
+
+    WaitGroup wg;
+    wg.Add(1);
+    int transactionId = 0;
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int txnId, const int stateChangeAfter) {
+                transactionId = txnId;
+                wg.Done();
+            }));
+
+    powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    wg.Wait();
+
+    // Client1 sets delay and ACKs
+    powerManagerImpl->DelayPowerModeChangeBy(clientId1, transactionId, 5);
+    auto status = powerManagerImpl->PowerModePreChangeComplete(clientId1, transactionId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // Client1 tries to reschedule after ACK - should fail
+    status = powerManagerImpl->DelayPowerModeChangeBy(clientId1, transactionId, 10);
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+    // Client2 ACKs normally
+    status = powerManagerImpl->PowerModePreChangeComplete(clientId2, transactionId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+    powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId1);
+    powerManagerImpl->RemovePowerModePreChangeClient(clientId2);
+    powerManagerImpl->Unregister(&(*prechangeEvent));
 }
 
 TEST_F(TestPowerManager, DeepSleepIgnore)
@@ -803,14 +2513,18 @@ TEST_F(TestPowerManager, DeepSleepIgnore)
 
 TEST_F(TestPowerManager, DeepSleepUserWakeup)
 {
+    printf("[TEST] DeepSleepUserWakeup: Test started\n");
+    
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
+                printf("[TEST] PLAT_API_SetPowerState called with state: DEEP_SLEEP\n");
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
                 return PWRMGR_SUCCESS;
             }))
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
+                printf("[TEST] PLAT_API_SetPowerState called with state: LIGHT_SLEEP\n");
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
@@ -821,30 +2535,37 @@ TEST_F(TestPowerManager, DeepSleepUserWakeup)
     EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
             [](const PowerState prevState, const PowerState newState) {
+                printf("[TEST] OnPowerModeChanged #1: prevState=%d, newState=%d (DEEP_SLEEP)\n", (int)prevState, (int)newState);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
         .WillOnce(::testing::Invoke(
             [&](const PowerState prevState, const PowerState newState) {
+                printf("[TEST] OnPowerModeChanged #2: prevState=%d, newState=%d (LIGHT_SLEEP) - calling wg.Done()\n", (int)prevState, (int)newState);
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
                 wg.Done();
+                printf("[TEST] wg.Done() completed\n");
             }));
 
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_SetDeepSleep(::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
             [](uint32_t deep_sleep_timeout, bool* isGPIOWakeup, bool networkStandby) {
+                printf("[TEST] PLAT_DS_SetDeepSleep called: timeout=%u, networkStandby=%d\n", deep_sleep_timeout, networkStandby);
                 EXPECT_EQ(deep_sleep_timeout, 10U);
                 EXPECT_TRUE(nullptr != isGPIOWakeup);
                 EXPECT_EQ(networkStandby, false);
                 // Simulate user triggered wakeup
                 *isGPIOWakeup = true;
+                printf("[TEST] PLAT_DS_SetDeepSleep: Sleeping for %u seconds to simulate deep sleep...\n", deep_sleep_timeout / 2);
                 std::this_thread::sleep_for(std::chrono::seconds(deep_sleep_timeout / 2));
+                printf("[TEST] PLAT_DS_SetDeepSleep: Sleep completed, returning with isGPIOWakeup=true\n");
                 return DEEPSLEEPMGR_SUCCESS;
             }));
 
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_GetLastWakeupReason(::testing::_))
         .WillOnce(::testing::Invoke(
             [](DeepSleep_WakeupReason_t* wakeupReason) {
+                printf("[TEST] PLAT_DS_GetLastWakeupReason called\n");
                 *wakeupReason = DEEPSLEEP_WAKEUPREASON_GPIO;
                 return DEEPSLEEPMGR_SUCCESS;
             }));
@@ -852,32 +2573,45 @@ TEST_F(TestPowerManager, DeepSleepUserWakeup)
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_DeepSleepWakeup())
         .WillOnce(testing::Return(DEEPSLEEPMGR_SUCCESS));
 
+    printf("[TEST] Registering mode changed notification\n");
     uint32_t status = powerManagerImpl->Register(&(*modeChanged));
     EXPECT_EQ(status, Core::ERROR_NONE);
 
+    printf("[TEST] Setting deep sleep timer to 10 seconds\n");
     status = powerManagerImpl->SetDeepSleepTimer(10);
     EXPECT_EQ(status, Core::ERROR_NONE);
 
+    printf("[TEST] Calling SetPowerState(DEEP_SLEEP)\n");
     int keyCode = 0;
     status      = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
     EXPECT_EQ(status, Core::ERROR_NONE);
+    printf("[TEST] SetPowerState returned successfully\n");
 
     PowerState newState  = PowerState::POWER_STATE_UNKNOWN;
     PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
 
+    printf("[TEST] Getting current power state\n");
     status = powerManagerImpl->GetPowerState(newState, prevState);
     EXPECT_EQ(status, Core::ERROR_NONE);
     EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+    printf("[TEST] Current state confirmed as DEEP_SLEEP\n");
 
+    printf("[TEST] Waiting for wakeup event (wg.Wait())...\n");
     wg.Wait();
+    printf("[TEST] wg.Wait() completed - wakeup event received!\n");
 
+    printf("[TEST] Getting last wakeup reason\n");
     WakeupReason wakeupReason = WakeupReason::WAKEUP_REASON_UNKNOWN;
     status                    = powerManagerImpl->GetLastWakeupReason(wakeupReason);
     EXPECT_EQ(status, Core::ERROR_NONE);
     EXPECT_EQ(wakeupReason, WakeupReason::WAKEUP_REASON_GPIO);
+    printf("[TEST] Wakeup reason confirmed as GPIO\n");
 
+    printf("[TEST] Unregistering mode changed notification\n");
     status = powerManagerImpl->Unregister(&(*modeChanged));
     EXPECT_EQ(status, Core::ERROR_NONE);
+    
+    printf("[TEST] DeepSleepUserWakeup: Test completed successfully\n");
 }
 
 // Only difference from above test-case is a user trigger for SetPowerState ON
@@ -957,9 +2691,9 @@ TEST_F(TestPowerManager, DeepSleepUserWakeupRaceCondition)
                 EXPECT_EQ(newState, PowerState::POWER_STATE_ON);
                 EXPECT_EQ(stateChangeAfter, 1);
 
-                // valid PowerModePreChangeComplete
+                // ON transitions skip ack await list, so PowerModePreChangeComplete returns ERROR_INVALID_PARAMETER
                 auto status = powerManagerImpl->PowerModePreChangeComplete(clientId, transactionId);
-                EXPECT_EQ(status, Core::ERROR_NONE);
+                EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
             }));
 
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_SetDeepSleep(::testing::_, ::testing::_, ::testing::_))
@@ -1031,14 +2765,18 @@ TEST_F(TestPowerManager, DeepSleepUserWakeupRaceCondition)
 
 TEST_F(TestPowerManager, DeepSleepTimerWakeup)
 {
+    printf("[TEST] DeepSleepTimerWakeup: Test started\n");
+    
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
+                printf("[TEST] PLAT_API_SetPowerState #1: DEEP_SLEEP\n");
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
                 return PWRMGR_SUCCESS;
             }))
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
+                printf("[TEST] PLAT_API_SetPowerState #2: LIGHT_SLEEP\n");
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
@@ -1049,37 +2787,44 @@ TEST_F(TestPowerManager, DeepSleepTimerWakeup)
     EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
             [](const PowerState prevState, const PowerState newState) {
+                printf("[TEST] OnPowerModeChanged #1: newState=DEEP_SLEEP\n");
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
         .WillOnce(::testing::Invoke(
             [&](const PowerState prevState, const PowerState newState) {
+                printf("[TEST] OnPowerModeChanged #2: DEEP_SLEEP->LIGHT_SLEEP, calling wg.Done()\n");
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
                 wg.Done();
+                printf("[TEST] wg.Done() completed\n");
             }));
 
     Core::ProxyType<DeepSleepWakeupEvent> deepSleepTimeout = Core::ProxyType<DeepSleepWakeupEvent>::Create();
     EXPECT_CALL(*deepSleepTimeout, OnDeepSleepTimeout(::testing::_))
         .WillOnce(::testing::Invoke(
             [](const int timeout) {
+                printf("[TEST] OnDeepSleepTimeout called with timeout=%d\n", timeout);
                 EXPECT_EQ(timeout, 10);
             }));
 
-    EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_SetDeepSleep(::testing::_, ::testing::_, ::testing::_))
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_SetDeepSleep(::testing::_,  ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
             [](uint32_t deep_sleep_timeout, bool* isGPIOWakeup, bool networkStandby) {
+                printf("[TEST] PLAT_DS_SetDeepSleep: Sleeping for %u seconds...\n", deep_sleep_timeout);
                 EXPECT_EQ(deep_sleep_timeout, 10U);
                 EXPECT_TRUE(nullptr != isGPIOWakeup);
                 EXPECT_EQ(networkStandby, false);
                 // Simulate timer wakeup
                 *isGPIOWakeup = false;
                 std::this_thread::sleep_for(std::chrono::seconds(deep_sleep_timeout));
+                printf("[TEST] PLAT_DS_SetDeepSleep: Sleep completed, returning\n");
                 return DEEPSLEEPMGR_SUCCESS;
             }));
 
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_GetLastWakeupReason(::testing::_))
         .WillRepeatedly(::testing::Invoke(
             [](DeepSleep_WakeupReason_t* wakeupReason) {
+                printf("[TEST] PLAT_DS_GetLastWakeupReason called\n");
                 *wakeupReason = DEEPSLEEP_WAKEUPREASON_TIMER;
                 return DEEPSLEEPMGR_SUCCESS;
             }));
@@ -1087,15 +2832,18 @@ TEST_F(TestPowerManager, DeepSleepTimerWakeup)
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_DeepSleepWakeup())
         .WillOnce(testing::Return(DEEPSLEEPMGR_SUCCESS));
 
+    printf("[TEST] Registering notifications\n");
     uint32_t status = powerManagerImpl->Register(&(*modeChanged));
     EXPECT_EQ(status, Core::ERROR_NONE);
 
     status = powerManagerImpl->Register(&(*deepSleepTimeout));
     EXPECT_EQ(status, Core::ERROR_NONE);
 
+    printf("[TEST] Setting deep sleep timer to 10 seconds\n");
     status = powerManagerImpl->SetDeepSleepTimer(10);
     EXPECT_EQ(status, Core::ERROR_NONE);
 
+    printf("[TEST] Calling SetPowerState(DEEP_SLEEP)\n");
     int keyCode = 0;
     status      = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
     EXPECT_EQ(status, Core::ERROR_NONE);
@@ -1103,11 +2851,15 @@ TEST_F(TestPowerManager, DeepSleepTimerWakeup)
     PowerState newState  = PowerState::POWER_STATE_UNKNOWN;
     PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
 
+    printf("[TEST] Getting current power state\n");
     status = powerManagerImpl->GetPowerState(newState, prevState);
     EXPECT_EQ(status, Core::ERROR_NONE);
     EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+    printf("[TEST] Current state confirmed as DEEP_SLEEP\n");
 
+    printf("[TEST] Waiting for timer wakeup event (wg.Wait())... This will take ~10 seconds\n");
     wg.Wait();
+    printf("[TEST] wg.Wait() completed - timer wakeup event received!\n");
 
     WakeupReason wakeupReason = WakeupReason::WAKEUP_REASON_UNKNOWN;
     status                    = powerManagerImpl->GetLastWakeupReason(wakeupReason);
@@ -1521,14 +3273,18 @@ TEST_F(TestPowerManager, DeepSleepEarlyWakeup)
 
 TEST_F(TestPowerManager, DeepSleepFailure)
 {
+    printf("[TEST] DeepSleepFailure: Test started\n");
+    
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
+                printf("[TEST] PLAT_API_SetPowerState called with state: DEEP_SLEEP\n");
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
                 return PWRMGR_SUCCESS;
             }))
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
+                printf("[TEST] PLAT_API_SetPowerState called with state: LIGHT_SLEEP\n");
                 EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
                 return PWRMGR_SUCCESS;
             }));
@@ -1539,19 +3295,25 @@ TEST_F(TestPowerManager, DeepSleepFailure)
     EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
             [](const PowerState prevState, const PowerState newState) {
+                printf("[TEST] OnPowerModeChanged #1: prevState=%d, newState=%d (DEEP_SLEEP)\n", (int)prevState, (int)newState);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
         .WillOnce(::testing::Invoke(
             [&](const PowerState prevState, const PowerState newState) {
+                printf("[TEST] OnPowerModeChanged #2: prevState=%d, newState=%d (LIGHT_SLEEP) - calling wg.Done()\n", (int)prevState, (int)newState);
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
                 wg.Done();
+                printf("[TEST] wg.Done() completed\n");
             }));
 
+    int callCount = 0;
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_SetDeepSleep(::testing::_, ::testing::_, ::testing::_))
         .Times(5)
         .WillRepeatedly(::testing::Invoke(
-            [](uint32_t deep_sleep_timeout, bool* isGPIOWakeup, bool networkStandby) {
+            [&callCount](uint32_t deep_sleep_timeout, bool* isGPIOWakeup, bool networkStandby) {
+                callCount++;
+                printf("[TEST] PLAT_DS_SetDeepSleep call #%d: timeout=%u, returning FAILURE\n", callCount, deep_sleep_timeout);
                 EXPECT_EQ(deep_sleep_timeout, 10U);
                 EXPECT_TRUE(nullptr != isGPIOWakeup);
                 EXPECT_EQ(networkStandby, false);
@@ -1564,27 +3326,38 @@ TEST_F(TestPowerManager, DeepSleepFailure)
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_DeepSleepWakeup())
         .WillOnce(testing::Return(DEEPSLEEPMGR_SUCCESS));
 
+    printf("[TEST] Registering mode changed notification\n");
     uint32_t status = powerManagerImpl->Register(&(*modeChanged));
     EXPECT_EQ(status, Core::ERROR_NONE);
 
+    printf("[TEST] Setting deep sleep timer to 10 seconds\n");
     status = powerManagerImpl->SetDeepSleepTimer(10);
     EXPECT_EQ(status, Core::ERROR_NONE);
 
+    printf("[TEST] Calling SetPowerState(DEEP_SLEEP)\n");
     int keyCode = 0;
     status      = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
     EXPECT_EQ(status, Core::ERROR_NONE);
+    printf("[TEST] SetPowerState returned successfully\n");
 
     PowerState newState  = PowerState::POWER_STATE_UNKNOWN;
     PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
 
+    printf("[TEST] Getting current power state\n");
     status = powerManagerImpl->GetPowerState(newState, prevState);
     EXPECT_EQ(status, Core::ERROR_NONE);
     EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+    printf("[TEST] Current state confirmed as DEEP_SLEEP\n");
 
+    printf("[TEST] Waiting for failure recovery event (wg.Wait())... This will take ~25 seconds due to retries\n");
     wg.Wait();
+    printf("[TEST] wg.Wait() completed - failure recovery event received!\n");
 
+    printf("[TEST] Unregistering mode changed notification\n");
     status = powerManagerImpl->Unregister(&(*modeChanged));
     EXPECT_EQ(status, Core::ERROR_NONE);
+    
+    printf("[TEST] DeepSleepFailure: Test completed successfully\n");
 }
 
 TEST_F(TestPowerManager, Reboot)

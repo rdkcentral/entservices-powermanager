@@ -79,6 +79,27 @@ namespace Plugin {
         LOGINFO(">> DTOR <<");
     }
 
+    Core::hresult PowerManagerImplementation::Configure(PluginHost::IShell* service)
+    {
+        Core::hresult result = Core::ERROR_NONE;
+
+        if (service == nullptr) {
+            // Deinitialize: nullptr indicates graceful shutdown
+            LOGINFO(">> Configure(nullptr) - Deinitializing");
+            
+            // Wait for in-flight deep sleep to complete before members are destroyed.
+            // This ensures all callbacks finish before shutdown.
+            _deepSleepController.Shutdown();
+            
+            LOGINFO("<< Deinitialization completed");
+        } else {
+            // Initialize: service pointer indicates initialization (not currently used)
+            LOGINFO("Configure(service) - Initialize not implemented");
+        }
+
+        return result;
+    }
+
     void PowerManagerImplementation::dispatchPowerModeChangedEvent(const PowerState& prevState, const PowerState& newState)
     {
         LOGINFO(">>");
@@ -413,9 +434,15 @@ namespace Plugin {
             _modeChangeController   = std::shared_ptr<PreModeChangeController>(new PreModeChangeController(newState));
             const int transactionId = _modeChangeController->TransactionId(); // transactionId is unique per request
 
-            // Add all clients to ack await list (who we expect `PreChangeComplete` ack from)
-            for (const auto& client : _modeChangeClients) {
-                _modeChangeController->AckAwait(client.first);
+            // Add all clients to ack await list ONLY for DEEP_SLEEP transitions
+            // For other transitions (ON, STANDBY, LIGHT_SLEEP), proceed immediately without waiting for ACKs
+            if (newState == POWER_STATE_STANDBY_DEEP_SLEEP) {
+                for (const auto& client : _modeChangeClients) {
+                    _modeChangeController->AckAwait(client.first);
+                }
+                LOGINFO("Added %zu clients to ack await list for DEEP_SLEEP transition", _modeChangeClients.size());
+            } else {
+                LOGINFO("Skipping ack await list for %s transition - will proceed immediately", util::str(newState));
             }
 
             // For sync state change requests timeout is `0`
@@ -481,11 +508,22 @@ namespace Plugin {
     void PowerManagerImplementation::submitPowerModePreChangeEvent(const PowerState currentState, const PowerState newState, const int transactionId, const int timeOut)
     {
         LOGINFO(">> currentState : %s, newState : %s, transactionId : %d", util::str(currentState), util::str(newState), transactionId);
-        for (auto& notification : _preModeChangeNotifications) {
+        
+        // Make a copy of the notification list under lock to avoid iterator invalidation
+        // if Unregister() is called while we're dispatching callbacks
+        std::list<Exchange::IPowerManager::IModePreChangeNotification*> notificationsCopy;
+        _callbackLock.Lock();
+        notificationsCopy = _preModeChangeNotifications;
+        _callbackLock.Unlock();
+        
+        for (auto& notification : notificationsCopy) {
+            // AddRef to keep notification alive during async callback execution
+            notification->AddRef();
             Core::IWorkerPool::Instance().Submit(
                 PowerManagerImplementation::LambdaJob::Create(this,
                     [notification, currentState, newState, transactionId, timeOut]() {
                         notification->OnPowerModePreChange(currentState, newState, transactionId, timeOut);
+                        notification->Release();  // Release after callback completes
                     }));
         }
 
@@ -876,10 +914,29 @@ namespace Plugin {
         uint32_t errorCode = Core::ERROR_INVALID_PARAMETER;
 
         LOGINFO(">> clientId: %u, transactionId: %d, delayPeriod: %d", clientId, transactionId, delayPeriod);
+
+        // Validate delay period - must be positive (> 0)
+        // If client wants to proceed immediately, they should just call PowerModePreChangeComplete
+        if (delayPeriod <= 0) {
+            LOGERR("Invalid delayPeriod: %d. Delay must be positive (> 0 seconds)", delayPeriod);
+            LOGINFO("<< errorcode: %u", errorCode);
+            return errorCode;
+        }
+
         _apiLock.Lock();
 
         if (_modeChangeController) {
-            errorCode = _modeChangeController->Reschedule(clientId, transactionId, delayPeriod * 1000);
+            PowerState targetState = _modeChangeController->powerState();
+
+            // Only allow delay for DEEP_SLEEP transitions to prevent wakeup delays
+            // For all other transitions (ON, STANDBY, LIGHT_SLEEP), proceed immediately
+            if (targetState == POWER_STATE_STANDBY_DEEP_SLEEP) {
+                errorCode = _modeChangeController->Reschedule(clientId, transactionId, delayPeriod * 1000);
+                LOGINFO("Delay allowed for DEEP_SLEEP transition");
+            } else {
+                errorCode = Core::ERROR_ILLEGAL_STATE;
+                LOGWARN("Delay NOT allowed for %s transition. DelayPowerModeChangeBy is restricted to DEEP_SLEEP only", util::str(targetState));
+            }
         }
 
         _apiLock.Unlock();
@@ -891,7 +948,7 @@ namespace Plugin {
 
     Core::hresult PowerManagerImplementation::AddPowerModePreChangeClient(const string& clientName, uint32_t& clientId)
     {
-        LOGINFO(">> client: %s, clientId: %u", clientName.c_str(), clientId);
+        LOGINFO(">> client: %s", clientName.c_str());
 
         if (clientName.empty()) {
             LOGERR("AddPowerModePreChangeClient called with empty clientName");

@@ -29,6 +29,7 @@
 #include <plugins/plugins.h>
 
 #include <interfaces/IPowerManager.h>
+#include <interfaces/IConfiguration.h>
 
 #include "AckController.h"
 
@@ -44,7 +45,7 @@ using TimeSinceWakeup    = WPEFramework::Exchange::IPowerManager::TimeSinceWakeu
 
 namespace WPEFramework {
 namespace Plugin {
-    class PowerManagerImplementation : public Exchange::IPowerManager, public DeepSleepController::INotification, public ThermalController::INotification {
+    class PowerManagerImplementation : public Exchange::IPowerManager, public Exchange::IConfiguration, public DeepSleepController::INotification, public ThermalController::INotification {
     public:
         using PreModeChangeController = AckController;
 
@@ -60,6 +61,7 @@ namespace Plugin {
 
         BEGIN_INTERFACE_MAP(PowerManagerImplementation)
         INTERFACE_ENTRY(Exchange::IPowerManager)
+        INTERFACE_ENTRY(Exchange::IConfiguration)
         END_INTERFACE_MAP
 
     public:
@@ -140,9 +142,34 @@ namespace Plugin {
         Core::hresult GetWakeupSourceConfig(IWakeupSourceConfigIterator*& wakeupSources) const override;
         Core::hresult GetPowerStateBeforeReboot(PowerState& powerStateBeforeReboot) override;
         Core::hresult PowerModePreChangeComplete(const uint32_t clientId, const int transactionId) override;
+
+        /**
+         * @brief Delays the power mode change by specified period (DEEP_SLEEP transitions only)
+         *
+         * This API allows clients to extend the timeout for power state transitions.
+         * IMPORTANT: This API is RESTRICTED to DEEP_SLEEP transitions only to ensure
+         * responsive user experience during wakeup and normal operations.
+         *
+         * @param clientId The client ID obtained from AddPowerModePreChangeClient
+         * @param transactionId The transaction ID received in OnPowerModePreChange callback
+         * @param delayPeriod The delay period in seconds to extend the timeout
+         *
+         * @return Core::ERROR_NONE if delay is accepted (DEEP_SLEEP transition)
+         *         Core::ERROR_INVALID_PARAMETER if called for non-DEEP_SLEEP transitions
+         *
+         * @note For ON, STANDBY, and LIGHT_SLEEP transitions, this API will return
+         *       ERROR_INVALID_PARAMETER and the transition will proceed immediately
+         *       without waiting for client acknowledgments.
+         *
+         * @warning Clients should NOT call this API for wakeup scenarios (STANDBY→ON)
+         *          or normal state transitions. Use only for DEEP_SLEEP preparation.
+         */
         Core::hresult DelayPowerModeChangeBy(const uint32_t clientId, const int transactionId, const int delayPeriod) override;
         Core::hresult AddPowerModePreChangeClient(const string& clientName, uint32_t& clientId) override;
         Core::hresult RemovePowerModePreChangeClient(const uint32_t clientId) override;
+
+        // IConfiguration interface - for graceful shutdown
+        Core::hresult Configure(PluginHost::IShell* service) override;
 
         static PowerManagerImplementation* _instance;
 
