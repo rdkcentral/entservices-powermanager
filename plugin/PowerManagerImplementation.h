@@ -185,6 +185,7 @@ namespace Plugin {
 
         void submitPowerModePreChangeEvent(const PowerState currentState, const PowerState newState, const int transactionId, const int timeOut);
         void powerModePreChangeCompletionHandler(const int keyCode, PowerState currentState, PowerState powerState, const std::string& reason);
+        void startPowerModeChangeAcknowledgement(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason);
         void submitPowerModeChangeAcknowledgementRequestedEvent(const PowerState currentState, const PowerState newState, const int transactionId, const string& reason);
         void powerModeChangeAcknowledgementCompletionHandler(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason);
         void logUnresponsiveAckClients(const std::shared_ptr<PreModeChangeController>& ackController);

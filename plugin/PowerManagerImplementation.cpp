@@ -419,6 +419,18 @@ namespace Plugin {
 
             _apiLock.Lock();
 
+            // If we're already in the acknowledgement negotiation, reject this request
+            if (_modeChangeAckController && _modeChangeAckController->IsRunning()) {
+                LOGWARN("Rejecting SetPowerState(%s) - acknowledgement negotiation already in "
+                        "progress for %s state.",
+                    util::str(newState), util::str(_modeChangeAckController->powerState()));
+                
+		_apiLock.Unlock();
+                selfLock.Unlock();
+                
+		return Core::ERROR_ILLEGAL_STATE;
+            }
+
             if (_modeChangeController) {
                 LOGINFO("There is a state change request in progress for %s state.", util::str(_modeChangeController->powerState()));
                 if (_modeChangeController->powerState() == newState) {
@@ -885,10 +897,31 @@ namespace Plugin {
 
         _apiLock.Lock();
 
-        if (_modeChangeAckController) {
-            LOGWARN("Ack round already in progress for %s state, cancelling stale round", util::str(_modeChangeAckController->powerState()));
-            _modeChangeAckController.reset();
+        // If there are no clients engaged in the acknowledgement negotiationi stage , skip the
+        // whole new ack-phase mechanism entirely and apply the power state change directly.
+        if (_modeChangeAckClients.empty()) {
+            _apiLock.Unlock();
+
+            LOGINFO("No acknowledgement clients registered, skipping acknowledgemen stage negotiation");
+            setDevicePowerState(keyCode, currentState, newState, reason);
+
+            LOGINFO("<<");
+            return;
         }
+
+        _apiLock.Unlock();
+
+        startPowerModeChangeAcknowledgement(keyCode, currentState, newState, reason);
+
+        LOGINFO("<<");
+    }
+
+    // Starts the acknowledgement negotiation round: creates a fresh ack controller,
+    // registers all currently known acknowledgement clients on it, notifies them via
+    // `OnPowerModeChangeAcknowledgementRequested`, and schedules the ack timeout.
+    void PowerManagerImplementation::startPowerModeChangeAcknowledgement(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason)
+    {
+        _apiLock.Lock();
 
         _modeChangeAckController = std::shared_ptr<PreModeChangeController>(new PreModeChangeController(newState));
         const int transactionId  = _modeChangeAckController->TransactionId(); // transactionId is unique per acknowledgement round
@@ -900,7 +933,8 @@ namespace Plugin {
 
         // Preserve the same sync-state-change carve-out as the pre-change round (see `isSyncStateChange`),
         // so `SetPowerState`'s `selfLock` ordering guarantee is not affected by this additional round.
-        const uint32_t timeOut = isSyncStateChange(currentState, newState) ? 0 : POWER_MODE_CHANGE_ACK_TIMEOUT_SEC;
+        
+	const uint32_t timeOut =  POWER_MODE_CHANGE_ACK_TIMEOUT_SEC;
 
         // Like in `Job` class we avoid impl destruction before handler is invoked
         this->AddRef();
@@ -1004,7 +1038,7 @@ namespace Plugin {
                     acknowledgeClientId, transactionId, _modeChangeAckController->TransactionId());
             }
         } else {
-            LOGWARN("PowerModeChangeAcknowledgement received while NOT in 2nd stage (acknowledgement) negotiation - "
+            LOGWARN("PowerModeChangeAcknowledgement received while NOT in acknowledgement negotiation stage - "
                     "acknowledgeClientId: %u, transactionId: %d. This should not happen and signifies a client-side "
                     "issue.",
                 acknowledgeClientId, transactionId);
