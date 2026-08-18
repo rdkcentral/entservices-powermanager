@@ -1031,7 +1031,7 @@ TEST_F(TestPowerManager, PowerModeChangeAcknowledgementUnregisterBeforeAck)
 
 TEST_F(TestPowerManager, PowerModeChangeAcknowledgementOutOfStage)
 {
-    // Calling PowerModeChangeAcknowledgement while NOT in the 2nd (acknowledgement) negotiation
+    // Calling PowerModeChangeAcknowledgement while NOT in the acknowledgement negotiation
     // stage at all must be rejected (ERROR_INVALID_PARAMETER) and logged as a warning - it should
     // never happen and signifies a client-side issue.
     uint32_t ackClientId = 0;
@@ -1043,6 +1043,101 @@ TEST_F(TestPowerManager, PowerModeChangeAcknowledgementOutOfStage)
     EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
 
     status = powerManagerImpl->RemovePowerModeChangeAcknowledgementClient(ackClientId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+}
+
+TEST_F(TestPowerManager, SetPowerStateRejectedDuringAcknowledgementNegotiation)
+{
+    // While the acknowledgement negotiation is in progress, any new SetPowerState
+    // request must be rejected outright (ERROR_ILLEGAL_STATE) and must NOT restart / cancel the
+    // 1st stage (pre-change) negotiation.
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+
+    uint32_t preChangeClientId = 0;
+    uint32_t status = powerManagerImpl->AddPowerModePreChangeClient("l1-test-prechange-client", preChangeClientId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    uint32_t ackClientId = 0;
+    status = powerManagerImpl->AddPowerModeChangeAcknowledgementClient("l1-test-ack-client", ackClientId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent       = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    Core::ProxyType<PowerModeChangeAcknowledgementEvent> ackEvent = Core::ProxyType<PowerModeChangeAcknowledgementEvent>::Create();
+    Core::ProxyType<PowerModeChangedEvent> modeChangedEvent       = Core::ProxyType<PowerModeChangedEvent>::Create();
+
+    status = powerManagerImpl->Register(&(*prechangeEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    status = powerManagerImpl->Register(&(*ackEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    status = powerManagerImpl->Register(&(*modeChangedEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int transactionId, const int stateChangeAfter) {
+                auto status = powerManagerImpl->PowerModePreChangeComplete(preChangeClientId, transactionId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+            }));
+
+    WaitGroup wg;
+    wg.Add(1);
+    EXPECT_CALL(*ackEvent, OnPowerModeChangeAcknowledgementRequested(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int transactionId, const string& reason) {
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+
+                // While the ack round is in progress (client has not acked yet), attempt a new
+                // SetPowerState request - it must be rejected without disturbing this round.
+                auto status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_ON, "l1-test-concurrent");
+                EXPECT_EQ(status, Core::ERROR_ILLEGAL_STATE);
+
+                // now acknowledge to let the original round complete normally
+                status = powerManagerImpl->PowerModeChangeAcknowledgement(ackClientId, transactionId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                wg.Done();
+            }));
+
+    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currState, const PowerState newState) {
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+            }));
+
+    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "l1-test");
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    wg.Wait();
+
+    // some delay to destroy AckController after IModeChanged notification
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState    = PowerState::POWER_STATE_UNKNOWN;
+
+    status = powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    // original request (STANDBY_LIGHT_SLEEP) completed; the rejected concurrent request (ON) never applied
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+    EXPECT_EQ(prevState, initialPowerState());
+
+    status = powerManagerImpl->RemovePowerModePreChangeClient(preChangeClientId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    status = powerManagerImpl->RemovePowerModeChangeAcknowledgementClient(ackClientId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    status = powerManagerImpl->Unregister(&(*prechangeEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    status = powerManagerImpl->Unregister(&(*ackEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    status = powerManagerImpl->Unregister(&(*modeChangedEvent));
     EXPECT_EQ(status, Core::ERROR_NONE);
 }
 
