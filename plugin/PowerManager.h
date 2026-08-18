@@ -41,7 +41,8 @@ namespace Plugin {
                              public Exchange::IPowerManager::IModeChangedNotification,
                              public Exchange::IPowerManager::IDeepSleepTimeoutNotification,
                              public Exchange::IPowerManager::INetworkStandbyModeChangedNotification,
-                             public Exchange::IPowerManager::IThermalModeChangedNotification {
+                             public Exchange::IPowerManager::IThermalModeChangedNotification,
+                             public Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested {
         private:
             Notification()                               = delete;
             Notification(const Notification&)            = delete;
@@ -72,6 +73,7 @@ namespace Plugin {
             INTERFACE_ENTRY(Exchange::IPowerManager::IDeepSleepTimeoutNotification)
             INTERFACE_ENTRY(Exchange::IPowerManager::INetworkStandbyModeChangedNotification)
             INTERFACE_ENTRY(Exchange::IPowerManager::IThermalModeChangedNotification)
+            INTERFACE_ENTRY(Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested)
             INTERFACE_ENTRY(RPC::IRemoteConnection::INotification)
             END_INTERFACE_MAP
 
@@ -130,6 +132,12 @@ namespace Plugin {
             {
                 LOGINFO("rebootReasonCustom %s, rebootReasonOther %s, rebootRequestor %s", rebootReasonCustom.c_str(), rebootReasonOther.c_str(), rebootRequestor.c_str());
                 Exchange::JPowerManager::Event::OnRebootBegin(_parent, rebootReasonCustom, rebootReasonOther, rebootRequestor);
+            }
+
+            void OnPowerModeChangeAcknowledgementRequested(const PowerState currentState, const PowerState newState, const int trxnId, const string& reason) override
+            {
+                LOGINFO("currentState %u, newState %u, transactionId %d, reason %s", currentState, newState, trxnId, reason.c_str());
+                Exchange::JPowerManager::Event::OnPowerModeChangeAcknowledgementRequested(_parent, currentState, newState, trxnId, reason);
             }
 
         private:

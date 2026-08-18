@@ -54,6 +54,7 @@ typedef enum : uint32_t {
     POWERMANAGERL2TEST_NETWORK_STANDBYMODECHANGED = 0x00000007,
     POWERMANAGERL2TEST_DEEP_SLEEP_TIMEOUT = 0x00000008,
     POWERMANAGERL2TEST_NW_STANDBYMODECHANGED = 0x00000009,
+    POWERMANAGERL2TEST_MODE_CHANGE_ACK_REQUESTED = 0x0000000A,
     POWERMANAGERL2TEST_STATE_INVALID = 0x00000000
 }PowerManagerL2test_async_events_t;
 
@@ -62,7 +63,8 @@ class PwrMgr_Notification : public Exchange::IPowerManager::IRebootNotification,
                              public Exchange::IPowerManager::IModeChangedNotification,
                              public Exchange::IPowerManager::IDeepSleepTimeoutNotification,
                              public Exchange::IPowerManager::INetworkStandbyModeChangedNotification,
-                             public Exchange::IPowerManager::IThermalModeChangedNotification {
+                             public Exchange::IPowerManager::IThermalModeChangedNotification,
+                             public Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested {
     private:
         /** @brief Mutex */
         std::mutex m_mutex;
@@ -73,6 +75,12 @@ class PwrMgr_Notification : public Exchange::IPowerManager::IRebootNotification,
         /** @brief Event signalled flag */
         uint32_t m_event_signalled;
 
+        /** @brief transactionId received via the most recent OnPowerModeChangeAcknowledgementRequested event */
+        int m_ackTransactionId;
+
+        /** @brief transactionId received via the most recent OnPowerModePreChange event */
+        int m_preChangeTransactionId;
+
         BEGIN_INTERFACE_MAP(PwrMgr_Notification)
         INTERFACE_ENTRY(Exchange::IPowerManager::IRebootNotification)
         INTERFACE_ENTRY(Exchange::IPowerManager::IModePreChangeNotification)
@@ -80,10 +88,11 @@ class PwrMgr_Notification : public Exchange::IPowerManager::IRebootNotification,
         INTERFACE_ENTRY(Exchange::IPowerManager::IDeepSleepTimeoutNotification)
         INTERFACE_ENTRY(Exchange::IPowerManager::INetworkStandbyModeChangedNotification)
         INTERFACE_ENTRY(Exchange::IPowerManager::IThermalModeChangedNotification)
+        INTERFACE_ENTRY(Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested)
         END_INTERFACE_MAP
 
     public:
-        PwrMgr_Notification(){}
+        PwrMgr_Notification() : m_ackTransactionId(-1), m_preChangeTransactionId(-1) {}
         ~PwrMgr_Notification(){}
 
        template <typename T>
@@ -111,9 +120,37 @@ class PwrMgr_Notification : public Exchange::IPowerManager::IRebootNotification,
 
             TEST_LOG("OnPowerModePreChange currentState: %u, newState: %u\n", currentState, newState);
 
+            m_preChangeTransactionId = trxnId;
+
             /* Notify the requester thread. */
             m_event_signalled |= POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE;
             m_condition_variable.notify_one();
+        }
+
+        int GetPreChangeTransactionId()
+        {
+            std::unique_lock<std::mutex> lock(m_mutex);
+            return m_preChangeTransactionId;
+        }
+
+        void OnPowerModeChangeAcknowledgementRequested(const PowerState currentState, const PowerState newState, const int transactionId, const string& reason) override
+        {
+            TEST_LOG("OnPowerModeChangeAcknowledgementRequested event triggered ***\n");
+            std::unique_lock<std::mutex> lock(m_mutex);
+
+            TEST_LOG("OnPowerModeChangeAcknowledgementRequested currentState: %u, newState: %u, transactionId: %d\n", currentState, newState, transactionId);
+
+            m_ackTransactionId = transactionId;
+
+            /* Notify the requester thread. */
+            m_event_signalled |= POWERMANAGERL2TEST_MODE_CHANGE_ACK_REQUESTED;
+            m_condition_variable.notify_one();
+        }
+
+        int GetAckTransactionId()
+        {
+            std::unique_lock<std::mutex> lock(m_mutex);
+            return m_ackTransactionId;
         }
 
         void OnDeepSleepTimeout(const int wakeupTimeout) override
@@ -1364,6 +1401,214 @@ TEST_F(PowerManager_L2Test, PowerModePreChangeAckTimeout)
     }
 }
 
+
+TEST_F(PowerManager_L2Test, PowerModeChangeAcknowledgement)
+{
+    Core::ProxyType<RPC::InvokeServerType<1, 0, 4>> mEngine_PowerManager;
+    Core::ProxyType<RPC::CommunicatorClient> mClient_PowerManager;
+    PluginHost::IShell *mController_PowerManager;
+    uint32_t signalled = POWERMANAGERL2TEST_STATE_INVALID;
+
+    TEST_LOG("Creating mEngine_PowerManager");
+    mEngine_PowerManager = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
+    mClient_PowerManager = Core::ProxyType<RPC::CommunicatorClient>::Create(Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(mEngine_PowerManager));
+
+#if ((THUNDER_VERSION == 2) || ((THUNDER_VERSION == 4) && (THUNDER_VERSION_MINOR == 2)))
+    mEngine_PowerManager->Announcements(mClient_PowerManager->Announcement());
+#endif
+
+    if (!mClient_PowerManager.IsValid())
+    {
+        TEST_LOG("Invalid mClient_PowerManager");
+    }
+    else
+    {
+        mController_PowerManager = mClient_PowerManager->Open<PluginHost::IShell>(_T("org.rdk.PowerManager"), ~0, 3000);
+        if (mController_PowerManager)
+        {
+            auto PowerManagerPlugin = mController_PowerManager->QueryInterface<Exchange::IPowerManager>();
+
+            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
+            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
+            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested>());
+
+            if (PowerManagerPlugin)
+            {
+                int keyCode = 0;
+
+                // engage phase 1 (pre-change) client so it can complete immediately, moving to phase 2 (ack)
+                uint32_t preChangeClientId = 0;
+                uint32_t status = PowerManagerPlugin->AddPowerModePreChangeClient("l2-test-prechange-client", preChangeClientId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                uint32_t ackClientId = 0;
+                status = PowerManagerPlugin->AddPowerModeChangeAcknowledgementClient("l2-test-ack-client", ackClientId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
+                    .WillOnce(::testing::Invoke(
+                        [](PWRMgr_PowerState_t powerState) {
+                            EXPECT_EQ(powerState, PWRMGR_POWERSTATE_ON);
+                            return PWRMGR_SUCCESS;
+                        }));
+
+                status = PowerManagerPlugin->SetPowerState(keyCode, PowerState::POWER_STATE_ON, "l2-test");
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                // complete phase 1 as soon as pre-change is received
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+                int preChangeTransactionId = mNotification.GetPreChangeTransactionId();
+                status = PowerManagerPlugin->PowerModePreChangeComplete(preChangeClientId, preChangeTransactionId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                // wait for the acknowledgement-requested (phase 2) event
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_MODE_CHANGE_ACK_REQUESTED);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_MODE_CHANGE_ACK_REQUESTED);
+
+                int ackTransactionId = mNotification.GetAckTransactionId();
+
+                // acknowledge - should complete the round (only client registered) and the power state should change
+                status = PowerManagerPlugin->PowerModeChangeAcknowledgement(ackClientId, ackTransactionId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+
+                // some delay to destroy AckController after IModeChanged notification
+                std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+
+                PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+                PowerState prevState    = PowerState::POWER_STATE_UNKNOWN;
+
+                status = PowerManagerPlugin->GetPowerState(currentState, prevState);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                EXPECT_EQ(currentState, PowerState::POWER_STATE_ON);
+                EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY);
+
+                status = PowerManagerPlugin->RemovePowerModePreChangeClient(preChangeClientId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                status = PowerManagerPlugin->RemovePowerModeChangeAcknowledgementClient(ackClientId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
+                PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
+                PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested>());
+                PowerManagerPlugin->Release();
+            }
+            else
+            {
+                TEST_LOG("PowerManagerPlugin is NULL");
+            }
+            mController_PowerManager->Release();
+        }
+        else
+        {
+            TEST_LOG("mController_PowerManager is NULL");
+        }
+    }
+}
+
+TEST_F(PowerManager_L2Test, PowerModeChangeAcknowledgementTimeout)
+{
+    // Architect decision: on timeout (hardcoded 10s), PowerManager logs the unresponsive
+    // clients and still proceeds with the power state change.
+    Core::ProxyType<RPC::InvokeServerType<1, 0, 4>> mEngine_PowerManager;
+    Core::ProxyType<RPC::CommunicatorClient> mClient_PowerManager;
+    PluginHost::IShell *mController_PowerManager;
+    uint32_t signalled = POWERMANAGERL2TEST_STATE_INVALID;
+
+    TEST_LOG("Creating mEngine_PowerManager");
+    mEngine_PowerManager = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
+    mClient_PowerManager = Core::ProxyType<RPC::CommunicatorClient>::Create(Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(mEngine_PowerManager));
+
+#if ((THUNDER_VERSION == 2) || ((THUNDER_VERSION == 4) && (THUNDER_VERSION_MINOR == 2)))
+    mEngine_PowerManager->Announcements(mClient_PowerManager->Announcement());
+#endif
+
+    if (!mClient_PowerManager.IsValid())
+    {
+        TEST_LOG("Invalid mClient_PowerManager");
+    }
+    else
+    {
+        mController_PowerManager = mClient_PowerManager->Open<PluginHost::IShell>(_T("org.rdk.PowerManager"), ~0, 3000);
+        if (mController_PowerManager)
+        {
+            auto PowerManagerPlugin = mController_PowerManager->QueryInterface<Exchange::IPowerManager>();
+
+            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
+            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
+            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested>());
+
+            if (PowerManagerPlugin)
+            {
+                int keyCode = 0;
+
+                uint32_t preChangeClientId = 0;
+                uint32_t status = PowerManagerPlugin->AddPowerModePreChangeClient("l2-test-prechange-client", preChangeClientId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                uint32_t ackClientId = 0;
+                status = PowerManagerPlugin->AddPowerModeChangeAcknowledgementClient("l2-test-ack-client", ackClientId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
+                    .WillOnce(::testing::Invoke(
+                        [](PWRMgr_PowerState_t powerState) {
+                            EXPECT_EQ(powerState, PWRMGR_POWERSTATE_ON);
+                            return PWRMGR_SUCCESS;
+                        }));
+
+                status = PowerManagerPlugin->SetPowerState(keyCode, PowerState::POWER_STATE_ON, "l2-test");
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+                int preChangeTransactionId = mNotification.GetPreChangeTransactionId();
+                PowerManagerPlugin->PowerModePreChangeComplete(preChangeClientId, preChangeTransactionId);
+
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_MODE_CHANGE_ACK_REQUESTED);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_MODE_CHANGE_ACK_REQUESTED);
+
+                // intentionally do NOT acknowledge - wait past the hardcoded 10s timeout
+                // for PowerManager to proceed with the state change on its own.
+                signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 15, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+                EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+
+                // some delay to destroy AckController after IModeChanged notification
+                std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+
+                PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+                PowerState prevState    = PowerState::POWER_STATE_UNKNOWN;
+
+                status = PowerManagerPlugin->GetPowerState(currentState, prevState);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                EXPECT_EQ(currentState, PowerState::POWER_STATE_ON);
+                EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY);
+
+                status = PowerManagerPlugin->RemovePowerModePreChangeClient(preChangeClientId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                status = PowerManagerPlugin->RemovePowerModeChangeAcknowledgementClient(ackClientId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
+                PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
+                PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested>());
+                PowerManagerPlugin->Release();
+            }
+            else
+            {
+                TEST_LOG("PowerManagerPlugin is NULL");
+            }
+            mController_PowerManager->Release();
+        }
+        else
+        {
+            TEST_LOG("mController_PowerManager is NULL");
+        }
+    }
+}
 
 TEST_F(PowerManager_L2Test, JsonRpcWakeupSourceChange)
 {
