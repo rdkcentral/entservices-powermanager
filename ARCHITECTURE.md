@@ -40,7 +40,7 @@ The plugin employs a specialized controller pattern with four distinct controlle
    - Integration with system services for coordinated shutdowns
 
 #### Support Layer
-- **AckController**: Pre-change acknowledgment system for power state transitions
+- **PreModeChangeController**: Two-phase acknowledgment system for power state transitions (pre-change and acknowledgement phases)
 - **Settings**: Configuration management for power states and plugin behavior
 - **PowerUtils**: Utility functions for power state conversions and logging
 
@@ -66,9 +66,33 @@ The plugin employs a specialized controller pattern with four distinct controlle
 ## Data Flow Architecture
 
 ### Power State Change Flow
+
+The power state change flow includes two distinct acknowledgement phases:
+
+**Phase 1: Pre-Change Notification**
+- Managed by `_modeChangeController` (instance of PreModeChangeController)
+- Clients register using `AddPowerModePreChangeClient` / `RemovePowerModePreChangeClient`
+- Clients receive `OnPowerModePreChange` notification with transaction ID
+- Clients can delay the change using `DelayPowerModeChangeBy`
+- Timeout: POWER_MODE_PRECHANGE_TIMEOUT_SEC (default 1 second)
+
+**Phase 2: Acknowledgement Phase**
+- Managed by `_modeChangeAckController` (instance of PreModeChangeController)
+- Clients register using `AddPowerModeChangeAcknowledgementClient` / `RemovePowerModeChangeAcknowledgementClient`
+- Clients receive `OnPowerModeChangeAcknowledgementRequested` notification with transaction ID
+- Clients must call `PowerModeChangeAcknowledgement` with the provided transaction ID
+- Timeout: POWER_MODE_CHANGE_ACK_TIMEOUT_SEC (default 10 seconds)
+- This phase is skipped if no acknowledgement clients are registered
+- During this phase, new SetPowerState calls are rejected with ERROR_ILLEGAL_STATE
+
+**Complete Flow**
 1. **Request Initiation**: Client requests power state change through IPowerManager interface
-2. **Pre-Change Notification**: AckController notifies registered clients for acknowledgment
-3. **Acknowledgment Collection**: System waits for client acknowledgments within timeout
+2. **Pre-Change Phase** (if pre-change clients registered):
+   - Send `OnPowerModePreChange` notifications
+   - Wait for client acknowledgements or timeout
+3. **Acknowledgement Phase** (if acknowledgement clients registered):
+   - Send `OnPowerModeChangeAcknowledgementRequested` notifications
+   - Wait for client acknowledgements or timeout
 4. **Validation**: PowerController validates target power state and prerequisites
 5. **HAL Execution**: Platform-specific power state change through IPlatform interface
 6. **State Persistence**: Settings controller updates configuration persistence
