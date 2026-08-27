@@ -897,12 +897,12 @@ namespace Plugin {
 
         _apiLock.Lock();
 
-        // If there are no clients engaged in the acknowledgement negotiationi stage , skip the
+        // If there are no clients engaged in the acknowledgement negotiation stage, skip the
         // whole new ack-phase mechanism entirely and apply the power state change directly.
         if (_modeChangeAckClients.empty()) {
             _apiLock.Unlock();
 
-            LOGINFO("No acknowledgement clients registered, skipping acknowledgemen stage negotiation");
+            LOGINFO("No acknowledgement clients registered, skipping acknowledgement-stage negotiation");
             setDevicePowerState(keyCode, currentState, newState, reason);
 
             LOGINFO("<<");
