@@ -528,11 +528,22 @@ namespace Plugin {
     void PowerManagerImplementation::submitPowerModeChangeAcknowledgementRequestedEvent(const PowerState currentState, const PowerState newState, const int transactionId, const string& reason)
     {
         LOGINFO(">> currentState : %s, newState : %s, transactionId : %d", util::str(currentState), util::str(newState), transactionId);
-        for (auto& notification : _modeChangeAckNotifications) {
+
+        std::list<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested*> notifications;
+
+        _callbackLock.Lock();
+        notifications = _modeChangeAckNotifications;
+        for (auto* n : notifications) {
+            n->AddRef();
+        }
+        _callbackLock.Unlock();
+
+        for (auto* notification : notifications) {
             Core::IWorkerPool::Instance().Submit(
                 PowerManagerImplementation::LambdaJob::Create(this,
                     [notification, currentState, newState, transactionId, reason]() {
                         notification->OnPowerModeChangeAcknowledgementRequested(currentState, newState, transactionId, reason);
+                        notification->Release();
                     }));
         }
 
