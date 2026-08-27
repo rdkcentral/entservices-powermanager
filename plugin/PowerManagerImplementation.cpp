@@ -421,14 +421,13 @@ namespace Plugin {
 
             // If we're already in the acknowledgement negotiation, reject this request
             if (_modeChangeAckController && _modeChangeAckController->IsRunning()) {
-                LOGWARN("Rejecting SetPowerState(%s) - acknowledgement negotiation already in "
-                        "progress for %s state.",
+                LOGWARN("Rejecting SetPowerState(%s) - acknowledgement negotiation already in progress for %s state.",
                     util::str(newState), util::str(_modeChangeAckController->powerState()));
                 
-		_apiLock.Unlock();
+                _apiLock.Unlock();
                 selfLock.Unlock();
                 
-		return Core::ERROR_ILLEGAL_STATE;
+		        return Core::ERROR_ILLEGAL_STATE;
             }
 
             if (_modeChangeController) {
