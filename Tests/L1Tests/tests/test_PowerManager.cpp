@@ -800,15 +800,12 @@ TEST_F(TestPowerManager, PowerModeChangeAcknowledgement)
                 EXPECT_EQ(status, Core::ERROR_NONE);
             }));
 
-    int ackTransactionId = 0;
     WaitGroup wg;
     wg.Add(1);
     EXPECT_CALL(*ackEvent, OnPowerModeChangeAcknowledgementRequested(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
             [&](const PowerState currentState, const PowerState newState, const int transactionId, const string& reason) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
-                ackTransactionId = transactionId;
-
                 // invalid transactionId - rejected, should not complete the round
                 auto status = powerManagerImpl->PowerModeChangeAcknowledgement(ackClientId, transactionId + 10);
                 EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
