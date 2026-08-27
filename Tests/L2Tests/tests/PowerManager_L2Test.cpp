@@ -92,7 +92,7 @@ class PwrMgr_Notification : public Exchange::IPowerManager::IRebootNotification,
         END_INTERFACE_MAP
 
     public:
-        PwrMgr_Notification() : m_ackTransactionId(-1), m_preChangeTransactionId(-1) {}
+PwrMgr_Notification() : m_event_signalled(POWERMANAGERL2TEST_STATE_INVALID), m_ackTransactionId(-1), m_preChangeTransactionId(-1) {}
         ~PwrMgr_Notification(){}
 
        template <typename T>
