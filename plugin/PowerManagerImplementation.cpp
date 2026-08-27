@@ -1128,12 +1128,11 @@ namespace Plugin {
             acknowledgeClientId = it->first;
         }
 
-        _apiLock.Unlock();
-
         for (auto& clients : _modeChangeAckClients) {
             LOGINFO("Registered client: %s, acknowledgeClientId: %u", clients.second.c_str(), clients.first);
         }
 
+        _apiLock.Unlock();
         LOGINFO("<< errorCode: 0");
 
         return Core::ERROR_NONE;
