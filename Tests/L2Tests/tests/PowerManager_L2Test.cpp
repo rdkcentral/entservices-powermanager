@@ -1428,12 +1428,11 @@ TEST_F(PowerManager_L2Test, PowerModeChangeAcknowledgement)
         {
             auto PowerManagerPlugin = mController_PowerManager->QueryInterface<Exchange::IPowerManager>();
 
-            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
-            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
-            PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested>());
-
             if (PowerManagerPlugin)
             {
+                PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
+                PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
+                PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested>());
                 int keyCode = 0;
 
                 // engage phase 1 (pre-change) client so it can complete immediately, moving to phase 2 (ack)
