@@ -427,7 +427,7 @@ namespace Plugin {
                 _apiLock.Unlock();
                 selfLock.Unlock();
                 
-		        return Core::ERROR_ILLEGAL_STATE;
+	        return Core::ERROR_ILLEGAL_STATE;
             }
 
             if (_modeChangeController) {
@@ -944,7 +944,7 @@ namespace Plugin {
         // Preserve the same sync-state-change carve-out as the pre-change round (see `isSyncStateChange`),
         // so `SetPowerState`'s `selfLock` ordering guarantee is not affected by this additional round.
         
-	const uint32_t timeOut =  POWER_MODE_CHANGE_ACK_TIMEOUT_SEC;
+        const uint32_t timeOut =  POWER_MODE_CHANGE_ACK_TIMEOUT_SEC;
 
         // Like in `Job` class we avoid impl destruction before handler is invoked
         this->AddRef();
