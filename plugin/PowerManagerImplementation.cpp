@@ -1197,7 +1197,7 @@ namespace Plugin {
         uint32_t errorCode = Core::ERROR_INVALID_PARAMETER;
         std::string clientName;
 
-        LOGINFO(">> acknowledgeClientId: %d", acknowledgeClientId);
+        LOGINFO(">> acknowledgeClientId: %u", acknowledgeClientId);
 
         _apiLock.Lock();
 
