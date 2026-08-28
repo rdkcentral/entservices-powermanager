@@ -88,6 +88,7 @@ namespace Plugin {
             _powerManager->Register(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IDeepSleepTimeoutNotification>());
             _powerManager->Register(_powermanagersNotification.baseInterface<Exchange::IPowerManager::INetworkStandbyModeChangedNotification>());
             _powerManager->Register(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IThermalModeChangedNotification>());
+            _powerManager->Register(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested>());
             // Invoking Plugin API register to wpeframework
             Exchange::JPowerManager::Register(*this, _powerManager);
         } else {
@@ -119,6 +120,7 @@ namespace Plugin {
             _powerManager->Unregister(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IDeepSleepTimeoutNotification>());
             _powerManager->Unregister(_powermanagersNotification.baseInterface<Exchange::IPowerManager::INetworkStandbyModeChangedNotification>());
             _powerManager->Unregister(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IThermalModeChangedNotification>());
+            _powerManager->Unregister(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested>());
 
             Exchange::JPowerManager::Unregister(*this);
 
@@ -209,6 +211,12 @@ namespace Plugin {
             }
         } else if (Exchange::IPowerManager::IThermalModeChangedNotification::ID == interfaceId) {
             const auto* revokedInterface = remote->QueryInterface<Exchange::IPowerManager::IThermalModeChangedNotification>();
+            if (revokedInterface && _powerManager) {
+                _powerManager->Unregister(revokedInterface);
+                revokedInterface->Release();
+            }
+        } else if (Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested::ID == interfaceId) {
+            const auto* revokedInterface = remote->QueryInterface<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested>();
             if (revokedInterface && _powerManager) {
                 _powerManager->Unregister(revokedInterface);
                 revokedInterface->Release();
