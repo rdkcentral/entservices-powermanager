@@ -66,6 +66,10 @@ The plugin employs a specialized controller pattern with four distinct controlle
 ## Data Flow Architecture
 
 ### Power State Change Flow
+
+The system supports two distinct power state change paths: normal negotiated transitions and an emergency thermal protection bypass.
+
+#### Normal Power State Change Flow
 1. **Request Initiation**: Client requests power state change through IPowerManager interface
 2. **Pre-Change Notification**: AckController notifies registered clients for acknowledgment
 3. **Acknowledgment Collection**: System waits for client acknowledgments within timeout
@@ -73,6 +77,17 @@ The plugin employs a specialized controller pattern with four distinct controlle
 5. **HAL Execution**: Platform-specific power state change through IPlatform interface
 6. **State Persistence**: Settings controller updates configuration persistence
 7. **Post-Change Notification**: Broadcast power state change notifications to all subscribers
+
+#### Emergency Thermal Protection Bypass (TPS)
+When the `stateSource` parameter is "TPS" (Thermal Protection Shutdown), the negotiation phases are bypassed entirely to protect hardware:
+- **Pre-Change Notification** (step 2) and **Acknowledgment Collection** (step 3) are skipped
+- Any in-progress negotiation rounds are immediately cancelled
+- The system switches power state directly without waiting for client acknowledgments
+- This emergency path prevents hardware damage in critical thermal conditions where waiting could cause harm
+
+The TPS fast path follows: **Request Initiation** → **Validation** → **HAL Execution** → **State Persistence** → **Post-Change Notification**
+
+This behavior is controlled by the `OVERRIDE_NEGOTIATION_ON_TPS` compile-time flag. When TPS is triggered, hardware protection takes priority over graceful client coordination.
 
 ### Thermal Management Flow
 1. **Continuous Monitoring**: ThermalController polls temperature through MFR HAL
