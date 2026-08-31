@@ -168,6 +168,10 @@ public:
     {
         SetUpMocks();
 
+        if (0 != system("mkdir -p /mnt/secure_storage/pwrmgr && rm -f /mnt/secure_storage/pwrmgr/schedules.stg")) {
+            TEST_LOG("failed to prepare wakeup schedule storage");
+        }
+
         setupWg.Add(1);
         powerManagerImpl = Core::ProxyType<Plugin::PowerManagerImplementation>::Create();
 
@@ -367,6 +371,8 @@ public:
         if (0 != system("rm -f /tmp/deepSleepWakeupTimer")) { /* do nothing */
         }
         if (0 != system("rm -f /tmp/ignoredeepsleep")) { /* do nothing */
+        }
+        if (0 != system("rm -f /mnt/secure_storage/pwrmgr/schedules.stg")) { /* do nothing */
         }
 
         // in some rare cases we saw settings file being reused from
