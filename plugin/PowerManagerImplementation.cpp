@@ -1259,8 +1259,8 @@ namespace Plugin {
 
         _apiLock.Unlock();
 
-        LOGINFO("Set Device to STANDBY on Deep Sleep timer expiry, requestors: '%s'", _pendingRequestors.c_str());
-        SetPowerState(0, PowerState::POWER_STATE_STANDBY, "DeepSleep timedout");
+        LOGINFO("Set Device to LIGHT_SLEEP on Deep Sleep timer expiry, requestors: '%s'", _pendingRequestors.c_str());
+        SetPowerState(0, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "DeepSleep timedout");
         LOGINFO("<<");
     }
 
