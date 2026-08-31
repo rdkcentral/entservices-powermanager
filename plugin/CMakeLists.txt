@@ -86,6 +86,10 @@ set_target_properties(${PLUGIN_IMPLEMENTATION} PROPERTIES
         CXX_STANDARD 11
         CXX_STANDARD_REQUIRED YES)
 
+target_compile_definitions(${PLUGIN_IMPLEMENTATION}
+                           PUBLIC
+                             OVERRIDE_NEGOTIATION_ON_TPS)
+
 if(RDK_SERVICES_L1_TEST OR RDK_SERVICE_L2_TEST)
 
     target_compile_definitions(${PLUGIN_IMPLEMENTATION}

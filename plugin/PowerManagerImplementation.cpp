@@ -396,6 +396,29 @@ namespace Plugin {
             snprintf(telemetryPwrChange, sizeof(telemetryPwrChange), "Power Mode Change from %s to %s", util::str(currState), util::str(newState));
             t2_event_s((char*)"SYST_INFO_POWER_CHANGE_split", telemetryPwrChange);
 
+#ifdef OVERRIDE_NEGOTIATION_ON_TPS
+            // Thermal Protection Shutdown (TPS): the hardware may be at risk, so skip both the
+            // pre-change and acknowledgement negotiation phases entirely and switch power state
+            // immediately, instead of waiting on registered clients to negotiate/acknowledge.
+            if (reason == "TPS") {
+                LOGWARN("reason is 'TPS' - bypassing negotiation phases, switching to %s immediately to protect hardware", util::str(newState));
+
+                _apiLock.Lock();
+                // Cancel any negotiation round(s) already in progress. Resetting these shared_ptrs
+                // (when no other owner is left) triggers `AckController::revoke()`, which invokes the
+                _modeChangeAckController.reset();
+                _modeChangeController.reset();
+                _apiLock.Unlock();
+
+                errorCode = setDevicePowerState(keyCode, currState, newState, reason);
+
+                selfLock.Unlock();
+                LOGINFO("selfLock Released isSync: na (TPS override)");
+
+                return errorCode;
+            }
+#endif
+
             // Check if sync state change required
             isSync = isSyncStateChange(currState, newState);
 

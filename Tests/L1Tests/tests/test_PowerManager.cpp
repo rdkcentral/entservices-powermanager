@@ -1138,6 +1138,169 @@ TEST_F(TestPowerManager, SetPowerStateRejectedDuringAcknowledgementNegotiation)
     EXPECT_EQ(status, Core::ERROR_NONE);
 }
 
+TEST_F(TestPowerManager, SetPowerStateWithTPSReasonBypassesNegotiation)
+{
+    // When reason is "TPS" (Thermal Protection Shutdown), the negotiation phases
+    // (pre-change and acknowledgement) must be skipped entirely and the power state
+    // must switch immediately, even though clients are registered for both phases.
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+
+    uint32_t preChangeClientId = 0;
+    uint32_t status = powerManagerImpl->AddPowerModePreChangeClient("l1-test-prechange-client", preChangeClientId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    uint32_t ackClientId = 0;
+    status = powerManagerImpl->AddPowerModeChangeAcknowledgementClient("l1-test-ack-client", ackClientId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent       = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    Core::ProxyType<PowerModeChangeAcknowledgementEvent> ackEvent = Core::ProxyType<PowerModeChangeAcknowledgementEvent>::Create();
+    Core::ProxyType<PowerModeChangedEvent> modeChangedEvent       = Core::ProxyType<PowerModeChangedEvent>::Create();
+
+    status = powerManagerImpl->Register(&(*prechangeEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    status = powerManagerImpl->Register(&(*ackEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    status = powerManagerImpl->Register(&(*modeChangedEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // Neither the pre-change nor the acknowledgement negotiation must be triggered.
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_)).Times(0);
+    EXPECT_CALL(*ackEvent, OnPowerModeChangeAcknowledgementRequested(::testing::_, ::testing::_, ::testing::_, ::testing::_)).Times(0);
+
+    WaitGroup wg;
+    wg.Add(1);
+    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currState, const PowerState newState) {
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                wg.Done();
+            }));
+
+    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "TPS");
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    wg.Wait();
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState    = PowerState::POWER_STATE_UNKNOWN;
+
+    status = powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+    EXPECT_EQ(prevState, initialPowerState());
+
+    status = powerManagerImpl->RemovePowerModePreChangeClient(preChangeClientId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    status = powerManagerImpl->RemovePowerModeChangeAcknowledgementClient(ackClientId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    status = powerManagerImpl->Unregister(&(*prechangeEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    status = powerManagerImpl->Unregister(&(*ackEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    status = powerManagerImpl->Unregister(&(*modeChangedEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+}
+
+TEST_F(TestPowerManager, SetPowerStateWithTPSReasonCancelsInProgressNegotiation)
+{
+    // A "TPS" SetPowerState request arriving while a normal negotiation round (ack phase)
+    // is already in progress must cancel that round and switch power state immediately,
+    // instead of waiting for the pending client's acknowledgement.
+    // The original (LIGHT_SLEEP) round is revoked before its ack completes, so the HAL is
+    // only ever asked to switch to the TPS-requested state (DEEP_SLEEP).
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    int keyCode = 0;
+
+    uint32_t preChangeClientId = 0;
+    uint32_t status = powerManagerImpl->AddPowerModePreChangeClient("l1-test-prechange-client", preChangeClientId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    uint32_t ackClientId = 0;
+    status = powerManagerImpl->AddPowerModeChangeAcknowledgementClient("l1-test-ack-client", ackClientId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    Core::ProxyType<PowerModePreChangeEvent> prechangeEvent        = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    Core::ProxyType<PowerModeChangeAcknowledgementEvent> ackEvent  = Core::ProxyType<PowerModeChangeAcknowledgementEvent>::Create();
+    Core::ProxyType<PowerModeChangedEvent> modeChangedEvent        = Core::ProxyType<PowerModeChangedEvent>::Create();
+
+    status = powerManagerImpl->Register(&(*prechangeEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    status = powerManagerImpl->Register(&(*ackEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    status = powerManagerImpl->Register(&(*modeChangedEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    EXPECT_CALL(*prechangeEvent, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int transactionId, const int stateChangeAfter) {
+                auto status = powerManagerImpl->PowerModePreChangeComplete(preChangeClientId, transactionId);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+            }));
+
+    WaitGroup wg;
+    wg.Add(1);
+    EXPECT_CALL(*ackEvent, OnPowerModeChangeAcknowledgementRequested(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currentState, const PowerState newState, const int transactionId, const string& reason) {
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+
+                // While the ack round is in progress (client has not acked yet), a TPS request
+                // must bypass/cancel this round and switch state immediately, without acking.
+                auto tpsStatus = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "TPS");
+                EXPECT_EQ(tpsStatus, Core::ERROR_NONE);
+
+                wg.Done();
+            }));
+
+    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState currState, const PowerState newState) {
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+            }));
+
+    status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "l1-test");
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    wg.Wait();
+
+    // some delay to allow the (revoked) AckController to be destroyed
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevState    = PowerState::POWER_STATE_UNKNOWN;
+
+    status = powerManagerImpl->GetPowerState(currentState, prevState);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    // The TPS request wins: final state is DEEP_SLEEP, not the original LIGHT_SLEEP target.
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    status = powerManagerImpl->RemovePowerModePreChangeClient(preChangeClientId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    status = powerManagerImpl->RemovePowerModeChangeAcknowledgementClient(ackClientId);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    status = powerManagerImpl->Unregister(&(*prechangeEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    status = powerManagerImpl->Unregister(&(*ackEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    status = powerManagerImpl->Unregister(&(*modeChangedEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+}
+
 TEST_F(TestPowerManager, DeepSleepIgnore)
 {
     if (0 != system("touch /tmp/ignoredeepsleep")) {
