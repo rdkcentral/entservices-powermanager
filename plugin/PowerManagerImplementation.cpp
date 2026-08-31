@@ -152,6 +152,7 @@ namespace Plugin {
     template <typename T>
     Core::hresult PowerManagerImplementation::Register(std::list<T*>& list, T* notification)
     {
+        LOGINFO("Test: %s Entered the function, notification: %p", __func__, notification);
         uint32_t status = Core::ERROR_GENERAL;
 
         ASSERT(nullptr != notification);
@@ -165,12 +166,14 @@ namespace Plugin {
         }
 
         _callbackLock.Unlock();
+        LOGINFO("Test: %s Exit of function, notification: %p, status: %u", __func__, notification, status);
         return status;
     }
 
     template <typename T>
     Core::hresult PowerManagerImplementation::Unregister(std::list<T*>& list, const T* notification)
     {
+        LOGINFO("Test: %s Entered the function, notification: %p", __func__, notification);
         uint32_t status = Core::ERROR_GENERAL;
 
         ASSERT(nullptr != notification);
@@ -185,6 +188,7 @@ namespace Plugin {
         }
 
         _callbackLock.Unlock();
+        LOGINFO("Test: %s Exit of function, notification: %p, status: %u", __func__, notification, status);
         return status;
     }
 
@@ -288,11 +292,15 @@ namespace Plugin {
     {
         LOGINFO(">>");
 
+        LOGINFO("Test: GetPowerState before _apiLock.Lock");
         _apiLock.Lock();
+        LOGINFO("Test: GetPowerState acquired _apiLock");
 
         uint32_t errorCode = _powerController.GetPowerState(currentState, prevState);
 
+        LOGINFO("Test: GetPowerState before _apiLock.Unlock");
         _apiLock.Unlock();
+        LOGINFO("Test: GetPowerState released _apiLock");
 
         LOGINFO("<< currentState : %s, prevState : %s, errorCode = %d", util::str(currentState), util::str(prevState), errorCode);
 
@@ -301,10 +309,12 @@ namespace Plugin {
 
     Core::hresult PowerManagerImplementation::setDevicePowerState(const int& keyCode, PowerState prevState, PowerState newState, const std::string& reason)
     {
+        LOGINFO("Test: %s Entered the function, keyCode: %d, prevState: %s, newState: %s", __func__, keyCode, util::str(prevState), util::str(newState));
         uint32_t errorCode = _powerController.SetPowerState(keyCode, newState, reason);
 
         if (Core::ERROR_NONE != errorCode) {
             LOGERR("Failed to set power state, errorCode: %d", errorCode);
+            LOGINFO("Test: %s Exit of function, keyCode: %d, errorCode: %u", __func__, keyCode, errorCode);
             return errorCode;
         }
 
@@ -319,14 +329,18 @@ namespace Plugin {
             _powerController.ActivateDeepSleep();
         }
 
+        LOGINFO("Test: %s Exit of function, keyCode: %d, errorCode: %u", __func__, keyCode, errorCode);
         return errorCode;
     }
 
     // state change is sync only if transitioning from DEEP_SLEEP => LIGHT_SLEEP
     bool PowerManagerImplementation::isSyncStateChange(PowerState currState, PowerState newState) const
     {
-        return (currState == PowerState::POWER_STATE_STANDBY_DEEP_SLEEP
+        LOGINFO("Test: %s Entered the function, currState: %s, newState: %s", __func__, util::str(currState), util::str(newState));
+        bool isSync = (currState == PowerState::POWER_STATE_STANDBY_DEEP_SLEEP
             && newState == PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+        LOGINFO("Test: %s Exit of function, isSync: %d", __func__, isSync);
+        return isSync;
     }
 
     // SetPowerState takes in a request to change PowerState, notify PowerModePreChange all reqistered clients
@@ -354,15 +368,19 @@ namespace Plugin {
 
         LOGINFO(">> newState: %s, reason %s", util::str(newState), reason.c_str());
 
+        LOGINFO("Test: SetPowerState before selfLock.Lock, newState: %s", util::str(newState));
         selfLock.Lock();
 
         LOGINFO("selfLock Acquired");
 
+        LOGINFO("Test: SetPowerState before GetPowerState call, holding selfLock");
         uint32_t errorCode = GetPowerState(currState, prevState);
+        LOGINFO("Test: SetPowerState after GetPowerState, currState: %s, prevState: %s, errorCode: %u", util::str(currState), util::str(prevState), errorCode);
 
         // Cannot determine current state, won't be able to process request
         if (Core::ERROR_NONE != errorCode) {
             LOGERR("Failed to get current power state, errorCode: %d", errorCode);
+            LOGINFO("Test: SetPowerState CASE get-state-failed, before selfLock.Unlock");
             selfLock.Unlock();
             LOGINFO("selfLock Released isSync: na");
             return errorCode;
@@ -370,6 +388,7 @@ namespace Plugin {
 
         // Process request only if requested state is not same as current state
         if (currState != newState) {
+            LOGINFO("Test: SetPowerState CASE state-change currState: %s -> newState: %s", util::str(currState), util::str(newState));
             char telemetryPwrChange[64];
             snprintf(telemetryPwrChange, sizeof(telemetryPwrChange), "Power Mode Change from %s to %s", util::str(currState), util::str(newState));
             t2_event_s((char*)"SYST_INFO_POWER_CHANGE_split", telemetryPwrChange);
@@ -378,6 +397,7 @@ namespace Plugin {
             isSync = isSyncStateChange(currState, newState);
 
             if (POWER_STATE_STANDBY_DEEP_SLEEP == currState) {
+                LOGINFO("Test: SetPowerState CASE currState is DEEP_SLEEP");
                 if (_deepSleepController.IsDeepSleepInProgress()
                     && (_deepSleepController.Elapsed() < std::chrono::seconds(kTransientDeepsleepThresholdSec))) {
 
@@ -386,32 +406,43 @@ namespace Plugin {
                     t2_event_d((char*)"SYST_ERR_SetPwrStateFail", 1);
  
 
+                    LOGINFO("Test: SetPowerState CASE deepsleep-in-progress, before selfLock.Unlock");
                     selfLock.Unlock();
                     LOGINFO("selfLock Released isSync: na");
                     return Core::ERROR_NONE;
                 }
                 // Deepsleep not in progress, so wakeup from deep sleep
                 LOGINFO("Device wakeup from DEEP_SLEEP to %s", util::str(newState));
+                LOGINFO("Test: SetPowerState CASE deepsleep-wakeup, before Deactivate");
                 _deepSleepController.Deactivate();
             }
 
+            LOGINFO("Test: SetPowerState before _apiLock.Lock");
             _apiLock.Lock();
+            LOGINFO("Test: SetPowerState acquired _apiLock");
 
             if (_modeChangeController) {
                 LOGINFO("There is a state change request in progress for %s state.", util::str(_modeChangeController->powerState()));
                 if (_modeChangeController->powerState() == newState) {
                     LOGINFO("Ignore (redundant) repeated transition request to %s state.", util::str(newState));
+                    LOGINFO("Test: SetPowerState CASE redundant-request, before _apiLock.Unlock and selfLock.Unlock");
                     _apiLock.Unlock();
                     selfLock.Unlock();
                     return Core::ERROR_NONE;
                 } else {
                     LOGWARN("Power state change is already in progress, cancel old request");
+                    LOGINFO("Test: SetPowerState CASE cancel-old-request, reset controller for %s", util::str(_modeChangeController->powerState()));
                     _modeChangeController.reset();
+                    LOGINFO("Test: SetPowerState after reset existing controller");
                 }
+            } else {
+                LOGINFO("Test: SetPowerState CASE no-request-in-progress");
             }
 
             _modeChangeController   = std::shared_ptr<PreModeChangeController>(new PreModeChangeController(newState));
             const int transactionId = _modeChangeController->TransactionId(); // transactionId is unique per request
+
+            LOGINFO("Test: SetPowerState created controller transactionId: %d", transactionId);
 
             // Add all clients to ack await list (who we expect `PreChangeComplete` ack from)
             for (const auto& client : _modeChangeClients) {
@@ -420,6 +451,7 @@ namespace Plugin {
 
             // For sync state change requests timeout is `0`
             const uint32_t timeOut = isSync ? 0 : POWER_MODE_PRECHANGE_TIMEOUT_SEC;
+            LOGINFO("Test: SetPowerState isSync: %d, timeOut: %u sec, clients: %d", isSync, timeOut, int(_modeChangeClients.size()));
 
             // Like in `Job` class we avoid impl destruction before handler is invoked
             this->AddRef();
@@ -427,7 +459,9 @@ namespace Plugin {
             // Coverity Fix: ID 218 - Data race: Keep local copy of shared_ptr before releasing lock
             auto modeChangeController = _modeChangeController;
 
+            LOGINFO("Test: SetPowerState before _apiLock.Unlock before prechange dispatch");
             _apiLock.Unlock();
+            LOGINFO("Test: SetPowerState released _apiLock before prechange dispatch");
 
             // Dispatch pre power mode change notifications, we cannot take in apiLock here
             // as clients could call any PowerManager plugin APIs
@@ -441,14 +475,18 @@ namespace Plugin {
             //  3. ACK TIMER thread if `Schedule` timed-out
             //     - To avoid race conditions in this usecase, take `_apiLock` to run completion handler
             //  4. Caller thread of last acknowledging client
+            LOGINFO("Test: SetPowerState before Schedule call, transactionId: %d", transactionId);
             modeChangeController->Schedule(timeOut * 1000,
                 [this, keyCode, currState, newState, reason, isSync](bool isTimedout, bool isAborted) mutable {
                     LOGINFO(">> CompletionHandler isTimedout: %d, isAborted: %d", isTimedout, isAborted);
 
                     if (!isAborted) {
+                        LOGINFO("Test: CompletionHandler CASE run-completion isTimedout: %d, isSync: %d, newState: %s", isTimedout, isSync, util::str(newState));
                         powerModePreChangeCompletionHandler(keyCode, currState, newState, reason);
+                        LOGINFO("Test: CompletionHandler after powerModePreChangeCompletionHandler, newState: %s", util::str(newState));
                     } else {
                         LOGWARN("modeChangeController was already deleted, do not process CompletionHandler");
+                        LOGINFO("Test: CompletionHandler CASE aborted, skip completion");
                     }
 
                     // Release the refCount taken just before _modeChangeController->Schedule
@@ -456,21 +494,27 @@ namespace Plugin {
 
                     // For sync state change requests, the selfLock is held until this point. Release it now.
                     if (isSync) {
+                        LOGINFO("Test: CompletionHandler CASE isSync, before selfLock.Unlock");
                         selfLock.Unlock();
                         LOGINFO("selfLock Released isSync: true");
                     }
 
                     LOGINFO("<< CompletionHandler");
                 });
+            LOGINFO("Test: SetPowerState after Schedule call returned, transactionId: %d", transactionId);
         } else {
             LOGINFO("Requested power state is same as current power state, no action required");
+            LOGINFO("Test: SetPowerState CASE same-state, no action, state: %s", util::str(newState));
         }
 
         // For Async state change requests, release the lock immediately, allowing nested state changes if required
         // Example: DEEP_SLEEP is in transition (mediarite has delayed PowerState by 15 seconds), and user attemps to turn ON the device
         if (!isSync) {
+            LOGINFO("Test: SetPowerState CASE async, before selfLock.Unlock");
             selfLock.Unlock();
             LOGINFO("selfLock Released isSync: false");
+        } else {
+            LOGINFO("Test: SetPowerState CASE sync, selfLock held until CompletionHandler");
         }
 
         LOGINFO("<< keyCode: %d, newState: %s, errorCode: %d", keyCode, util::str(newState), Core::ERROR_NONE);
@@ -496,11 +540,15 @@ namespace Plugin {
     {
         LOGINFO(">>");
 
+        LOGINFO("Test: GetTemperatureThresholds before _apiLock.Lock");
         _apiLock.Lock();
+        LOGINFO("Test: GetTemperatureThresholds acquired _apiLock");
 
         Core::hresult errorCode = _thermalController.GetTemperatureThresholds(high, critical);
 
+        LOGINFO("Test: GetTemperatureThresholds before _apiLock.Unlock");
         _apiLock.Unlock();
+        LOGINFO("Test: GetTemperatureThresholds released _apiLock");
 
         LOGINFO("high: %f, critical: %f, errorCode: %u", high, critical, errorCode);
 
@@ -511,11 +559,15 @@ namespace Plugin {
     {
         LOGINFO(">> high: %f, critical: %f", high, critical);
 
+        LOGINFO("Test: SetTemperatureThresholds before _apiLock.Lock");
         _apiLock.Lock();
+        LOGINFO("Test: SetTemperatureThresholds acquired _apiLock");
 
         Core::hresult errorCode = _thermalController.SetTemperatureThresholds(high, critical);
 
+        LOGINFO("Test: SetTemperatureThresholds before _apiLock.Unlock");
         _apiLock.Unlock();
+        LOGINFO("Test: SetTemperatureThresholds released _apiLock");
 
         LOGINFO("<< errorCode: %u", errorCode);
 
@@ -526,11 +578,15 @@ namespace Plugin {
     {
         LOGINFO(">>");
 
+        LOGINFO("Test: GetOvertempGraceInterval before _apiLock.Lock");
         _apiLock.Lock();
+        LOGINFO("Test: GetOvertempGraceInterval acquired _apiLock");
 
         Core::hresult errorCode = _thermalController.GetOvertempGraceInterval(graceInterval);
 
+        LOGINFO("Test: GetOvertempGraceInterval before _apiLock.Unlock");
         _apiLock.Unlock();
+        LOGINFO("Test: GetOvertempGraceInterval released _apiLock");
 
         LOGINFO("<< graceInterval: %d, errorCode: %u", graceInterval, errorCode);
 
@@ -541,11 +597,15 @@ namespace Plugin {
     {
         LOGINFO(">> graceInterval: %d", graceInterval);
 
+        LOGINFO("Test: SetOvertempGraceInterval before _apiLock.Lock");
         _apiLock.Lock();
+        LOGINFO("Test: SetOvertempGraceInterval acquired _apiLock");
 
         Core::hresult errorCode = _thermalController.SetOvertempGraceInterval(graceInterval);
 
+        LOGINFO("Test: SetOvertempGraceInterval before _apiLock.Unlock");
         _apiLock.Unlock();
+        LOGINFO("Test: SetOvertempGraceInterval released _apiLock");
 
         LOGINFO("<< errorCode: %u", errorCode);
 
@@ -559,14 +619,18 @@ namespace Plugin {
         LOGINFO(">>");
 
 #ifdef ENABLE_THERMAL_PROTECTION
+        LOGINFO("Test: GetThermalState before _apiLock.Lock");
         _apiLock.Lock();
+        LOGINFO("Test: GetThermalState acquired _apiLock");
 
         ThermalTemperature curLevel = THERMAL_TEMPERATURE_UNKNOWN;
         float curTemperature        = 0;
 
         errorCode   = _thermalController.GetThermalState(curLevel, curTemperature);
         temperature = curTemperature;
+        LOGINFO("Test: GetThermalState before _apiLock.Unlock");
         _apiLock.Unlock();
+        LOGINFO("Test: GetThermalState released _apiLock");
 #else
         temperature = -1;
         errorCode   = Core::ERROR_GENERAL;
@@ -582,11 +646,15 @@ namespace Plugin {
 
         int timeOutVal = timeOut > 86400 ? 0 : timeOut;
 
+        LOGINFO("Test: SetDeepSleepTimer before _apiLock.Lock");
         _apiLock.Lock();
+        LOGINFO("Test: SetDeepSleepTimer acquired _apiLock");
 
         uint32_t errorCode = _powerController.SetDeepSleepTimer(timeOutVal);
 
+        LOGINFO("Test: SetDeepSleepTimer before _apiLock.Unlock");
         _apiLock.Unlock();
+        LOGINFO("Test: SetDeepSleepTimer released _apiLock");
 
         LOGINFO("<< timeOutVal: %d, errorCode: %u", timeOutVal, errorCode);
 
@@ -597,11 +665,15 @@ namespace Plugin {
     {
         LOGINFO(">>");
 
+        LOGINFO("Test: GetLastWakeupReason before _apiLock.Lock");
         _apiLock.Lock();
+        LOGINFO("Test: GetLastWakeupReason acquired _apiLock");
 
         uint32_t errorCode = _deepSleepController.GetLastWakeupReason(wakeupReason);
 
+        LOGINFO("Test: GetLastWakeupReason before _apiLock.Unlock");
         _apiLock.Unlock();
+        LOGINFO("Test: GetLastWakeupReason released _apiLock");
 
         LOGINFO("<< wakeupReason: %u, errorCode: %u", wakeupReason, errorCode);
 
@@ -612,11 +684,15 @@ namespace Plugin {
     {
         LOGINFO(">>");
 
+        LOGINFO("Test: GetLastWakeupKeyCode before _apiLock.Lock");
         _apiLock.Lock();
+        LOGINFO("Test: GetLastWakeupKeyCode acquired _apiLock");
 
         uint32_t errorCode = _deepSleepController.GetLastWakeupKeyCode(keycode);
 
+        LOGINFO("Test: GetLastWakeupKeyCode before _apiLock.Unlock");
         _apiLock.Unlock();
+        LOGINFO("Test: GetLastWakeupKeyCode released _apiLock");
 
         LOGINFO("<< Wakeup keycode: %d, errorCode: %u", keycode, errorCode);
 
@@ -627,11 +703,15 @@ namespace Plugin {
     {
         LOGINFO(">>");
 
+        LOGINFO("Test: GetTimeSinceWakeup before _apiLock.Lock");
         _apiLock.Lock();
+        LOGINFO("Test: GetTimeSinceWakeup acquired _apiLock");
 
         uint32_t errorCode = _powerController.GetTimeSinceWakeup(timeSinceWakeup.secondsSinceWakeup);
 
+        LOGINFO("Test: GetTimeSinceWakeup before _apiLock.Unlock");
         _apiLock.Unlock();
+        LOGINFO("Test: GetTimeSinceWakeup released _apiLock");
 
         LOGINFO("<< secondsSinceWakeup: %u, errorCode: %u", timeSinceWakeup.secondsSinceWakeup, errorCode);
 
@@ -649,11 +729,15 @@ namespace Plugin {
 
         dispatchRebootBeginEvent(requestor, customReason, otherReason);
 
+        LOGINFO("Test: Reboot before _apiLock.Lock");
         _apiLock.Lock();
+        LOGINFO("Test: Reboot acquired _apiLock");
 
         uint32_t errorCode = _powerController.Reboot(rebootRequestor, rebootReasonCustom, rebootReasonOther);
 
+        LOGINFO("Test: Reboot before _apiLock.Unlock");
         _apiLock.Unlock();
+        LOGINFO("Test: Reboot released _apiLock");
 
         LOGINFO("<< errorcode: %u", errorCode);
 
@@ -667,11 +751,15 @@ namespace Plugin {
         snprintf(telemetryMsg, sizeof(telemetryMsg), "Set Network Standby Mode: %s", (standbyMode ? "enabled" : "disabled"));
         t2_event_s((char*)"SYS_INFO_STANDBYMODE_split", telemetryMsg);
 
+        LOGINFO("Test: SetNetworkStandbyMode before _apiLock.Lock");
         _apiLock.Lock();
+        LOGINFO("Test: SetNetworkStandbyMode acquired _apiLock");
 
         uint32_t errorCode = _powerController.SetNetworkStandbyMode(standbyMode);
 
+        LOGINFO("Test: SetNetworkStandbyMode before _apiLock.Unlock");
         _apiLock.Unlock();
+        LOGINFO("Test: SetNetworkStandbyMode released _apiLock");
 
         if (Core::ERROR_NONE == errorCode) {
             // In the original IARM Power Manager implementation, notifications were always sent
@@ -689,11 +777,15 @@ namespace Plugin {
     {
         LOGINFO(">>");
 
+        LOGINFO("Test: GetNetworkStandbyMode before _apiLock.Lock");
         _apiLock.Lock();
+        LOGINFO("Test: GetNetworkStandbyMode acquired _apiLock");
 
         uint32_t errorCode = _powerController.GetNetworkStandbyMode(standbyMode);
 
+        LOGINFO("Test: GetNetworkStandbyMode before _apiLock.Unlock");
         _apiLock.Unlock();
+        LOGINFO("Test: GetNetworkStandbyMode released _apiLock");
 
         LOGINFO("<< NwStandbyMode: %s, errorCode: %d",
             (standbyMode ? ("Enabled") : ("Disabled")), errorCode);
@@ -703,13 +795,16 @@ namespace Plugin {
 
     bool PowerManagerImplementation::isWakeupSrcEnabled(const std::list<WakeupSourceConfig>& configs, WakeupSrcType src) const
     {
+        LOGINFO("Test: %s Entered the function, src: %d", __func__, int(src));
         auto it = std::find_if(configs.begin(), configs.end(),
             [&](const WakeupSourceConfig& config) { return config.wakeupSource == src; });
 
         if (it == configs.end()) {
             // not found
+            LOGINFO("Test: %s Exit of function, src: %d, enabled: 0 (not found)", __func__, int(src));
             return false;
         }
+        LOGINFO("Test: %s Exit of function, src: %d, enabled: %d", __func__, int(src), it->enabled);
         return it->enabled;
     }
 
@@ -717,11 +812,15 @@ namespace Plugin {
     {
         LOGINFO(">>");
 
+        LOGINFO("Test: setWakeupSourceConfig before _apiLock.Lock");
         _apiLock.Lock();
+        LOGINFO("Test: setWakeupSourceConfig acquired _apiLock");
 
         uint32_t errorCode = _powerController.SetWakeupSourceConfig(configs);
 
+        LOGINFO("Test: setWakeupSourceConfig before _apiLock.Unlock");
         _apiLock.Unlock();
+        LOGINFO("Test: setWakeupSourceConfig released _apiLock");
 
         do {
             if (Core::ERROR_NONE != errorCode) {
@@ -800,13 +899,19 @@ namespace Plugin {
 
     Core::hresult PowerManagerImplementation::getWakeupSourceConfig(std::list<WakeupSourceConfig>& configs) const
     {
+        LOGINFO("Test: %s Entered the function", __func__);
+        LOGINFO("Test: getWakeupSourceConfig before _apiLock.Lock");
         _apiLock.Lock();
+        LOGINFO("Test: getWakeupSourceConfig acquired _apiLock");
 
         uint32_t errorCode = _powerController.GetWakeupSourceConfig(configs);
 
+        LOGINFO("Test: getWakeupSourceConfig before _apiLock.Unlock");
         _apiLock.Unlock();
+        LOGINFO("Test: getWakeupSourceConfig released _apiLock");
 
         LOGINFO("<< errorCode: %d", errorCode);
+        LOGINFO("Test: %s Exit of function, errorCode: %d", __func__, errorCode);
 
         return errorCode;
     }
@@ -832,11 +937,15 @@ namespace Plugin {
     {
         LOGINFO(">>");
 
+        LOGINFO("Test: GetPowerStateBeforeReboot before _apiLock.Lock");
         _apiLock.Lock();
+        LOGINFO("Test: GetPowerStateBeforeReboot acquired _apiLock");
 
         uint32_t errorCode = _powerController.GetPowerStateBeforeReboot(powerStateBeforeReboot);
 
+        LOGINFO("Test: GetPowerStateBeforeReboot before _apiLock.Unlock");
         _apiLock.Unlock();
+        LOGINFO("Test: GetPowerStateBeforeReboot released _apiLock");
 
         LOGINFO("<< powerStateBeforeReboot: %s, errorCode: %d", util::str(powerStateBeforeReboot), errorCode);
 
@@ -858,13 +967,21 @@ namespace Plugin {
 
         LOGINFO(">> clientId: %u, transactionId: %d", clientId, transactionId);
 
+        LOGINFO("Test: PowerModePreChangeComplete before _apiLock.Lock, clientId: %u, transactionId: %d", clientId, transactionId);
         _apiLock.Lock();
+        LOGINFO("Test: PowerModePreChangeComplete acquired _apiLock, clientId: %u, transactionId: %d", clientId, transactionId);
 
         if (_modeChangeController) {
+            LOGINFO("Test: PowerModePreChangeComplete CASE controller-present, before Ack clientId: %u", clientId);
             errorCode = _modeChangeController->Ack(clientId, transactionId);
+            LOGINFO("Test: PowerModePreChangeComplete after Ack, clientId: %u, transactionId: %d, errorCode: %u", clientId, transactionId, errorCode);
+        } else {
+            LOGINFO("Test: PowerModePreChangeComplete CASE no-controller, clientId: %u", clientId);
         }
 
+        LOGINFO("Test: PowerModePreChangeComplete before _apiLock.Unlock, clientId: %u", clientId);
         _apiLock.Unlock();
+        LOGINFO("Test: PowerModePreChangeComplete released _apiLock, clientId: %u", clientId);
 
         LOGINFO("<< errorcode: %u", errorCode);
 
@@ -876,13 +993,24 @@ namespace Plugin {
         uint32_t errorCode = Core::ERROR_INVALID_PARAMETER;
 
         LOGINFO(">> clientId: %u, transactionId: %d, delayPeriod: %d", clientId, transactionId, delayPeriod);
+        LOGINFO("Test: DelayPowerModeChangeBy before _apiLock.Lock, clientId: %u, transactionId: %d", clientId, transactionId);
         _apiLock.Lock();
+        LOGINFO("Test: DelayPowerModeChangeBy acquired _apiLock, clientId: %u, transactionId: %d", clientId, transactionId);
 
         if (_modeChangeController) {
+            LOGINFO("Test: DelayPowerModeChangeBy CASE controller-present, before Reschedule clientId: %u, delayMs: %d", clientId, delayPeriod * 1000);
+            auto __t0 = std::chrono::steady_clock::now();
             errorCode = _modeChangeController->Reschedule(clientId, transactionId, delayPeriod * 1000);
+            auto __blockedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - __t0).count();
+            LOGINFO("Test: DelayPowerModeChangeBy after Reschedule, clientId: %u, transactionId: %d, errorCode: %u, blockedMs: %" PRId64,
+                clientId, transactionId, errorCode, __blockedMs);
+        } else {
+            LOGINFO("Test: DelayPowerModeChangeBy CASE no-controller, clientId: %u", clientId);
         }
 
+        LOGINFO("Test: DelayPowerModeChangeBy before _apiLock.Unlock, clientId: %u", clientId);
         _apiLock.Unlock();
+        LOGINFO("Test: DelayPowerModeChangeBy released _apiLock, clientId: %u", clientId);
 
         LOGINFO("<< errorcode: %u", errorCode);
 
@@ -895,10 +1023,13 @@ namespace Plugin {
 
         if (clientName.empty()) {
             LOGERR("AddPowerModePreChangeClient called with empty clientName");
+            LOGINFO("Test: %s Exit of function, empty clientName", __func__);
             return Core::ERROR_INVALID_PARAMETER;
         }
 
+        LOGINFO("Test: AddPowerModePreChangeClient before _apiLock.Lock");
         _apiLock.Lock();
+        LOGINFO("Test: AddPowerModePreChangeClient acquired _apiLock");
 
         auto it = std::find_if(_modeChangeClients.cbegin(), _modeChangeClients.cend(),
             [&clientName](const std::pair<uint32_t, string>& client) {
@@ -913,13 +1044,16 @@ namespace Plugin {
             clientId = it->first;
         }
 
+        LOGINFO("Test: AddPowerModePreChangeClient before _apiLock.Unlock");
         _apiLock.Unlock();
+        LOGINFO("Test: AddPowerModePreChangeClient released _apiLock");
 
         for (auto& clients : _modeChangeClients) {
             LOGINFO("Registered client: %s, clientId: %u", clients.second.c_str(), clients.first);
         }
 
         LOGINFO("<< errorCode: 0");
+        LOGINFO("Test: %s Exit of function, clientId: %u", __func__, clientId);
 
         return Core::ERROR_NONE;
     }
@@ -931,7 +1065,9 @@ namespace Plugin {
 
         LOGINFO(">> clientId: %d", clientId);
 
+        LOGINFO("Test: RemovePowerModePreChangeClient before _apiLock.Lock, clientId: %u", clientId);
         _apiLock.Lock();
+        LOGINFO("Test: RemovePowerModePreChangeClient acquired _apiLock, clientId: %u", clientId);
 
         auto it = _modeChangeClients.find(clientId);
 
@@ -941,12 +1077,20 @@ namespace Plugin {
 
             // self-ack if called while power mode change is in progress
             if (_modeChangeController) {
+                LOGINFO("Test: RemovePowerModePreChangeClient CASE client-found, before self-ack clientId: %u", clientId);
                 _modeChangeController->Ack(clientId);
+                LOGINFO("Test: RemovePowerModePreChangeClient CASE client-found, after self-ack clientId: %u", clientId);
+            } else {
+                LOGINFO("Test: RemovePowerModePreChangeClient CASE client-found, no-controller clientId: %u", clientId);
             }
             errorCode = Core::ERROR_NONE;
+        } else {
+            LOGINFO("Test: RemovePowerModePreChangeClient CASE client-not-found, clientId: %u", clientId);
         }
 
+        LOGINFO("Test: RemovePowerModePreChangeClient before _apiLock.Unlock, clientId: %u", clientId);
         _apiLock.Unlock();
+        LOGINFO("Test: RemovePowerModePreChangeClient released _apiLock, clientId: %u", clientId);
 
         LOGINFO("<< client: %s, clientId: %u, errorcode: %u", clientName.c_str(), clientId, errorCode);
 
@@ -992,12 +1136,18 @@ namespace Plugin {
 
     uint32_t PowerManagerImplementation::getPowerState(PowerState& currentState, PowerState& prevState) const
     {
+        LOGINFO("Test: %s Entered the function", __func__);
+        LOGINFO("Test: getPowerState before _apiLock.Lock");
         _apiLock.Lock();
+        LOGINFO("Test: getPowerState acquired _apiLock");
         uint32_t errorCode = _powerController.GetPowerState(currentState, prevState);
         if (Core::ERROR_NONE != errorCode) {
             LOGERR("Failed to get current power state, errorCode: %d", errorCode);
         }
+        LOGINFO("Test: getPowerState before _apiLock.Unlock");
         _apiLock.Unlock();
+        LOGINFO("Test: getPowerState released _apiLock");
+        LOGINFO("Test: %s Exit of function, currentState: %s, prevState: %s, errorCode: %d", __func__, util::str(currentState), util::str(prevState), errorCode);
         return errorCode;
     }
 

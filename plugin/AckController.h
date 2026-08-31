@@ -18,6 +18,7 @@
  */
 
 #pragma once
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <unordered_set>
@@ -58,6 +59,8 @@ public:
         , _handler(nullptr)
         , _running(false)
     {
+        LOGINFO("Test: %s Entered the function, transactionId: %d", __func__, _transactionId);
+        LOGINFO("Test: %s Exit of function, transactionId: %d", __func__, _transactionId);
     }
 
     /**
@@ -67,7 +70,9 @@ public:
      */
     ~AckController()
     {
+        LOGINFO("Test: AckController DTOR transactionId: %d, running: %d, pending: %d", _transactionId, bool(_running), int(_pending.size()));
         revoke();
+        LOGINFO("Test: %s Exit of function, transactionId: %d", __func__, _transactionId);
     }
 
     AckController(const AckController& o)            = delete;
@@ -103,12 +108,14 @@ public:
      */
     uint32_t Ack(const uint32_t clientId, const int transactionId)
     {
+        LOGINFO("Test: %s Entered the function, clientId: %u, transactionId: %d", __func__, clientId, transactionId);
         uint32_t status = WPEFramework::Core::ERROR_NONE;
 
         do {
 
             if (transactionId != _transactionId) {
                 LOGERR("Invalid transactionId: %d", transactionId);
+                LOGINFO("Test: Ack CASE stale-transaction clientId: %u, got: %d, expected: %d", clientId, transactionId, _transactionId);
                 status = WPEFramework::Core::ERROR_INVALID_PARAMETER;
                 break;
             }
@@ -116,6 +123,7 @@ public:
             const auto it = _pending.find(clientId);
             if (it == _pending.cend()) {
                 LOGERR("Invalid clientId: %u", clientId);
+                LOGINFO("Test: Ack CASE unknown-or-duplicate clientId: %u", clientId);
                 status = WPEFramework::Core::ERROR_INVALID_PARAMETER;
                 break;
             }
@@ -123,13 +131,18 @@ public:
             _pending.erase(clientId);
 
             if (_pending.empty() && _running) {
+                LOGINFO("Test: Ack CASE last-ack, about to run completion handler inline clientId: %u", clientId);
                 _running = false;
                 runHandler(false);
+                LOGINFO("Test: Ack CASE last-ack, returned from completion handler clientId: %u", clientId);
+            } else {
+                LOGINFO("Test: Ack CASE waiting-for-more clientId: %u, pending: %d, running: %d", clientId, int(_pending.size()), bool(_running));
             }
         } while (false);
 
         LOGINFO("AckController::Ack: clientId: %u, transactionId: %d, status: %d, pending %d",
             clientId, transactionId, status, int(_pending.size()));
+        LOGINFO("Test: %s Exit of function, clientId: %u, status: %d", __func__, clientId, status);
         return status;
     }
 
@@ -188,6 +201,7 @@ public:
      */
     void Schedule(const uint64_t offsetInMilliseconds, std::function<void(bool, bool)> handler)
     {
+        LOGINFO("Test: %s Entered the function, transactionId: %d, offsetMs: %" PRIu64, __func__, _transactionId, offsetInMilliseconds);
         ASSERT(false == _running);
         ASSERT(nullptr == _handler);
 
@@ -195,8 +209,11 @@ public:
 
         if (_pending.empty() || 0 == offsetInMilliseconds) {
             // no clients acks to wait for, trigger completion handler immediately
+            LOGINFO("Test: Schedule CASE immediate, invoke handler on caller thread transactionId: %d", _transactionId);
             handler(false, false);
+            LOGINFO("Test: Schedule CASE immediate, returned from handler transactionId: %d", _transactionId);
         } else {
+            LOGINFO("Test: Schedule CASE timer, arm timer transactionId: %d, pending: %d", _transactionId, int(_pending.size()));
             std::weak_ptr<AckController> wPtr = shared_from_this();
             _running                          = true;
             _handler                          = std::move(handler);
@@ -215,17 +232,27 @@ public:
 
                 if (!isRevoked) {
                     if (self->_running) {
+                        LOGINFO("Test: AckTimer CASE timeout, before completion handler transactionId: %d, pending: %d",
+                            self->_transactionId, int(self->_pending.size()));
                         self->_running = false;
                         self->_handler(isTimedout, isRevoked);
+                        LOGINFO("Test: AckTimer CASE timeout, after completion handler transactionId: %d", self->_transactionId);
                     } else {
                         LOGERR("FATAL not expected to reach timeout, without timer running");
+                        LOGINFO("Test: AckTimer CASE not-running, handler skipped");
                     }
                 } else {
                     LOGERR("FATAL AckController is already revoked\n\trevoke operation should have triggered completion handler");
+                    LOGINFO("Test: AckTimer CASE already-revoked, handler skipped");
                 }
             });
+            LOGINFO("Test: Schedule before workerPool.Schedule transactionId: %d", _transactionId);
+            auto __t0 = std::chrono::steady_clock::now();
             _workerPool.Schedule(_timeout, _timerJob);
+            auto __blockedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - __t0).count();
+            LOGINFO("Test: Schedule after workerPool.Schedule transactionId: %d, blockedMs: %" PRId64, _transactionId, __blockedMs);
         }
+        LOGINFO("Test: %s Exit of function, transactionId: %d", __func__, _transactionId);
     }
 
     /**
@@ -239,6 +266,7 @@ public:
      */
     uint32_t Reschedule(const uint32_t clientId, const int transactionId, const int offsetInMilliseconds)
     {
+        LOGINFO("Test: %s Entered the function, clientId: %u, transactionId: %d, offsetMs: %d", __func__, clientId, transactionId, offsetInMilliseconds);
         uint32_t status = WPEFramework::Core::ERROR_NONE;
         ASSERT(nullptr != _handler);
 
@@ -248,6 +276,7 @@ public:
             // If Reschedule is called even before Schedule, cache the timeout value
             // use timeout value later when Schedule gets called
             if (!_running) {
+                LOGINFO("Test: Reschedule CASE not-running, cache timeout clientId: %u", clientId);
                 _timeout = std::max(_timeout, newTimeout);
                 status = WPEFramework::Core::ERROR_NONE;
                 break;
@@ -255,6 +284,7 @@ public:
 
             if (transactionId != _transactionId) {
                 LOGERR("Invalid transactionId: %d", transactionId);
+                LOGINFO("Test: Reschedule CASE stale-transaction clientId: %u, got: %d, expected: %d", clientId, transactionId, _transactionId);
                 status = WPEFramework::Core::ERROR_INVALID_PARAMETER;
                 break;
             }
@@ -262,6 +292,7 @@ public:
             const auto it = _pending.find(clientId);
             if (it == _pending.cend()) {
                 LOGERR("Invalid clientId: %u", clientId);
+                LOGINFO("Test: Reschedule CASE unknown clientId: %u", clientId);
                 status = WPEFramework::Core::ERROR_INVALID_PARAMETER;
                 break;
             }
@@ -269,16 +300,22 @@ public:
             // set new timeout only if it's greater than previous timeout, else fail silently
             if (newTimeout > _timeout) {
                 _timeout = newTimeout;
+                LOGINFO("Test: Reschedule CASE extend-timeout, before workerPool.Reschedule clientId: %u", clientId);
+                auto __t0 = std::chrono::steady_clock::now();
                 _workerPool.Reschedule(newTimeout, _timerJob);
+                auto __blockedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - __t0).count();
+                LOGINFO("Test: Reschedule after workerPool.Reschedule clientId: %u, blockedMs: %" PRId64, clientId, __blockedMs);
             } else {
                 LOGWARN("Skipping new timeout %" PRIu64 " is less than previous timeout %" PRIu64,
                     newTimeout.Ticks(), _timeout.Ticks());
+                LOGINFO("Test: Reschedule CASE skip-shorter-timeout clientId: %u", clientId);
             }
         } while (false);
 
         LOGINFO("clientId: %u, transactionId: %d, offset: %d, status: %d",
             clientId, transactionId, offsetInMilliseconds, status);
 
+        LOGINFO("Test: %s Exit of function, clientId: %u, status: %d", __func__, clientId, status);
         return status;
     }
 
@@ -289,12 +326,20 @@ private:
      */
     void runHandler(bool isTimedout)
     {
+        LOGINFO("Test: %s Entered the function, isTimedout: %d, transactionId: %d", __func__, isTimedout, _transactionId);
         LOGINFO("isTimedout: %d, pending: %d", isTimedout, int(_pending.size()));
         if (!isTimedout) {
+            LOGINFO("Test: runHandler before workerPool.Revoke transactionId: %d", _transactionId);
+            auto __t0 = std::chrono::steady_clock::now();
             _workerPool.Revoke(_timerJob);
+            auto __blockedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - __t0).count();
+            LOGINFO("Test: runHandler after workerPool.Revoke transactionId: %d, blockedMs: %" PRId64, _transactionId, __blockedMs);
         }
         bool isRevoked = false;
+        LOGINFO("Test: runHandler before completion handler transactionId: %d", _transactionId);
         _handler(isTimedout, isRevoked);
+        LOGINFO("Test: runHandler after completion handler transactionId: %d", _transactionId);
+        LOGINFO("Test: %s Exit of function, transactionId: %d", __func__, _transactionId);
     }
 
     /**
@@ -304,18 +349,31 @@ private:
      */
     void revoke()
     {
+        LOGINFO("Test: %s Entered the function, transactionId: %d", __func__, _transactionId);
         if (_running) {
             _running = false;
             if (_timerJob.IsValid()) {
+                LOGINFO("Test: revoke CASE running, before workerPool.Revoke transactionId: %d", _transactionId);
+                auto __t0 = std::chrono::steady_clock::now();
                 _workerPool.Revoke(_timerJob);
+                auto __blockedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - __t0).count();
+                LOGINFO("Test: revoke after workerPool.Revoke transactionId: %d, blockedMs: %" PRId64, _transactionId, __blockedMs);
                 bool isTimedout = false;
                 bool isRevoked  = true;
+                LOGINFO("Test: revoke before aborted completion handler transactionId: %d", _transactionId);
                 _handler(isTimedout, isRevoked);
+                LOGINFO("Test: revoke after aborted completion handler transactionId: %d", _transactionId);
+            } else {
+                LOGINFO("Test: revoke CASE running-but-no-timer transactionId: %d", _transactionId);
             }
+        } else {
+            LOGINFO("Test: revoke CASE not-running transactionId: %d", _transactionId);
         }
         if (_timerJob.IsValid()) {
+            LOGINFO("Test: revoke release timerJob transactionId: %d", _transactionId);
             _timerJob.Release();
         }
+        LOGINFO("Test: %s Exit of function, transactionId: %d", __func__, _transactionId);
     }
 
 private:
