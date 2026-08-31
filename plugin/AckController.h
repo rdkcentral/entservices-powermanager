@@ -282,25 +282,13 @@ public:
         return status;
     }
 
-private:
-    /**
-     * @brief Executes the completion handler.
-     * @param isTimedout Indicates whether the handler is triggered due to timeout.
-     */
-    void runHandler(bool isTimedout)
-    {
-        LOGINFO("isTimedout: %d, pending: %d", isTimedout, int(_pending.size()));
-        if (!isTimedout) {
-            _workerPool.Revoke(_timerJob);
-        }
-        bool isRevoked = false;
-        _handler(isTimedout, isRevoked);
-    }
-
     /**
      * @brief Stops or revokes the AckController if it is already running.
-     *        After revoke the completion handler will not be called.
+     *        After revoke, if a timer job was scheduled, the completion handler is invoked with
+     *        `isTimedout=false` and `isRevoked=true` so owners can release any resources (e.g. refcounts).
      *        This method is deliberately void; use `IsRunning` to check the status.
+     *        Public (not just called from the destructor) so callers can cancel a round explicitly,
+     *        since other owners may keep the shared_ptr alive even after this owner drops its reference.
      */
     void revoke()
     {
@@ -316,6 +304,21 @@ private:
         if (_timerJob.IsValid()) {
             _timerJob.Release();
         }
+    }
+
+private:
+    /**
+     * @brief Executes the completion handler.
+     * @param isTimedout Indicates whether the handler is triggered due to timeout.
+     */
+    void runHandler(bool isTimedout)
+    {
+        LOGINFO("isTimedout: %d, pending: %d", isTimedout, int(_pending.size()));
+        if (!isTimedout) {
+            _workerPool.Revoke(_timerJob);
+        }
+        bool isRevoked = false;
+        _handler(isTimedout, isRevoked);
     }
 
 private:

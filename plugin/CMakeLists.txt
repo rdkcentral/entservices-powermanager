@@ -86,6 +86,13 @@ set_target_properties(${PLUGIN_IMPLEMENTATION} PROPERTIES
         CXX_STANDARD 11
         CXX_STANDARD_REQUIRED YES)
 
+option(OVERRIDE_NEGOTIATION_ON_TPS "Bypass negotiation in SetPowerState when reason is TPS" ON)
+if(OVERRIDE_NEGOTIATION_ON_TPS)
+   target_compile_definitions(${PLUGIN_IMPLEMENTATION}
+                              PRIVATE
+                                OVERRIDE_NEGOTIATION_ON_TPS)
+endif()
+
 if(RDK_SERVICES_L1_TEST OR RDK_SERVICE_L2_TEST)
 
     target_compile_definitions(${PLUGIN_IMPLEMENTATION}
