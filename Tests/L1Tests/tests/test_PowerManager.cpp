@@ -2114,3 +2114,66 @@ TEST_F(TestPowerManager, OverTemperatureGraceInterval)
 
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
 }
+
+TEST_F(TestPowerManager, ScheduleDeepSleepWakeupValid)
+{
+    TEST_LOG(">> Test: Schedule deep sleep wakeup with valid requestor");
+    
+    time_t futureTime = time(nullptr) + 300;  // 5 minutes in future
+    
+    uint32_t status = powerManagerImpl->ScheduleDeepSleepWakeup(futureTime, "testApp");
+    
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    TEST_LOG("<< Test passed");
+}
+
+TEST_F(TestPowerManager, ScheduleDeepSleepWakeupInvalidRequestorWithSpace)
+{
+    TEST_LOG(">> Test: Schedule deep sleep wakeup with invalid requestor (space)");
+    
+    time_t futureTime = time(nullptr) + 300;
+    
+    uint32_t status = powerManagerImpl->ScheduleDeepSleepWakeup(futureTime, "test app");
+    
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+    TEST_LOG("<< Test passed");
+}
+
+TEST_F(TestPowerManager, ScheduleDeepSleepWakeupEmptyRequestor)
+{
+    TEST_LOG(">> Test: Schedule deep sleep wakeup with empty requestor");
+    
+    time_t futureTime = time(nullptr) + 300;
+    
+    uint32_t status = powerManagerImpl->ScheduleDeepSleepWakeup(futureTime, "");
+    
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+    TEST_LOG("<< Test passed");
+}
+
+TEST_F(TestPowerManager, ScheduleDeepSleepWakeupPastTime)
+{
+    TEST_LOG(">> Test: Schedule deep sleep wakeup with past time");
+    
+    time_t pastTime = time(nullptr) - 300;  // 5 minutes ago
+    
+    uint32_t status = powerManagerImpl->ScheduleDeepSleepWakeup(pastTime, "testApp");
+    
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+    TEST_LOG("<< Test passed");
+}
+
+TEST_F(TestPowerManager, ScheduleDeepSleepWakeupMultipleSchedules)
+{
+    TEST_LOG(">> Test: Schedule multiple deep sleep wakeups");
+    
+    time_t futureTime1 = time(nullptr) + 300;
+    time_t futureTime2 = time(nullptr) + 600;
+    
+    uint32_t status1 = powerManagerImpl->ScheduleDeepSleepWakeup(futureTime1, "netflix");
+    uint32_t status2 = powerManagerImpl->ScheduleDeepSleepWakeup(futureTime2, "smartHome");
+    
+    EXPECT_EQ(status1, Core::ERROR_NONE);
+    EXPECT_EQ(status2, Core::ERROR_NONE);
+    TEST_LOG("<< Test passed");
+}

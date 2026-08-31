@@ -18,11 +18,13 @@
  */
 #include <cstring>
 #include <sstream>
+#include <ctime>
 
 #include "plat_power.h"
 
 #include "PowerUtils.h"
 #include "UtilsLogging.h"
+#include "WakeupScheduleRegister.h"
 
 #include "Settings.h"
 
@@ -269,6 +271,28 @@ bool Settings::Save(const std::string& path)
     close(fd);
 
     return ok;
+}
+
+uint32_t Settings::deepSleepTimeout(WakeupScheduleRegister* wakeupScheduleRegister) const
+{
+    if (wakeupScheduleRegister == nullptr) {
+        return _deepSleepTimeout;
+    }
+
+    auto schedule = wakeupScheduleRegister->getNearestWakeupSchedule();
+
+    if (schedule != nullptr) {
+        const time_t now = time(nullptr);
+        const uint32_t secondsUntilWakeup = (schedule->unixTime > (WakeupScheduleRegister::UnixTime)now)
+            ? (schedule->unixTime - (WakeupScheduleRegister::UnixTime)now)
+            : 0;
+
+        uint32_t minTimeout = std::min(_deepSleepTimeout, secondsUntilWakeup);
+        delete schedule;
+        return minTimeout;
+    }
+
+    return _deepSleepTimeout;
 }
 
 void Settings::printDetails(const std::string& prefix) const

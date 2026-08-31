@@ -59,8 +59,9 @@ class DeepSleepWakeupSettings {
     } tzValue;
 
 public:
-    DeepSleepWakeupSettings(Settings& settings)
+    DeepSleepWakeupSettings(Settings& settings, WakeupScheduleRegister* wakeupScheduleRegister = nullptr)
         : _settings(settings)
+        , _wakeupScheduleRegister(wakeupScheduleRegister)
         , _isDeepSleepTimeoutSet(false)
     {
         initializeTimeZone();
@@ -77,7 +78,7 @@ public:
     uint32_t timeout() const
     {
         if (_isDeepSleepTimeoutSet) {
-            return _settings.deepSleepTimeout();
+            return _settings.deepSleepTimeout(_wakeupScheduleRegister);
         }
 
         return getWakeupTime();
@@ -101,6 +102,7 @@ private:
 
 private:
     Settings& _settings;
+    WakeupScheduleRegister* _wakeupScheduleRegister;
     bool _isDeepSleepTimeoutSet;
     static std::map<std::string, tzValue> _maptzValues;
 };

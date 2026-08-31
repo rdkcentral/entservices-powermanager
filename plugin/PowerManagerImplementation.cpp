@@ -31,6 +31,7 @@
 #include <telemetry_busmessage_sender.h>
 
 #define STANDBY_REASON_FILE "/opt/standbyReason.txt"
+#define SCHEDULES_FILE "/mnt/secure_storage/pwrmgr/schedules.stg"
 
 using util                           = PowerUtils;
 using WakeupSourceConfig             = WPEFramework::Exchange::IPowerManager::WakeupSourceConfig;
@@ -71,12 +72,13 @@ namespace Plugin {
         , _modeChangeController(nullptr)
         , _modeChangeAckController(nullptr)
         , _deepSleepController(DeepSleepController::Create(*this))
-        , _powerController(PowerController::Create(_deepSleepController))
+        , _powerController(PowerController::Create(_deepSleepController, &_wakeupScheduleRegister))
         , _thermalController(ThermalController::Create(*this))
     {
         // Coverity Fix: ID 581 - Uninitialized pointer field
         PowerManagerImplementation::_instance = this;
         Utils::IARM::init();
+        _wakeupScheduleRegister.loadWakeupSchedulesFromFile(SCHEDULES_FILE);
         LOGINFO(">> CTOR <<");
     }
 
@@ -91,6 +93,10 @@ namespace Plugin {
         _callbackLock.Lock();
         for (auto& notification : _modeChangedNotifications) {
             auto start = std::chrono::steady_clock::now();
+            // TODO: after ONEM-42980 is implemented, update the invocation like:
+            /* const string requestors = _pendingRequestors;
+               _pendingRequestors.clear();
+               notification->OnPowerModeChanged(prevState, newState, reason, requestors); */
             notification->OnPowerModeChanged(prevState, newState);
             auto elapsed = std::chrono::steady_clock::now() - start;
             LOGINFO("client %p took %" PRId64 "ms to process IModeChanged event", notification, std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
@@ -626,6 +632,72 @@ namespace Plugin {
 
         LOGINFO("<< timeOutVal: %d, errorCode: %u", timeOutVal, errorCode);
 
+        return errorCode;
+    }
+
+    Core::hresult PowerManagerImplementation::ScheduleDeepSleepWakeup(const long unixTime, const string& requestorId)
+    {
+        LOGINFO(">> unixTime: %ld, requestorId: '%s'", unixTime, requestorId.c_str());
+
+        _apiLock.Lock();
+
+        uint32_t errorCode = Core::ERROR_INVALID_PARAMETER;
+
+        if (!requestorId.empty())
+        {
+            // Validate requestorId does not contain whitespace
+            if (requestorId.find_first_of(" \t\n\r") != std::string::npos) {
+                LOGERR("requestorId contains whitespace: '%s'", requestorId.c_str());
+                _apiLock.Unlock();
+                LOGINFO("<< errorCode: %u", errorCode);
+                return errorCode;
+            }
+
+            // Validate unixTime is in the future
+            time_t now = time(nullptr);
+            if (unixTime <= now) {
+                LOGERR("unixTime %ld is not in future (now: %ld)", unixTime, now);
+                _apiLock.Unlock();
+                LOGINFO("<< errorCode: %u", errorCode);
+                return errorCode;
+            }
+
+            WakeupScheduleRegister::OperationStatus status = _wakeupScheduleRegister.addWakeupSchedule(
+                (WakeupScheduleRegister::UnixTime)unixTime,
+                WakeupScheduleRegister::ActiveStandby,
+                requestorId.c_str()
+            );
+
+            if (status == WakeupScheduleRegister::Successful)
+            {
+                status = _wakeupScheduleRegister.storeWakeupSchedulesToFile(SCHEDULES_FILE);
+                if (status == WakeupScheduleRegister::Successful)
+                {
+                    // Update Settings::deepSleepTimeout() to return the nearest scheduled wakeup.
+                    // This ensures DeepSleepWakeupSettings::timeout() returns the correct value
+                    // when the device enters deep sleep (see DeepSleepController.h).
+                    WakeupScheduleRegister::NearestWakeupSchedule* nearest = _wakeupScheduleRegister.getNearestWakeupSchedule();
+                    if (nearest != nullptr)
+                    {
+                        const time_t now = time(NULL);
+                        const uint32_t secondsUntilWakeup = (nearest->unixTime > (WakeupScheduleRegister::UnixTime)now)
+                            ? (nearest->unixTime - (WakeupScheduleRegister::UnixTime)now)
+                            : 0;
+                        _powerController.SetDeepSleepTimer(secondsUntilWakeup);
+                        delete nearest;
+                    }
+                    errorCode = Core::ERROR_NONE;
+                }
+                else
+                {
+                    errorCode = Core::ERROR_GENERAL;
+                }
+            }
+        }
+
+        _apiLock.Unlock();
+
+        LOGINFO("<< errorCode: %u", errorCode);
         return errorCode;
     }
 
@@ -1168,9 +1240,27 @@ namespace Plugin {
         LOGINFO(">> DeepSleep timedout: %d", wakeupTimeout);
         dispatchDeepSleepTimeoutEvent(wakeupTimeout);
 
-        /*Scheduled maintanace reboot is disabled. Instead state will change to LIGHT_SLEEP*/
-        LOGINFO("Set Device to light sleep on Deep Sleep timer expiry");
-        SetPowerState(0, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "DeepSleep timedout");
+        _apiLock.Lock();
+
+        WakeupScheduleRegister::NearestWakeupSchedule* schedule = _wakeupScheduleRegister.getNearestWakeupSchedule();
+
+        if (schedule != nullptr)
+        {
+            for (const auto& requestor : schedule->requestorIds)
+            {
+                _pendingRequestors += _pendingRequestors.empty() ? requestor : " " + requestor;
+                _wakeupScheduleRegister.removeWakeupSchedule(schedule->unixTime, schedule->powerState, requestor.c_str());
+            }
+
+            _wakeupScheduleRegister.storeWakeupSchedulesToFile(SCHEDULES_FILE);
+
+            delete schedule;
+        }
+
+        _apiLock.Unlock();
+
+        LOGINFO("Set Device to STANDBY on Deep Sleep timer expiry, requestors: '%s'", _pendingRequestors.c_str());
+        SetPowerState(0, PowerState::POWER_STATE_STANDBY, "DeepSleep timedout");
         LOGINFO("<<");
     }
 
