@@ -402,6 +402,35 @@ namespace Plugin {
             snprintf(telemetryPwrChange, sizeof(telemetryPwrChange), "Power Mode Change from %s to %s", util::str(currState), util::str(newState));
             t2_event_s((char*)"SYST_INFO_POWER_CHANGE_split", telemetryPwrChange);
 
+#ifdef OVERRIDE_NEGOTIATION_ON_TPS
+            // Thermal Protection Shutdown (TPS): the hardware may be at risk, so skip both the
+            // pre-change and acknowledgement negotiation phases entirely and switch power state
+            // immediately, instead of waiting on registered clients to negotiate/acknowledge.
+            if (reason == "TPS") {
+                LOGWARN("reason is 'TPS' - bypassing negotiation phases, switching to %s immediately to protect hardware", util::str(newState));
+
+                _apiLock.Lock();
+                // Cancel any negotiation round(s) already in progress. Call revoke() explicitly so any scheduled
+                // timer job is cancelled and the controller's completion handler is notified (isRevoked=true) to
+                // release resources, even if other owners keep the controller alive (e.g. handler captures).
+                if (_modeChangeAckController) {
+                    _modeChangeAckController->revoke();
+                }
+                if (_modeChangeController) {
+                    _modeChangeController->revoke();
+                }
+                _modeChangeAckController.reset();
+                _modeChangeController.reset();
+                _apiLock.Unlock();
+
+                selfLock.Unlock();
+                LOGINFO("selfLock Released isSync: (TPS override)");
+
+                errorCode = setDevicePowerState(keyCode, currState, newState, reason);
+                return errorCode;
+            }
+#endif
+
             // Check if sync state change required
             isSync = isSyncStateChange(currState, newState);
 
@@ -415,7 +444,7 @@ namespace Plugin {
  
 
                     selfLock.Unlock();
-                    LOGINFO("selfLock Released isSync: na");
+                    LOGINFO("selfLock Released isSync");
                     return Core::ERROR_NONE;
                 }
                 // Deepsleep not in progress, so wakeup from deep sleep
@@ -432,8 +461,7 @@ namespace Plugin {
                 
                 _apiLock.Unlock();
                 selfLock.Unlock();
-                
-	        return Core::ERROR_ILLEGAL_STATE;
+                return Core::ERROR_ILLEGAL_STATE;
             }
 
             if (_modeChangeController) {
