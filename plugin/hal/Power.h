@@ -19,6 +19,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #include <core/Portability.h>
 #include <interfaces/IPowerManager.h>
@@ -37,6 +38,7 @@ namespace power {
         virtual uint32_t GetPowerState(PowerState& state) = 0;
         virtual uint32_t SetWakeupSrc(WakeupSrcType wakeSrcType, bool enabled, bool& supported) = 0;
         virtual uint32_t GetWakeupSrc(WakeupSrcType wakeSrcType, bool& enabled, bool& supported) const = 0;
+        virtual uint32_t Reboot(const std::string& requestor, const std::string& reasonCustom, const std::string& reasonOther) = 0;
     };
 } // namespace power
 } // namespace hal
