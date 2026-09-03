@@ -39,12 +39,12 @@ using IPlatform = hal::power::IPlatform;
 using DefaultImpl = PowerImpl;
 using util = PowerUtils;
 
-PowerController::PowerController(DeepSleepController& deepSleep, std::unique_ptr<IPlatform> platform)
+PowerController::PowerController(DeepSleepController& deepSleep, WakeupScheduleRegister* wakeupScheduleRegister, std::unique_ptr<IPlatform> platform)
     : _platform(std::move(platform))
     , _powerStateBeforeReboot(PowerState::POWER_STATE_UNKNOWN)
     , _lastKnownPowerState(PowerState::POWER_STATE_ON)
     , _settings(Settings::Load(m_settingsFile))
-    , _deepSleepWakeupSettings(_settings)
+    , _deepSleepWakeupSettings(_settings, wakeupScheduleRegister)
     , _workerPool(WPEFramework::Core::WorkerPool::Instance())
     , _wakeupTimestamp{}
     , _deepSleep(deepSleep)
@@ -144,6 +144,11 @@ uint32_t PowerController::SetPowerState(const int keyCode, const PowerState powe
 
 uint32_t PowerController::ActivateDeepSleep()
 {
+    uint32_t errCode = SetWakeupSourceConfig({{ WakeupSrcType::WAKEUP_SRC_TIMER, true }});
+    if (errCode != WPEFramework::Core::ERROR_NONE) {
+        LOGERR("Failed to set TIMER wakeup source config: %u", errCode);
+        return errCode;
+    }
     return _deepSleep.Activate(_deepSleepWakeupSettings.timeout(), _settings.nwStandbyMode());
 }
 
