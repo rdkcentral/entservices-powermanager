@@ -59,8 +59,9 @@ class DeepSleepWakeupSettings {
     } tzValue;
 
 public:
-    DeepSleepWakeupSettings(Settings& settings)
+    DeepSleepWakeupSettings(Settings& settings, WakeupScheduleRegister* wakeupScheduleRegister = nullptr)
         : _settings(settings)
+        , _wakeupScheduleRegister(wakeupScheduleRegister)
         , _isDeepSleepTimeoutSet(false)
     {
         initializeTimeZone();
@@ -76,8 +77,23 @@ public:
 
     uint32_t timeout() const
     {
+        if (_wakeupScheduleRegister != nullptr) {
+            auto nearest = _wakeupScheduleRegister->getNearestWakeupSchedule();
+            if (nearest != nullptr) {
+                const time_t now = time(nullptr);
+                const uint32_t secondsUntilWakeup = (nearest->unixTime > (WakeupScheduleRegister::UnixTime)now)
+                    ? (nearest->unixTime - (WakeupScheduleRegister::UnixTime)now)
+                    : 0;
+                delete nearest;
+                if (_isDeepSleepTimeoutSet) {
+                    return std::min(_settings.deepSleepTimeout(), secondsUntilWakeup);
+                }
+                return secondsUntilWakeup;
+            }
+        }
+
         if (_isDeepSleepTimeoutSet) {
-            return _settings.deepSleepTimeout();
+            return _settings.deepSleepTimeout(_wakeupScheduleRegister);
         }
 
         return getWakeupTime();
@@ -101,6 +117,7 @@ private:
 
 private:
     Settings& _settings;
+    WakeupScheduleRegister* _wakeupScheduleRegister;
     bool _isDeepSleepTimeoutSet;
     static std::map<std::string, tzValue> _maptzValues;
 };

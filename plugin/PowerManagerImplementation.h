@@ -31,6 +31,7 @@
 #include <interfaces/IPowerManager.h>
 
 #include "AckController.h"
+#include "WakeupScheduleRegister.h"
 
 // controllers
 #include "DeepSleepController.h"
@@ -132,6 +133,7 @@ namespace Plugin {
         Core::hresult SetOvertempGraceInterval(const int graceInterval) override;
         Core::hresult GetThermalState(float& temperature) const override;
         Core::hresult SetDeepSleepTimer(const int timeOut) override;
+        Core::hresult ScheduleDeepSleepWakeup(const long unixTime, const string& requestorId) override;
         Core::hresult GetLastWakeupReason(WakeupReason& wakeupReason) const override;
         Core::hresult GetLastWakeupKeyCode(int& keycode) const override;
         Core::hresult GetTimeSinceWakeup(TimeSinceWakeup& timeSinceWakeup) override;
@@ -176,6 +178,8 @@ namespace Plugin {
         std::unordered_map<uint32_t, std::string> _modeChangeClients;
         std::shared_ptr<PreModeChangeController> _modeChangeAckController;
         std::unordered_map<uint32_t, std::string> _modeChangeAckClients;
+        WakeupScheduleRegister _wakeupScheduleRegister;
+        std::string _pendingRequestors;
 
         void dispatchPowerModeChangedEvent(const PowerState& currentState, const PowerState& newState);
         void dispatchDeepSleepTimeoutEvent(const uint32_t& timeout);

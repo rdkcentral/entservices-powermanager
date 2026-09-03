@@ -16,13 +16,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include <algorithm>
 #include <cstring>
 #include <sstream>
+#include <ctime>
 
 #include "plat_power.h"
 
 #include "PowerUtils.h"
 #include "UtilsLogging.h"
+#include "WakeupScheduleRegister.h"
 
 #include "Settings.h"
 
@@ -269,6 +272,28 @@ bool Settings::Save(const std::string& path)
     close(fd);
 
     return ok;
+}
+
+uint32_t Settings::deepSleepTimeout(WakeupScheduleRegister* wakeupScheduleRegister) const
+{
+    if (wakeupScheduleRegister == nullptr) {
+        return _deepSleepTimeout;
+    }
+
+    auto schedule = wakeupScheduleRegister->getNearestWakeupSchedule();
+
+    if (schedule != nullptr) {
+        const time_t now = time(nullptr);
+        const uint32_t secondsUntilWakeup = (schedule->unixTime > (WakeupScheduleRegister::UnixTime)now)
+            ? (schedule->unixTime - (WakeupScheduleRegister::UnixTime)now)
+            : 0;
+
+        const uint32_t timeout = secondsUntilWakeup;
+        delete schedule;
+        return timeout;
+    }
+
+    return _deepSleepTimeout;
 }
 
 void Settings::printDetails(const std::string& prefix) const
