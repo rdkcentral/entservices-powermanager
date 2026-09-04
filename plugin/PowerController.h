@@ -42,6 +42,8 @@ namespace Core {
 }
 }
 
+class WakeupScheduleRegister;
+
 class PowerController {
     using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
     using WakeupSrcType = WPEFramework::Exchange::IPowerManager::WakeupSrcType;
@@ -49,7 +51,7 @@ class PowerController {
     using IPlatform = hal::power::IPlatform;
     using DefaultImpl = PowerImpl;
 
-    PowerController(DeepSleepController& deepSleep, std::unique_ptr<IPlatform> platform);
+    PowerController(DeepSleepController& deepSleep, WakeupScheduleRegister* wakeupScheduleRegister, std::unique_ptr<IPlatform> platform);
 
     inline IPlatform& platform()
     {
@@ -91,11 +93,11 @@ public:
     uint32_t SetDeepSleepTimer(const int timeOut);
 
     template <typename IMPL = DefaultImpl, typename... Args>
-    static PowerController Create(DeepSleepController& deepSleep, Args&&... args)
+    static PowerController Create(DeepSleepController& deepSleep, WakeupScheduleRegister* wakeupScheduleRegister, Args&&... args)
     {
         static_assert(std::is_base_of<IPlatform, IMPL>::value, "Impl must derive from hal::power::IPlatform");
         IMPL* api = new IMPL(std::forward<Args>(args)...);
-        return PowerController(deepSleep, std::unique_ptr<IPlatform>(api));
+        return PowerController(deepSleep, wakeupScheduleRegister, std::unique_ptr<IPlatform>(api));
     }
 
     // Avoid copying this obj
