@@ -31,6 +31,7 @@
 #include <interfaces/IPowerManager.h> // for IPowerManager
 
 #include "Settings.h"          // for Settings
+#include "WakeupScheduleRegister.h" // for WakeupScheduleRegister
 #include "hal/DeepSleep.h"     // for IPlatform
 #include "hal/DeepSleepImpl.h" // for DeepSleepImpl
 
@@ -60,8 +61,9 @@ class DeepSleepWakeupSettings {
     } tzValue;
 
 public:
-    DeepSleepWakeupSettings(Settings& settings)
+    DeepSleepWakeupSettings(Settings& settings, WakeupScheduleRegister* wakeupScheduleRegister = nullptr)
         : _settings(settings)
+        , _wakeupScheduleRegister(wakeupScheduleRegister)
         , _isDeepSleepTimeoutSet(false)
     {
         updateMaintenanceWakeupConfig();
@@ -81,9 +83,19 @@ public:
 #ifdef CUSTOM_LGI
         _maintenanceWakeupSet = false ;
 #endif
-        /* TODO: Earliest set timer needs to be considered,
-           i.e, earliest among either user set timer or maintenance timeout
-        */
+        if (_wakeupScheduleRegister != nullptr) {
+            auto nearest = _wakeupScheduleRegister->getNearestWakeupSchedule();
+            if (nearest != nullptr) {
+                const auto now = static_cast<WakeupScheduleRegister::UnixTime>(time(nullptr));
+                const uint32_t secondsUntilWakeup = (nearest->unixTime > now)
+                    ? static_cast<uint32_t>(nearest->unixTime - now)
+                    : 1U;
+                // A pending schedule always governs the timeout, regardless of any separately
+                // configured value: Settings::deepSleepTimeout() owns this precedence decision.
+                return _settings.deepSleepTimeout(true, secondsUntilWakeup);
+            }
+        }
+
         if (_isDeepSleepTimeoutSet) {
             LOGINFO("Deep Sleep timer user set timer returned");
             return _settings.deepSleepTimeout();
@@ -135,6 +147,7 @@ private:
 
 private:
     Settings& _settings;
+    WakeupScheduleRegister* _wakeupScheduleRegister;
     bool _isDeepSleepTimeoutSet;
     static std::map<std::string, tzValue> _maptzValues;
 

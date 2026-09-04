@@ -18,6 +18,7 @@
  */
 #include <cstring>
 #include <sstream>
+#include <ctime>
 
 #include "plat_power.h"
 
@@ -269,6 +270,18 @@ bool Settings::Save(const std::string& path)
     close(fd);
 
     return ok;
+}
+
+uint32_t Settings::deepSleepTimeout(bool hasScheduledWakeup, uint32_t secondsUntilScheduledWakeup) const
+{
+    // A pending wakeup schedule always takes precedence over the configured timeout: this is
+    // the single source of truth for that decision, so callers must not separately clamp/compare
+    // against the configured value themselves.
+    if (hasScheduledWakeup) {
+        return secondsUntilScheduledWakeup;
+    }
+
+    return _deepSleepTimeout;
 }
 
 void Settings::printDetails(const std::string& prefix) const

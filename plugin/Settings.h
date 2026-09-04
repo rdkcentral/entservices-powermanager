@@ -20,6 +20,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <ctime>
 
 #include <core/Time.h>
 #include <interfaces/IPowerManager.h>
@@ -87,7 +88,15 @@ public:
     inline uint32_t version() const { return _version; }
     inline PowerState powerState() const { return _powerState; }
     inline PowerState powerStateBeforeReboot() const { return _powerStateBeforeReboot; }
-    inline uint32_t deepSleepTimeout() const { return _deepSleepTimeout; }
+    /*  Returns the deep sleep timeout in seconds.
+
+        When hasScheduledWakeup is true, the caller has an earlier pending wakeup schedule
+        (from ScheduleDeepSleepWakeup()); this function then always returns
+        secondsUntilScheduledWakeup, taking precedence over the separately configured timeout
+        (SetDeepSleepTimeout()/SetDeepSleepTimer()). Otherwise it returns the configured value
+        as-is (used e.g. for persistence).
+    */
+    uint32_t deepSleepTimeout(bool hasScheduledWakeup = false, uint32_t secondsUntilScheduledWakeup = 0) const;
     inline bool nwStandbyMode() const { return _nwStandbyMode; }
 
     void printDetails(const std::string& prefix) const;
