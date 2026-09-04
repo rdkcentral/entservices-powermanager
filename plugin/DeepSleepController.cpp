@@ -187,6 +187,8 @@ DeepSleepController::DeepSleepController(INotification& parent, std::shared_ptr<
     , _deepSleepDelaySec(0)
     , _deepSleepWakeupTimeoutSec(0)
     , _nwStandbyMode(false)
+    , _abortState(std::make_shared<AbortState>())
+    , _timingMutex(std::make_shared<std::mutex>())
 {
     LOGINFO(">> CTOR <<");
 }
@@ -228,6 +230,8 @@ uint32_t DeepSleepController::Activate(uint32_t timeOut, bool nwStandbyMode)
 // deactivate deep sleep mode
 uint32_t DeepSleepController::Deactivate()
 {
+    requestAbortDeepSleep();
+
     if (_deepSleepDelayJob.IsValid()) {
         // Cancel the delay timer if it is still active
         _workerPool.Revoke(_deepSleepDelayJob);
@@ -280,15 +284,25 @@ void DeepSleepController::enterDeepSleepDelayed()
 void DeepSleepController::enterDeepSleepNow()
 {
     LOGINFO("Enter to Deep sleep Mode..stop Receiver with sleep 1 before DS");
-    sleep(1);
+    if (waitForAbortableDelay(std::chrono::seconds(1))) {
+        _deepSleepState = DeepSleepState::NotStarted;
+        LOGINFO("Deep sleep entry aborted during pre-delay");
+        return;
+    }
 
     uint32_t errorCode = WPEFramework::Core::ERROR_NONE;
-    bool failed     = true;
-    int retryCount  = 5;
-    bool userWakeup = 0;
+    bool failed           = true;
+    int retryCount        = 5;
+    bool userWakeup       = 0;
+    bool abortRequested   = false;
     LOGINFO("Device entering Deep sleep with nwStandbyMode: %s", (_nwStandbyMode ? "Enabled" : "Disabled"));
 
     while (retryCount && failed) {
+        if (isAbortDeepSleepRequested()) {
+            abortRequested = true;
+            break;
+        }
+
         errorCode = platform().SetDeepSleep(_deepSleepWakeupTimeoutSec, userWakeup, _nwStandbyMode);
 
         failed = WPEFramework::Core::ERROR_NONE != errorCode;
@@ -299,7 +313,10 @@ void DeepSleepController::enterDeepSleepNow()
 
             if ((errorCode == WPEFramework::Core::ERROR_ABORTED) && (retryCount > 0)) {
                 LOGINFO("Failed to enter deep sleep mode: %u, retry after 5s", errorCode);
-                sleep(5);
+                if (waitForAbortableDelay(std::chrono::seconds(5))) {
+                    abortRequested = true;
+                    break;
+                }
             } else {
                 LOGINFO("No retry for deep sleep error code: %u", errorCode);
                 break;
@@ -308,6 +325,12 @@ void DeepSleepController::enterDeepSleepNow()
             _deepSleepState = DeepSleepState::Completed;
             LOGINFO("Device entered to Deep sleep Mode..");
         }
+    }
+
+    if (abortRequested) {
+        _deepSleepState = DeepSleepState::NotStarted;
+        LOGINFO("Deep sleep retry loop aborted due to deactivate/wakeup request");
+        return;
     }
 
     if (failed) {
@@ -348,9 +371,14 @@ void DeepSleepController::performActivate(uint32_t timeOut, bool nwStandbyMode)
     LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
     if (!IsDeepSleepInProgress()) {
 
+        clearAbortDeepSleep();
+
         // latch
-        _deepSleepState     = DeepSleepState::InProgress;
-        _deepsleepStartTime = MonotonicClock::now();
+        _deepSleepState = DeepSleepState::InProgress;
+        {
+            std::lock_guard<std::mutex> lock(*_timingMutex);
+            _deepsleepStartTime = MonotonicClock::now();
+        }
 
         // Perform the deep sleep operation
         _nwStandbyMode             = nwStandbyMode;
@@ -384,4 +412,33 @@ void DeepSleepController::performActivate(uint32_t timeOut, bool nwStandbyMode)
     } else {
         LOGERR("Deep sleep operation is already in progress");
     }
+}
+
+bool DeepSleepController::waitForAbortableDelay(const std::chrono::seconds& delay)
+{
+    std::unique_lock<std::mutex> lock(_abortState->mutex);
+    return _abortState->cv.wait_for(lock, delay, [this]() {
+        return _abortState->requested;
+    });
+}
+
+void DeepSleepController::requestAbortDeepSleep()
+{
+    {
+        std::lock_guard<std::mutex> lock(_abortState->mutex);
+        _abortState->requested = true;
+    }
+    _abortState->cv.notify_all();
+}
+
+void DeepSleepController::clearAbortDeepSleep()
+{
+    std::lock_guard<std::mutex> lock(_abortState->mutex);
+    _abortState->requested = false;
+}
+
+bool DeepSleepController::isAbortDeepSleepRequested()
+{
+    std::lock_guard<std::mutex> lock(_abortState->mutex);
+    return _abortState->requested;
 }
