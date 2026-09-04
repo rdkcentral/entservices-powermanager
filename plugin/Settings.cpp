@@ -18,6 +18,7 @@
  */
 #include <cstring>
 #include <sstream>
+#include <ctime>
 
 #include "plat_power.h"
 
@@ -269,6 +270,11 @@ bool Settings::Save(const std::string& path)
     close(fd);
 
     return ok;
+}
+
+uint32_t Settings::deepSleepTimeout() const
+{
+    return _deepSleepTimeout;
 }
 
 void Settings::printDetails(const std::string& prefix) const

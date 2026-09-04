@@ -30,6 +30,7 @@
 #include <interfaces/IPowerManager.h> // for IPowerManager
 
 #include "Settings.h"          // for Settings
+#include "WakeupScheduleRegister.h" // for WakeupScheduleRegister
 #include "hal/DeepSleep.h"     // for IPlatform
 #include "hal/DeepSleepImpl.h" // for DeepSleepImpl
 
@@ -59,8 +60,9 @@ class DeepSleepWakeupSettings {
     } tzValue;
 
 public:
-    DeepSleepWakeupSettings(Settings& settings)
+    DeepSleepWakeupSettings(Settings& settings, WakeupScheduleRegister* wakeupScheduleRegister = nullptr)
         : _settings(settings)
+        , _wakeupScheduleRegister(wakeupScheduleRegister)
         , _isDeepSleepTimeoutSet(false)
     {
         initializeTimeZone();
@@ -76,6 +78,21 @@ public:
 
     uint32_t timeout() const
     {
+        if (_wakeupScheduleRegister != nullptr) {
+            auto nearest = _wakeupScheduleRegister->getNearestWakeupSchedule();
+            if (nearest != nullptr) {
+                const time_t nowTime = time(nullptr);
+                if (nowTime == static_cast<time_t>(-1)) {
+                    return _settings.deepSleepTimeout();
+                }
+                const auto now = static_cast<WakeupScheduleRegister::UnixTime>(nowTime);
+                const uint32_t secondsUntilWakeup = (nearest->unixTime > now)
+                    ? static_cast<uint32_t>(nearest->unixTime - now)
+                    : 1U;
+                return secondsUntilWakeup;
+            }
+        }
+
         if (_isDeepSleepTimeoutSet) {
             return _settings.deepSleepTimeout();
         }
@@ -101,6 +118,7 @@ private:
 
 private:
     Settings& _settings;
+    WakeupScheduleRegister* _wakeupScheduleRegister;
     bool _isDeepSleepTimeoutSet;
     static std::map<std::string, tzValue> _maptzValues;
 };
