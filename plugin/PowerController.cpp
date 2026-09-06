@@ -113,9 +113,9 @@ void PowerController::init()
 
 uint32_t PowerController::SetPowerState(const int keyCode, const PowerState powerState, const std::string& reason)
 {
-    if (access("/tmp/ignoredeepsleep", F_OK) == 0) {
+    if (access("/opt/ignoredeepsleep", F_OK) == 0) {
         if (PowerState::POWER_STATE_STANDBY_DEEP_SLEEP == powerState) {
-            LOGINFO("Ignoring DEEPSLEEP state due to tmp override /tmp/ignoredeepsleep");
+            LOGINFO("Ignoring DEEPSLEEP state due to tmp override /opt/ignoredeepsleep");
             return WPEFramework::Core::ERROR_ILLEGAL_STATE;
         }
     }
