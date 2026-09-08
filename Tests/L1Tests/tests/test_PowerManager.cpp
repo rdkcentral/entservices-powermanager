@@ -2623,3 +2623,136 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupSequentialConsumptionAcrossMulti
 
     TEST_LOG("<< Test passed");
 }
+
+// ---- ONEM-42971: CancelScheduledDeepSleepWakeups ----
+
+TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsExactMatch)
+{
+    TEST_LOG(">> Test: Cancel exact schedule (unixTime + requestorId both given)");
+
+    time_t futureTime = time(nullptr) + 300;
+
+    uint32_t status = powerManagerImpl->ScheduleDeepSleepWakeup(futureTime, "testApp");
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    status = powerManagerImpl->CancelScheduledDeepSleepWakeups(futureTime, "testApp");
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // Cancelling again must now report "nothing matched"
+    status = powerManagerImpl->CancelScheduledDeepSleepWakeups(futureTime, "testApp");
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+    TEST_LOG("<< Test passed");
+}
+
+TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsByRequestorId)
+{
+    TEST_LOG(">> Test: Cancel all schedules for a requestor (unixTime = 0)");
+
+    time_t futureTime1 = time(nullptr) + 300;
+    time_t futureTime2 = time(nullptr) + 600;
+
+    EXPECT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime1, "netflix"), Core::ERROR_NONE);
+    EXPECT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime2, "netflix"), Core::ERROR_NONE);
+    EXPECT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime1, "smartHome"), Core::ERROR_NONE);
+
+    uint32_t status = powerManagerImpl->CancelScheduledDeepSleepWakeups(0, "netflix");
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // "smartHome" schedule at futureTime1 must still be cancellable (i.e. was untouched)
+    status = powerManagerImpl->CancelScheduledDeepSleepWakeups(futureTime1, "smartHome");
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // Nothing left for "netflix"
+    status = powerManagerImpl->CancelScheduledDeepSleepWakeups(0, "netflix");
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+    TEST_LOG("<< Test passed");
+}
+
+TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsByUnixTime)
+{
+    TEST_LOG(">> Test: Cancel all schedules at a given time (requestorId empty)");
+
+    time_t futureTime1 = time(nullptr) + 300;
+    time_t futureTime2 = time(nullptr) + 600;
+
+    EXPECT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime1, "netflix"), Core::ERROR_NONE);
+    EXPECT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime1, "smartHome"), Core::ERROR_NONE);
+    EXPECT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime2, "netflix"), Core::ERROR_NONE);
+
+    uint32_t status = powerManagerImpl->CancelScheduledDeepSleepWakeups(futureTime1, "");
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // futureTime2 schedule must still exist (untouched)
+    status = powerManagerImpl->CancelScheduledDeepSleepWakeups(futureTime2, "netflix");
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // Nothing left at futureTime1
+    status = powerManagerImpl->CancelScheduledDeepSleepWakeups(futureTime1, "");
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+    TEST_LOG("<< Test passed");
+}
+
+TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsAll)
+{
+    TEST_LOG(">> Test: Cancel every scheduled wakeup (both params default/empty)");
+
+    time_t futureTime1 = time(nullptr) + 300;
+    time_t futureTime2 = time(nullptr) + 600;
+
+    EXPECT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime1, "netflix"), Core::ERROR_NONE);
+    EXPECT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime2, "smartHome"), Core::ERROR_NONE);
+
+    uint32_t status = powerManagerImpl->CancelScheduledDeepSleepWakeups(0, "");
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    // Everything is gone now
+    status = powerManagerImpl->CancelScheduledDeepSleepWakeups(0, "");
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+    TEST_LOG("<< Test passed");
+}
+
+TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsNoMatch)
+{
+    TEST_LOG(">> Test: Cancel with no matching schedule at all returns ERROR_INVALID_PARAMETER");
+
+    time_t futureTime = time(nullptr) + 300;
+
+    uint32_t status = powerManagerImpl->CancelScheduledDeepSleepWakeups(futureTime, "neverScheduled");
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+    TEST_LOG("<< Test passed");
+}
+
+TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsInvalidRequestor)
+{
+    TEST_LOG(">> Test: Cancel with invalid (non-alphanumeric) requestorId returns ERROR_INVALID_PARAMETER");
+
+    uint32_t status = powerManagerImpl->CancelScheduledDeepSleepWakeups(0, "bad app!");
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+    TEST_LOG("<< Test passed");
+}
+
+TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsUnixTimeOutOfRange)
+{
+    TEST_LOG(">> Test: Cancel with unixTime beyond 32-bit range returns ERROR_INVALID_PARAMETER, not a silent wrap-match");
+
+    time_t futureTime = time(nullptr) + 300;
+    EXPECT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime, "testApp"), Core::ERROR_NONE);
+
+    // Deliberately chosen so that a naive 32-bit truncation would collide with futureTime.
+    uint64_t outOfRangeUnixTime = static_cast<uint64_t>(UINT32_MAX) + 1ULL + static_cast<uint64_t>(futureTime);
+
+    uint32_t status = powerManagerImpl->CancelScheduledDeepSleepWakeups(outOfRangeUnixTime, "testApp");
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+    // The original schedule must still be intact/cancellable normally.
+    status = powerManagerImpl->CancelScheduledDeepSleepWakeups(futureTime, "testApp");
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    TEST_LOG("<< Test passed");
+}

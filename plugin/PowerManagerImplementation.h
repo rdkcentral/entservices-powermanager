@@ -134,6 +134,7 @@ namespace Plugin {
         Core::hresult GetThermalState(float& temperature) const override;
         Core::hresult SetDeepSleepTimer(const int timeOut) override;
         Core::hresult ScheduleDeepSleepWakeup(const uint64_t unixTime, const string& requestorId) override;
+        Core::hresult CancelScheduledDeepSleepWakeups(const uint64_t unixTime, const string& requestorId) override;
         Core::hresult GetLastWakeupReason(WakeupReason& wakeupReason) const override;
         Core::hresult GetLastWakeupKeyCode(int& keycode) const override;
         Core::hresult GetTimeSinceWakeup(TimeSinceWakeup& timeSinceWakeup) override;

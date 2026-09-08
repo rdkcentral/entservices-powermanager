@@ -732,6 +732,97 @@ namespace Plugin {
         return errorCode;
     }
 
+    Core::hresult PowerManagerImplementation::CancelScheduledDeepSleepWakeups(const uint64_t unixTime, const string& requestorId)
+    {
+        LOGINFO(">> unixTime: %" PRIu64 ", requestorId: '%s'", unixTime, requestorId.c_str());
+
+        _apiLock.Lock();
+
+        uint32_t errorCode = Core::ERROR_INVALID_PARAMETER;
+
+        if (!requestorId.empty() && !_wakeupScheduleRegister.isAlphaNumeric(requestorId.c_str()))
+        {
+            LOGERR("requestorId contains invalid characters: '%s'", requestorId.c_str());
+            _apiLock.Unlock();
+            LOGINFO("<< errorCode: %u", errorCode);
+            return errorCode;
+        }
+
+        /*  unixTime is unsigned (uint64_t) so it can never be negative; bound-check against
+            WakeupScheduleRegister::UnixTime's 32-bit range before narrowing, so a value beyond
+            UINT32_MAX can't silently wrap into matching an unrelated schedule. */
+        static const uint64_t kMaxUnixTime = static_cast<uint64_t>(UINT32_MAX);
+
+        if (unixTime > kMaxUnixTime)
+        {
+            LOGERR("unixTime %" PRIu64 " is out of range (max: %" PRIu64 ")", unixTime, kMaxUnixTime);
+            _apiLock.Unlock();
+            LOGINFO("<< errorCode: %u", errorCode);
+            return errorCode;
+        }
+
+        const WakeupScheduleRegister::UnixTime targetUnixTime = static_cast<WakeupScheduleRegister::UnixTime>(unixTime);
+        WakeupScheduleRegister::OperationStatus status = WakeupScheduleRegister::Failed;
+
+        if (targetUnixTime != 0 && !requestorId.empty())
+        {
+            /* Exact schedule match. ScheduleDeepSleepWakeup always registers with ActiveStandby,
+               so that's the only PowerState a caller could ever have scheduled via this API. */
+            status = _wakeupScheduleRegister.removeWakeupSchedule(
+                targetUnixTime, WakeupScheduleRegister::ActiveStandby, requestorId.c_str());
+        }
+        else if (targetUnixTime == 0 && !requestorId.empty())
+        {
+            status = _wakeupScheduleRegister.removeByRequestorId(requestorId.c_str());
+        }
+        else if (targetUnixTime != 0 && requestorId.empty())
+        {
+            status = _wakeupScheduleRegister.removeByUnixTime(targetUnixTime);
+        }
+        else
+        {
+            status = _wakeupScheduleRegister.removeAllWakeupSchedules();
+        }
+
+        if (status == WakeupScheduleRegister::Successful)
+        {
+            status = _wakeupScheduleRegister.storeWakeupSchedulesToFile(POWERMANAGER_SCHEDULES_FILE);
+            if (status == WakeupScheduleRegister::Successful)
+            {
+                errorCode = Core::ERROR_NONE;
+            }
+            else
+            {
+                /* Cancel can touch many entries at once (unlike the single-entry add path in
+                   ScheduleDeepSleepWakeup), so a surgical undo isn't practical here. Reload the
+                   last-persisted state from disk instead, which fully restores in-memory state
+                   to match what's actually on disk. */
+                _wakeupScheduleRegister.loadWakeupSchedulesFromFile(POWERMANAGER_SCHEDULES_FILE);
+                LOGERR("Failed to persist wakeup schedules to '%s' after cancel, reloaded previous state from disk", POWERMANAGER_SCHEDULES_FILE);
+                errorCode = Core::ERROR_GENERAL;
+            }
+        }
+        else
+        {
+            if (_wakeupScheduleRegister.anyPastScheduleMatches(targetUnixTime, requestorId.empty() ? NULL : requestorId.c_str()))
+            {
+                LOGERR("no matching FUTURE schedule for unixTime: %u, requestorId: '%s' (already expired or already fired)",
+                    targetUnixTime, requestorId.c_str());
+            }
+            else
+            {
+                LOGERR("no matching schedule for unixTime: %u, requestorId: '%s'",
+                    targetUnixTime, requestorId.c_str());
+            }
+            errorCode = Core::ERROR_INVALID_PARAMETER;
+        }
+
+        _apiLock.Unlock();
+
+        LOGINFO("<< errorCode: %u", errorCode);
+        return errorCode;
+    }
+
     Core::hresult PowerManagerImplementation::GetLastWakeupReason(WakeupReason& wakeupReason) const
     {
         LOGINFO(">>");

@@ -2058,3 +2058,134 @@ TEST_F(PowerManager_L2Test, ScheduleDeepSleepWakeupMultiple)
         }
     }
 }
+
+/***
+** Test: CancelScheduledDeepSleepWakeups - Exact Match (ONEM-42971)
+** Verify that a previously scheduled wakeup can be cancelled by its exact
+** (unixTime, requestorId) pair, and that re-cancelling it afterwards fails.
+****/
+TEST_F(PowerManager_L2Test, CancelScheduledDeepSleepWakeupsExactMatch)
+{
+    Core::ProxyType<RPC::InvokeServerType<1, 0, 4>> mEngine_PowerManager;
+    Core::ProxyType<RPC::CommunicatorClient> mClient_PowerManager;
+    PluginHost::IShell *mController_PowerManager;
+
+    {
+        ASSERT_EQ(0, system("mkdir -p /mnt/secure_storage/pwrmgr")) << "Failed to create wakeup schedule storage directory";
+        std::ofstream ofs("/mnt/secure_storage/pwrmgr/schedules.stg", std::ios::trunc);
+        ASSERT_TRUE(ofs.is_open()) << "Failed to reset wakeup schedule storage";
+    }
+
+    TEST_LOG("Creating mEngine_PowerManager");
+    mEngine_PowerManager = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
+    mClient_PowerManager = Core::ProxyType<RPC::CommunicatorClient>::Create(Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(mEngine_PowerManager));
+
+    if (!mClient_PowerManager.IsValid())
+    {
+        FAIL() << "Invalid mClient_PowerManager";
+    }
+    else
+    {
+        mController_PowerManager = mClient_PowerManager->Open<PluginHost::IShell>(_T("org.rdk.PowerManager"), ~0, 3000);
+        if (mController_PowerManager)
+        {
+            auto PowerManagerPlugin = mController_PowerManager->QueryInterface<Exchange::IPowerManager>();
+
+            if (PowerManagerPlugin)
+            {
+                time_t futureTime = time(nullptr) + 300;
+
+                uint32_t status = PowerManagerPlugin->ScheduleDeepSleepWakeup(futureTime, "testApp");
+                TEST_LOG("ScheduleDeepSleepWakeup result: %u", status);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                status = PowerManagerPlugin->CancelScheduledDeepSleepWakeups(futureTime, "testApp");
+                TEST_LOG("CancelScheduledDeepSleepWakeups result: %u", status);
+                EXPECT_EQ(status, Core::ERROR_NONE);
+
+                status = PowerManagerPlugin->CancelScheduledDeepSleepWakeups(futureTime, "testApp");
+                TEST_LOG("CancelScheduledDeepSleepWakeups (already cancelled) result: %u", status);
+                EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+                PowerManagerPlugin->Release();
+            }
+            else
+            {
+                TEST_LOG("PowerManagerPlugin is NULL");
+            }
+            mController_PowerManager->Release();
+        }
+        else
+        {
+            TEST_LOG("mController_PowerManager is NULL");
+        }
+    }
+}
+
+/***
+** Test: CancelScheduledDeepSleepWakeups - Cancel All (ONEM-42971)
+** Verify that passing unixTime=0 and an empty requestorId cancels every
+** scheduled wakeup at once.
+****/
+TEST_F(PowerManager_L2Test, CancelScheduledDeepSleepWakeupsAll)
+{
+    Core::ProxyType<RPC::InvokeServerType<1, 0, 4>> mEngine_PowerManager;
+    Core::ProxyType<RPC::CommunicatorClient> mClient_PowerManager;
+    PluginHost::IShell *mController_PowerManager;
+
+    {
+        ASSERT_EQ(0, system("mkdir -p /mnt/secure_storage/pwrmgr")) << "Failed to create wakeup schedule storage directory";
+        std::ofstream ofs("/mnt/secure_storage/pwrmgr/schedules.stg", std::ios::trunc);
+        ASSERT_TRUE(ofs.is_open()) << "Failed to reset wakeup schedule storage";
+    }
+
+    TEST_LOG("Creating mEngine_PowerManager");
+    mEngine_PowerManager = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
+    mClient_PowerManager = Core::ProxyType<RPC::CommunicatorClient>::Create(Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(mEngine_PowerManager));
+
+    if (!mClient_PowerManager.IsValid())
+    {
+        FAIL() << "Invalid mClient_PowerManager";
+    }
+    else
+    {
+        mController_PowerManager = mClient_PowerManager->Open<PluginHost::IShell>(_T("org.rdk.PowerManager"), ~0, 3000);
+        if (mController_PowerManager)
+        {
+            auto PowerManagerPlugin = mController_PowerManager->QueryInterface<Exchange::IPowerManager>();
+
+            if (PowerManagerPlugin)
+            {
+                time_t futureTime1 = time(nullptr) + 300;
+                time_t futureTime2 = time(nullptr) + 600;
+
+                uint32_t status1 = PowerManagerPlugin->ScheduleDeepSleepWakeup(futureTime1, "netflix");
+                TEST_LOG("ScheduleDeepSleepWakeup #1 result: %u", status1);
+                EXPECT_EQ(status1, Core::ERROR_NONE);
+
+                uint32_t status2 = PowerManagerPlugin->ScheduleDeepSleepWakeup(futureTime2, "smartHome");
+                TEST_LOG("ScheduleDeepSleepWakeup #2 result: %u", status2);
+                EXPECT_EQ(status2, Core::ERROR_NONE);
+
+                uint32_t cancelStatus = PowerManagerPlugin->CancelScheduledDeepSleepWakeups(0, "");
+                TEST_LOG("CancelScheduledDeepSleepWakeups(all) result: %u", cancelStatus);
+                EXPECT_EQ(cancelStatus, Core::ERROR_NONE);
+
+                cancelStatus = PowerManagerPlugin->CancelScheduledDeepSleepWakeups(0, "");
+                TEST_LOG("CancelScheduledDeepSleepWakeups(all, already empty) result: %u", cancelStatus);
+                EXPECT_EQ(cancelStatus, Core::ERROR_INVALID_PARAMETER);
+
+                PowerManagerPlugin->Release();
+            }
+            else
+            {
+                TEST_LOG("PowerManagerPlugin is NULL");
+            }
+            mController_PowerManager->Release();
+        }
+        else
+        {
+            TEST_LOG("mController_PowerManager is NULL");
+        }
+    }
+}
