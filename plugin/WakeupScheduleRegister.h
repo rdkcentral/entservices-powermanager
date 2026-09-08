@@ -383,13 +383,20 @@ class WakeupScheduleRegister
         return status;
     }
 
+    /* Reports Successful only if at least one FUTURE schedule existed and was removed; past-only
+       (already expired) content is still cleared as a side effect, but does not by itself make
+       this call Successful, since ONEM-42971 review decision requires callers to be able to tell
+       "there was nothing actionable to cancel" apart from "cancelled everything". */
     OperationStatus removeAllWakeupSchedules()
     {
         std::lock_guard<std::mutex> lock(_mutex);
+        OperationStatus status = Failed;
+
         if (!wakeupSchedules.empty())
         {
             clearSchedules(wakeupSchedules);
             DEBUG_LOG("%s(): all future schedules removed\n", __FUNCTION__);
+            status = Successful;
         }
 
         if (!pastWakeupSchedules.empty())
@@ -398,7 +405,103 @@ class WakeupScheduleRegister
             DEBUG_LOG("%s(): all past schedules removed\n", __FUNCTION__);
         }
 
-        return Successful;
+        return status;
+    }
+
+    /* Removes every FUTURE schedule entry for the given requestorId, regardless of unixTime.
+       If a Schedule slot's requestorIds/powerStates become empty as a result, that slot is
+       deleted entirely (same pattern as removeWakeupSchedule()). Returns Failed if requestorId
+       had no future entries at all. */
+    OperationStatus removeByRequestorId(const char* requestorId)
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        OperationStatus status = Failed;
+
+        if (!requestorId || !requestorId[0])
+        {
+            requestorId = "anonymous";
+        }
+
+        for (std::vector<Schedule*>::iterator it = wakeupSchedules.begin(); it != wakeupSchedules.end(); )
+        {
+            for (size_t i = 0; i < (*it)->requestorIds.size() && i < (*it)->powerStates.size(); )
+            {
+                if ((*it)->requestorIds[i] == requestorId)
+                {
+                    (*it)->requestorIds.erase((*it)->requestorIds.begin() + i);
+                    (*it)->powerStates.erase((*it)->powerStates.begin() + i);
+                    status = Successful;
+                }
+                else
+                {
+                    i++;
+                }
+            }
+
+            if ((*it)->requestorIds.empty())
+            {
+                delete (*it);
+                it = wakeupSchedules.erase(it);
+            }
+            else
+            {
+                it++;
+            }
+        }
+
+        DEBUG_LOG("%s(): requestorId = '%s', status = %d\n", __FUNCTION__, requestorId, status);
+
+        return status;
+    }
+
+    /* Removes the entire FUTURE schedule slot at the given unixTime, regardless of requestorId.
+       Returns Failed if no schedule slot exists at that exact unixTime. */
+    OperationStatus removeByUnixTime(UnixTime unixTime)
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        OperationStatus status = Failed;
+        std::vector<Schedule*>::iterator it = findUnixTime(unixTime);
+
+        if (it != wakeupSchedules.end())
+        {
+            delete (*it);
+            wakeupSchedules.erase(it);
+            status = Successful;
+        }
+
+        DEBUG_LOG("%s(): unixTime = %u, status = %d\n", __FUNCTION__, unixTime, status);
+
+        return status;
+    }
+
+    /* Read-only helper used purely to produce a more precise log message when a cancel request
+       matches nothing in the FUTURE list: distinguishes "it already expired" from "it never
+       existed". unixTime == 0 matches any time; requestorId NULL/empty matches any requestor,
+       mirroring the same wildcard semantics used by the public cancel dispatch modes. */
+    bool anyPastScheduleMatches(UnixTime unixTime, const char* requestorId)
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        const bool anyRequestor = (!requestorId || !requestorId[0]);
+
+        for (std::vector<Schedule*>::const_iterator it = pastWakeupSchedules.begin(); it != pastWakeupSchedules.end(); it++)
+        {
+            if (unixTime != 0 && (*it)->unixTime != unixTime)
+            {
+                continue;
+            }
+
+            if (anyRequestor)
+            {
+                return true;
+            }
+
+            if (std::find((*it)->requestorIds.begin(), (*it)->requestorIds.end(), std::string(requestorId)) != (*it)->requestorIds.end())
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     OperationStatus loadWakeupSchedulesFromFile(const char* path)
