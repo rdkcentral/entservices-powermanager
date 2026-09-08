@@ -19,6 +19,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <unistd.h>
 
 #include "plat_power.h"
@@ -28,6 +29,7 @@
 
 #include "Power.h"
 #include "UtilsLogging.h"
+#include "secure_wrapper.h" // for v_secure_system
 
 class PowerImpl : public hal::power::IPlatform {
     using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
@@ -305,5 +307,24 @@ public:
         LOGINFO("PowerState: %s, result: %s", str(state), str(result));
 
         return retCode;
+    }
+
+    virtual uint32_t Reboot(const std::string& requestor, const std::string& reasonCustom, const std::string& reasonOther) override
+    {
+        int rc = v_secure_system("echo 0 > /opt/.rebootFlag");
+        if (rc != 0) {
+            LOGERR("Failed to reset /opt/.rebootFlag (rc=%d)", rc);
+        }
+
+        LOGINFO("------------FINAL REBOOT NOTICE----------\n\tRebooting device requestor: %s, reasonCustom: %s, reasonOther: %s",
+            requestor.c_str(), reasonCustom.c_str(), reasonOther.c_str());
+
+        if (0 == access("/rebootNow.sh", F_OK)) {
+            v_secure_system("/rebootNow.sh -s '%s' -r '%s' -o '%s'", requestor.c_str(), reasonCustom.c_str(), reasonOther.c_str());
+        } else {
+            v_secure_system("/lib/rdk/rebootNow.sh -s '%s' -r '%s' -o '%s'", requestor.c_str(), reasonCustom.c_str(), reasonOther.c_str());
+        }
+
+        return WPEFramework::Core::ERROR_NONE;
     }
 };
