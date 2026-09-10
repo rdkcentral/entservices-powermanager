@@ -115,7 +115,7 @@ endmacro()
 # PLUGIN_POWERMANAGER
 set (POWERMANAGER_INC ${CMAKE_SOURCE_DIR}/../plugin ${CMAKE_SOURCE_DIR}/../entservices-helpers/helpers)
 set (POWERMANAGER_LIBS ${NAMESPACE}PowerManager ${NAMESPACE}PowerManagerImplementation)
-add_plugin_test_ex(PLUGIN_POWERMANAGER "tests/test_PowerManager.cpp;tests/test_PowerManagerSettings.cpp;tests/test_PowerManagerThermalController.cpp" "${POWERMANAGER_INC}" "${POWERMANAGER_LIBS}")
+add_plugin_test_ex(PLUGIN_POWERMANAGER "tests/test_PowerManager.cpp;tests/test_PowerManagerSettings.cpp;tests/test_PowerManagerThermalController.cpp;tests/test_DeepSleepController.cpp" "${POWERMANAGER_INC}" "${POWERMANAGER_LIBS}")
 
 add_library(${MODULE_NAME} SHARED ${TEST_SRC})
 
@@ -123,8 +123,8 @@ set_source_files_properties(
         tests/test_PowerManager.cpp
         tests/test_PowerManagerSettings.cpp
         tests/test_PowerManagerThermalController.cpp
+        tests/test_DeepSleepController.cpp
         PROPERTIES COMPILE_FLAGS "-fexceptions")
-
 
 include_directories(${TEST_INC})
 
