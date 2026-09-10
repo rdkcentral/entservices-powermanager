@@ -25,6 +25,7 @@ The plugin employs a specialized controller pattern with four distinct controlle
 2. **DeepSleepController**: Specialized controller for deep sleep functionality
    - Manages deep sleep timers and timeout handling
    - Coordinates with network standby mode settings
+   - RFC integration for maintenance window parameters (wakeup duration, fixed starts, random delay, inactivity timeout)
    - Handles graceful deep sleep transitions
    - Provides notification callbacks for deep sleep events
 
@@ -37,6 +38,7 @@ The plugin employs a specialized controller pattern with four distinct controlle
 4. **RebootController**: System reboot and maintenance operations
    - Graceful system restart functionality
    - Maintenance reboot scheduling
+   - RFC integration for maintenance window parameters (wakeup duration, fixed starts, random delay, inactivity timeout)
    - Integration with system services for coordinated shutdowns
 
 #### Support Layer
@@ -83,10 +85,11 @@ The plugin employs a specialized controller pattern with four distinct controlle
 
 ### Deep Sleep Management Flow
 1. **Timer Configuration**: Configure deep sleep timeout through DeepSleepController
-2. **Network Integration**: Coordinate with network standby mode settings
-3. **Sleep Preparation**: Prepare system for low-power state
-4. **HAL Integration**: Execute platform-specific deep sleep through DeepSleep HAL
-5. **Wakeup Handling**: Process wakeup events and restore system state
+2. **RFC Parameter Retrieval**: Fetch maintenance window configuration parameters dynamically at runtime
+3. **Network Integration**: Coordinate with network standby mode settings
+4. **Sleep Preparation**: Prepare system for low-power state
+5. **HAL Integration**: Execute platform-specific deep sleep through DeepSleep HAL
+6. **Wakeup Handling**: Process wakeup events and restore system state
 
 ## Plugin Framework Integration
 
