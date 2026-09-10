@@ -63,6 +63,7 @@ public:
         : _settings(settings)
         , _isDeepSleepTimeoutSet(false)
     {
+        updateMaintenanceWakeupConfig();
         initializeTimeZone();
     }
 
@@ -103,6 +104,22 @@ private:
     Settings& _settings;
     bool _isDeepSleepTimeoutSet;
     static std::map<std::string, tzValue> _maptzValues;
+
+    /* Fetch the RFC values for maintenance wakeup */
+    bool _configUpdated = false ;
+    bool _rfcUpdated = false ;
+
+    /* Providing default values as fallback in absence of RFC params */
+    uint32_t _wakeupDurationSec ;
+    std::vector<int> _fixedStarts ;
+    uint32_t _randomDelay ;
+    uint32_t _inactivityTimeout ;
+
+    bool retrieveConfigValueInt(const char* key, uint32_t& output_value);
+    bool retrieveConfigFixedStarts();
+    bool fetchMaintenanceWakeupRFCValueInt(const char* key, uint32_t& param_value);
+    bool fetchMaintenanceWakeupRFCValueString(const char* key, std::string& param_values);
+    void updateMaintenanceWakeupConfig();
 };
 
 class DeepSleepController {

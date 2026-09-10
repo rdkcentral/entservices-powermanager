@@ -44,6 +44,12 @@
 #include "libIBus.h"        // for IARM_Bus_Call
 #include "secure_wrapper.h" // for v_secure_system
 #include "sysMgr.h"         // for IARM_BUS_SYSMGR_API_GetSystemStates
+#include "rfcapi.h"
+
+#define WAKEUPDURATION "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.MaintenanceWakeup.WakeupDuration"
+#define FIXEDSTARTS "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.MaintenanceWakeup.FixedStarts"
+#define RANDOMDELAY "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.MaintenanceWakeup.RandomDelay"
+#define INACTIVITYTIMEOUT "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.MaintenanceWakeup.InactivityTimeout"
 
 using WakeupReason = WPEFramework::Exchange::IPowerManager::WakeupReason;
 using PowerState   = WPEFramework::Exchange::IPowerManager::PowerState;
@@ -51,6 +57,40 @@ using IPlatform    = hal::deepsleep::IPlatform;
 using util         = PowerUtils;
 
 std::map<std::string, DeepSleepWakeupSettings::tzValue> DeepSleepWakeupSettings::_maptzValues;
+
+static bool parseFixedStarts(const std::string& extractedParam, std::vector<int>& list_fixedStarts)
+{
+    std::vector<int> parsed;
+    std::stringstream ss(extractedParam);
+    std::string token;
+
+    while (std::getline(ss, token, ',')) {
+        try {
+            size_t pos = 0;
+            int value = std::stoi(token, &pos);
+
+            /* Validate the value is float */
+            if (pos != token.size()) {
+                LOGERR("Invalid fixedStarts entry '%s' in RFC value '%s' - rejecting whole list",
+                       token.c_str(), extractedParam.c_str());
+                return false;
+            }
+            parsed.push_back(value);
+        } catch (...) {
+            LOGERR("Invalid fixedStarts entry '%s' in RFC value '%s' - rejecting whole list",
+                   token.c_str(), extractedParam.c_str());
+            return false;
+        }
+    }
+
+    if (parsed.empty()) {
+        LOGERR("fixedStarts RFC value '%s' produced no entries - rejecting", extractedParam.c_str());
+        return false;
+    }
+
+    list_fixedStarts = std::move(parsed);
+    return true;
+}
 
 uint32_t DeepSleepWakeupSettings::getTZDiffInSec() const
 {
@@ -384,4 +424,124 @@ void DeepSleepController::performActivate(uint32_t timeOut, bool nwStandbyMode)
     } else {
         LOGERR("Deep sleep operation is already in progress");
     }
+}
+
+bool DeepSleepWakeupSettings::fetchMaintenanceWakeupRFCValueInt(const char *key, uint32_t& val)
+{
+    RFC_ParamData_t param = {0};
+    const uint32_t MAX_MAINTENANCE_RFC =  20;
+    char rfcVal[MAX_MAINTENANCE_RFC + 1] = { 0 };
+    uint32_t len = 0;
+
+    if (WDMP_SUCCESS == getRFCParameter((char*)"MaintenanceWakeup_Config", key, &param)) {
+        len = strlen(param.value);
+        if (len > MAX_MAINTENANCE_RFC) {
+            len = MAX_MAINTENANCE_RFC;
+        }
+
+        strncpy(rfcVal, param.value, MAX_MAINTENANCE_RFC - 1);
+        rfcVal[len] = '\0';
+        LOGINFO("name = %s, type = %d, value = %s, rfc_val:%s,ret_value:%d", param.name, param.type, param.value,rfcVal,atoi(rfcVal));
+        val = atoi(rfcVal);
+        return true;
+    }
+
+    LOGERR("Failed to get RFC parameter %s", key);
+    return false;
+}
+
+bool DeepSleepWakeupSettings::fetchMaintenanceWakeupRFCValueString(const char *key, std::string& values)
+{
+    RFC_ParamData_t param = {0};
+    WDMP_STATUS status = getRFCParameter((char*)"MaintenanceWakeup_Config", key, &param);
+
+    if (status != WDMP_SUCCESS) {
+        LOGINFO("RFC key %s not available, status=%d - keeping current value", key, status);
+        return false;
+    }
+
+    values = param.value;
+    return true;
+}
+
+bool DeepSleepWakeupSettings::retrieveConfigValueInt(const char* key, uint32_t& output_value)
+{
+    uint32_t value = 0;
+
+    if (fetchMaintenanceWakeupRFCValueInt(key, value))
+    {
+        output_value = value;
+        return true;
+    }
+
+    return false;
+}
+
+bool DeepSleepWakeupSettings::retrieveConfigFixedStarts()
+{
+    std::string value;
+
+    if (!fetchMaintenanceWakeupRFCValueString(FIXEDSTARTS, value))
+    {
+        return false;
+    }
+
+    std::vector<int> parsed;
+    if (!parseFixedStarts(value, parsed))
+    {
+        return false;
+    }
+
+    _fixedStarts = std::move(parsed);
+    return true;
+}
+
+void DeepSleepWakeupSettings::updateMaintenanceWakeupConfig()
+{
+    if (_configUpdated) return;
+
+    /* Wakeup Duration */
+    if (!(_rfcUpdated = retrieveConfigValueInt(WAKEUPDURATION, _wakeupDurationSec)))
+    {
+        LOGINFO("RFC wakeupduration not available");
+        return;
+    }
+    LOGINFO("DeepSleep wakeupDurationSec = %u",_wakeupDurationSec);
+
+    /* Fixed Starts */
+    if (!(_rfcUpdated = retrieveConfigFixedStarts()))
+    {
+        LOGINFO("RFC fixedstarts not available");
+        return;
+    }
+
+    /* Log the fixedStarts values */
+    std::string fixedStartsLog;
+    for (size_t index = 0; index < _fixedStarts.size(); ++index)
+    {
+        if (index > 0)
+        {
+            fixedStartsLog += ",";
+        }
+        fixedStartsLog += std::to_string(_fixedStarts[index]);
+    }
+    LOGINFO("DeepSleep fixedStarts = [%s]",fixedStartsLog.c_str());
+
+    /* Random Delay */
+    if (!(_rfcUpdated = retrieveConfigValueInt(RANDOMDELAY, _randomDelay)))
+    {
+        LOGINFO("RFC randomdelay not available");
+        return;
+    }
+    LOGINFO("DeepSleep randomDelaySec = %u",_randomDelay);
+
+    /* Inactivity Timeout */
+    if (!(_rfcUpdated = retrieveConfigValueInt(INACTIVITYTIMEOUT, _inactivityTimeout)))
+    {
+        LOGINFO("RFC inactivitytimeout not available");
+        return;
+    }
+    LOGINFO("DeepSleep inactivityTimeoutSec = %u",_inactivityTimeout);
+
+    _configUpdated = true;
 }
