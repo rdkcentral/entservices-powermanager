@@ -179,6 +179,17 @@ public:
     // deactivate deep sleep mode
     uint32_t Deactivate();
 
+    // Set/get the network standby mode flag used when entering deep sleep.
+    inline void SetNetworkStandbyMode(bool nwStandbyMode)
+    {
+        _nwStandbyMode = nwStandbyMode;
+    }
+
+    inline bool NetworkStandbyMode() const
+    {
+        return _nwStandbyMode;
+    }
+
     // perform maintenance reboot
     void MaintenanceReboot();
 
