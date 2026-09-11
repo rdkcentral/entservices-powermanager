@@ -2358,6 +2358,271 @@ TEST_F(TestPowerManager, EnableWakeOnLAN)
     EXPECT_EQ(status, Core::ERROR_NONE);
 };
 
+// DeepSleepController::_nwStandbyMode is a distinct internal flag from Settings::_nwStandbyMode
+// (used by GetNetworkStandbyMode()/EnableWakeOnLAN/DisableWakeOnLAN tests above). It is derived
+// with OR semantics in PowerController::SetWakeupSourceConfig: enabled if either WIFI or LAN
+// wakeup source is enabled, disabled only when both are disabled. It's observed here via the
+// networkStandby argument passed to the platform's SetDeepSleep call.
+// Covers both branches of the OR condition (wifiEnabled || lanEnabled) independently, so that a
+// bug which accidentally drops either operand (e.g. only checking WIFI, or only checking LAN)
+// is still caught: each sub-scenario runs its own full deep-sleep enter/wake cycle and checks the
+// networkStandby value seen by the platform HAL.
+TEST_F(TestPowerManager, DeepSleepNetworkStandbyEitherSourceEnabled)
+{
+    // Sub-scenario 1: only WIFI wakeup source enabled (LAN remains disabled)
+    {
+        std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig> configs = {{WakeupSrcType::WAKEUP_SRC_WIFI, true}};
+        auto iterator = WakeupSourceConfigIteratorImpl::Create<WPEFramework::Exchange::IPowerManager::IWakeupSourceConfigIterator>(configs);
+
+        uint32_t status = powerManagerImpl->SetWakeupSourceConfig(iterator);
+        EXPECT_EQ(status, Core::ERROR_NONE);
+    }
+
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    {
+        WaitGroup wg;
+        wg.Add();
+        Core::ProxyType<PowerModeChangedEvent> modeChanged = Core::ProxyType<PowerModeChangedEvent>::Create();
+        EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
+            .WillOnce(::testing::Invoke(
+                [](const PowerState prevState, const PowerState newState) {
+                    EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+                }))
+            .WillOnce(::testing::Invoke(
+                [&](const PowerState prevState, const PowerState newState) {
+                    EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+                    EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                    wg.Done();
+                }));
+
+        EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_SetDeepSleep(::testing::_, ::testing::_, ::testing::_))
+            .WillOnce(::testing::Invoke(
+                [](uint32_t deep_sleep_timeout, bool* isGPIOWakeup, bool networkStandby) {
+                    // WIFI alone is enabled -> nwStandbyMode must be true (OR semantics)
+                    EXPECT_EQ(networkStandby, true);
+                    *isGPIOWakeup = true;
+                    return DEEPSLEEPMGR_SUCCESS;
+                }));
+
+        EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_GetLastWakeupReason(::testing::_))
+            .WillOnce(::testing::Invoke(
+                [](DeepSleep_WakeupReason_t* wakeupReason) {
+                    *wakeupReason = DEEPSLEEP_WAKEUPREASON_GPIO;
+                    return DEEPSLEEPMGR_SUCCESS;
+                }));
+
+        EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_DeepSleepWakeup())
+            .WillOnce(testing::Return(DEEPSLEEPMGR_SUCCESS));
+
+        uint32_t status = powerManagerImpl->Register(&(*modeChanged));
+        EXPECT_EQ(status, Core::ERROR_NONE);
+
+        status = powerManagerImpl->SetDeepSleepTimer(10);
+        EXPECT_EQ(status, Core::ERROR_NONE);
+
+        int keyCode = 0;
+        status      = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+        EXPECT_EQ(status, Core::ERROR_NONE);
+
+        wg.Wait();
+
+        // Triggers the actual platform().GetLastWakeupReason() call expected above.
+        WakeupReason wakeupReason = WakeupReason::WAKEUP_REASON_UNKNOWN;
+        status                    = powerManagerImpl->GetLastWakeupReason(wakeupReason);
+        EXPECT_EQ(status, Core::ERROR_NONE);
+        EXPECT_EQ(wakeupReason, WakeupReason::WAKEUP_REASON_GPIO);
+
+        status = powerManagerImpl->Unregister(&(*modeChanged));
+        EXPECT_EQ(status, Core::ERROR_NONE);
+    }
+
+    // Sub-scenario 2: only LAN wakeup source enabled (WIFI disabled) - symmetric case, must also
+    // yield nwStandbyMode == true.
+    {
+        std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig> configs = {
+            {WakeupSrcType::WAKEUP_SRC_WIFI, false},
+            {WakeupSrcType::WAKEUP_SRC_LAN, true}
+        };
+        auto iterator = WakeupSourceConfigIteratorImpl::Create<WPEFramework::Exchange::IPowerManager::IWakeupSourceConfigIterator>(configs);
+
+        uint32_t status = powerManagerImpl->SetWakeupSourceConfig(iterator);
+        EXPECT_EQ(status, Core::ERROR_NONE);
+    }
+
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    {
+        WaitGroup wg;
+        wg.Add();
+        Core::ProxyType<PowerModeChangedEvent> modeChanged = Core::ProxyType<PowerModeChangedEvent>::Create();
+        EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
+            .WillOnce(::testing::Invoke(
+                [](const PowerState prevState, const PowerState newState) {
+                    EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+                }))
+            .WillOnce(::testing::Invoke(
+                [&](const PowerState prevState, const PowerState newState) {
+                    EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+                    EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                    wg.Done();
+                }));
+
+        EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_SetDeepSleep(::testing::_, ::testing::_, ::testing::_))
+            .WillOnce(::testing::Invoke(
+                [](uint32_t deep_sleep_timeout, bool* isGPIOWakeup, bool networkStandby) {
+                    // LAN alone is enabled -> nwStandbyMode must be true (OR semantics)
+                    EXPECT_EQ(networkStandby, true);
+                    *isGPIOWakeup = true;
+                    return DEEPSLEEPMGR_SUCCESS;
+                }));
+
+        EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_GetLastWakeupReason(::testing::_))
+            .WillOnce(::testing::Invoke(
+                [](DeepSleep_WakeupReason_t* wakeupReason) {
+                    *wakeupReason = DEEPSLEEP_WAKEUPREASON_GPIO;
+                    return DEEPSLEEPMGR_SUCCESS;
+                }));
+
+        EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_DeepSleepWakeup())
+            .WillOnce(testing::Return(DEEPSLEEPMGR_SUCCESS));
+
+        uint32_t status = powerManagerImpl->Register(&(*modeChanged));
+        EXPECT_EQ(status, Core::ERROR_NONE);
+
+        status = powerManagerImpl->SetDeepSleepTimer(10);
+        EXPECT_EQ(status, Core::ERROR_NONE);
+
+        int keyCode = 0;
+        status      = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+        EXPECT_EQ(status, Core::ERROR_NONE);
+
+        wg.Wait();
+
+        // Triggers the actual platform().GetLastWakeupReason() call expected above.
+        WakeupReason wakeupReason = WakeupReason::WAKEUP_REASON_UNKNOWN;
+        status                    = powerManagerImpl->GetLastWakeupReason(wakeupReason);
+        EXPECT_EQ(status, Core::ERROR_NONE);
+        EXPECT_EQ(wakeupReason, WakeupReason::WAKEUP_REASON_GPIO);
+
+        status = powerManagerImpl->Unregister(&(*modeChanged));
+        EXPECT_EQ(status, Core::ERROR_NONE);
+    }
+}
+
+// Both WIFI and LAN enabled then both explicitly disabled again -> nwStandbyMode must go back to false
+// (proves the flag is actively re-derived, not just left at its initial default).
+TEST_F(TestPowerManager, DeepSleepNetworkStandbyBothSourcesDisabledAfterBeingEnabled)
+{
+    {
+        std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig> configs = {
+            {WakeupSrcType::WAKEUP_SRC_WIFI, true},
+            {WakeupSrcType::WAKEUP_SRC_LAN, true}
+        };
+        auto iterator = WakeupSourceConfigIteratorImpl::Create<WPEFramework::Exchange::IPowerManager::IWakeupSourceConfigIterator>(configs);
+
+        uint32_t status = powerManagerImpl->SetWakeupSourceConfig(iterator);
+        EXPECT_EQ(status, Core::ERROR_NONE);
+    }
+    {
+        std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig> configs = {
+            {WakeupSrcType::WAKEUP_SRC_WIFI, false},
+            {WakeupSrcType::WAKEUP_SRC_LAN, false}
+        };
+        auto iterator = WakeupSourceConfigIteratorImpl::Create<WPEFramework::Exchange::IPowerManager::IWakeupSourceConfigIterator>(configs);
+
+        uint32_t status = powerManagerImpl->SetWakeupSourceConfig(iterator);
+        EXPECT_EQ(status, Core::ERROR_NONE);
+    }
+
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                return PWRMGR_SUCCESS;
+            }));
+
+    WaitGroup wg;
+    wg.Add();
+    Core::ProxyType<PowerModeChangedEvent> modeChanged = Core::ProxyType<PowerModeChangedEvent>::Create();
+    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [](const PowerState prevState, const PowerState newState) {
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+            }))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState prevState, const PowerState newState) {
+                EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                wg.Done();
+            }));
+
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_SetDeepSleep(::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [](uint32_t deep_sleep_timeout, bool* isGPIOWakeup, bool networkStandby) {
+                // Both WIFI and LAN disabled -> nwStandbyMode must be false
+                EXPECT_EQ(networkStandby, false);
+                *isGPIOWakeup = true;
+                return DEEPSLEEPMGR_SUCCESS;
+            }));
+
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_GetLastWakeupReason(::testing::_))
+        .WillOnce(::testing::Invoke(
+            [](DeepSleep_WakeupReason_t* wakeupReason) {
+                *wakeupReason = DEEPSLEEP_WAKEUPREASON_GPIO;
+                return DEEPSLEEPMGR_SUCCESS;
+            }));
+
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_DeepSleepWakeup())
+        .WillOnce(testing::Return(DEEPSLEEPMGR_SUCCESS));
+
+    uint32_t status = powerManagerImpl->Register(&(*modeChanged));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    status = powerManagerImpl->SetDeepSleepTimer(10);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    int keyCode = 0;
+    status      = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    wg.Wait();
+
+    // Triggers the actual platform().GetLastWakeupReason() call expected above.
+    WakeupReason wakeupReason = WakeupReason::WAKEUP_REASON_UNKNOWN;
+    status                    = powerManagerImpl->GetLastWakeupReason(wakeupReason);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    EXPECT_EQ(wakeupReason, WakeupReason::WAKEUP_REASON_GPIO);
+
+    status = powerManagerImpl->Unregister(&(*modeChanged));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+}
+
 TEST_F(TestPowerManager, TemperatureThresholds)
 {
     EXPECT_CALL(*p_mfrMock, mfrSetTempThresholds(::testing::_, ::testing::_))

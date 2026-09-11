@@ -115,6 +115,10 @@ private:
     WPEFramework::Core::IWorkerPool& _workerPool;
     std::chrono::steady_clock::time_point _wakeupTimestamp;
 
+    // Locally tracked WIFI/LAN wakeup source state, used to derive network standby mode.
+    bool _wifiWakeupSrcEnabled;
+    bool _lanWakeupSrcEnabled;
+
     // keep this last
     DeepSleepController& _deepSleep;
 #ifdef OFFLINE_MAINT_REBOOT
