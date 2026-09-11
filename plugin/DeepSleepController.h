@@ -24,6 +24,7 @@
 #include <string>      // for string
 #include <type_traits> // for is_base_of
 #include <utility>     // for forward, move
+#include <vector>      // for vector
 
 #include <core/Proxy.h>               // for ProxyType
 #include <core/Trace.h>               // for ASSERT
@@ -63,6 +64,7 @@ public:
         : _settings(settings)
         , _isDeepSleepTimeoutSet(false)
     {
+        updateMaintenanceWakeupConfig();
         initializeTimeZone();
     }
 
@@ -103,6 +105,22 @@ private:
     Settings& _settings;
     bool _isDeepSleepTimeoutSet;
     static std::map<std::string, tzValue> _maptzValues;
+
+    /* Flags for maintenance wakeup */
+    bool _maintenanceConfigUpdated = false ;
+    bool _maintenanceRfcUpdated    = false ;
+
+    /* Maintenance window related RFC params */
+    uint32_t _wakeupDurationSec = 0 ;
+    std::vector<int> _fixedStarts ;
+    uint32_t _randomDelay  = 0 ;
+    uint32_t _inactivityTimeout = 0;
+
+    bool retrieveConfigValueInt(const char* key, uint32_t& output_value);
+    bool retrieveConfigFixedStarts();
+    bool fetchMaintenanceWakeupRFCValueInt(const char* key, uint32_t& param_value);
+    bool fetchMaintenanceWakeupRFCValueString(const char* key, std::string& param_values);
+    void updateMaintenanceWakeupConfig();
 };
 
 class DeepSleepController {
