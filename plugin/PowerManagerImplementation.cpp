@@ -70,7 +70,9 @@ namespace Plugin {
     {
         // Coverity Fix: ID 581 - Uninitialized pointer field
         PowerManagerImplementation::_instance = this;
+        SYSLOG(Logging::Startup, (_T("%s before IARM init"), __FUNCTION__));
         Utils::IARM::init();
+        SYSLOG(Logging::Startup, (_T("%s after IARM init"), __FUNCTION__));
         LOGINFO(">> CTOR <<");
     }
 
