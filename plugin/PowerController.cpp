@@ -46,6 +46,8 @@ PowerController::PowerController(DeepSleepController& deepSleep, std::unique_ptr
     , _deepSleepWakeupSettings(_settings)
     , _workerPool(WPEFramework::Core::WorkerPool::Instance())
     , _wakeupTimestamp{}
+    , _wifiWakeupSrcEnabled(_settings.nwStandbyMode())
+    , _lanWakeupSrcEnabled(_settings.nwStandbyMode())
     , _deepSleep(deepSleep)
 #ifdef OFFLINE_MAINT_REBOOT
     , _rebootController(_settings)
@@ -143,12 +145,18 @@ uint32_t PowerController::SetPowerState(const int keyCode, const PowerState powe
 
 uint32_t PowerController::ActivateDeepSleep()
 {
-    return _deepSleep.Activate(_deepSleepWakeupSettings.timeout(), _settings.nwStandbyMode());
+    // Use tracked network standby flag (kept in sync by SetWakeupSourceConfig) instead
+    // of _settings.nwStandbyMode() directly.
+    bool nwStandbyMode = _deepSleep.NetworkStandbyMode();
+    return _deepSleep.Activate(_deepSleepWakeupSettings.timeout(), nwStandbyMode);
 }
 
 uint32_t PowerController::SetNetworkStandbyMode(const bool standbyMode)
 {
-    if (standbyMode == _settings.nwStandbyMode()) {
+    // Check against both _settings and tracked internal wakeup source state to detect
+    // mixed configurations. This ensures explicit disable still applies both source settings.
+    bool currentInternalState = _wifiWakeupSrcEnabled || _lanWakeupSrcEnabled;
+    if (standbyMode == _settings.nwStandbyMode() && standbyMode == currentInternalState) {
         LOGINFO("Network Standby mode is already set to %s", standbyMode ? "Enabled" : "Disabled");
         return WPEFramework::Core::ERROR_NONE;
     }
@@ -188,13 +196,23 @@ uint32_t PowerController::SetWakeupSourceConfig(const std::list<WPEFramework::Ex
     for (auto& config : configs) {
         bool supported = false;
         int result = platform().SetWakeupSrc(config.wakeupSource, config.enabled, supported);
-        if (WPEFramework::Core::ERROR_NONE != result && supported) {
-            // latch failed status
-            failed = true;
+        if (WPEFramework::Core::ERROR_NONE != result) {
+            if (supported) {
+                // latch failed status
+                failed = true;
+            }
+        } else if (WakeupSrcType::WAKEUP_SRC_WIFI == config.wakeupSource) {
+            // Track applied state locally instead of a HAL GetWakeupSrc read-back.
+            _wifiWakeupSrcEnabled = config.enabled;
+        } else if (WakeupSrcType::WAKEUP_SRC_LAN == config.wakeupSource) {
+            _lanWakeupSrcEnabled = config.enabled;
         }
     }
 
     uint32_t errorCode = failed ? WPEFramework::Core::ERROR_GENERAL : WPEFramework::Core::ERROR_NONE;
+
+    // nwStandbyMode is enabled if either WIFI or LAN wakeup source is enabled.
+    _deepSleep.SetNetworkStandbyMode(_wifiWakeupSrcEnabled || _lanWakeupSrcEnabled);
 
     LOGINFO("errorCode: %d", errorCode);
 

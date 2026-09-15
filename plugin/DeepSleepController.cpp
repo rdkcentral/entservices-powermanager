@@ -232,7 +232,7 @@ DeepSleepController::DeepSleepController(INotification& parent, std::shared_ptr<
     , _deepSleepState(DeepSleepState::NotStarted)
     , _deepSleepDelaySec(0)
     , _deepSleepWakeupTimeoutSec(0)
-    , _nwStandbyMode(false)
+    , _nwStandbyMode(std::make_shared<std::atomic<bool>>(false))
 {
     LOGINFO(">> CTOR <<");
 }
@@ -262,9 +262,10 @@ uint32_t DeepSleepController::GetLastWakeupKeyCode(int& keyCode) const
 // activate deep sleep mode
 uint32_t DeepSleepController::Activate(uint32_t timeOut, bool nwStandbyMode)
 {
-    LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
+    LOGINFO("Activate() called: timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
     _workerPool.Submit(LambdaJob::Create([this, timeOut, nwStandbyMode]() {
-        LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
+        LOGINFO("Worker: performActivate() starting: timeOut: %u, API nwStandbyMode param: %s", timeOut,
+            (nwStandbyMode ? "Enabled" : "Disabled"));
         performActivate(timeOut, nwStandbyMode);
     }));
 
@@ -332,10 +333,11 @@ void DeepSleepController::enterDeepSleepNow()
     bool failed     = true;
     int retryCount  = 5;
     bool userWakeup = 0;
-    LOGINFO("Device entering Deep sleep with nwStandbyMode: %s", (_nwStandbyMode ? "Enabled" : "Disabled"));
+    bool nwStandbyMode = _nwStandbyMode->load();
+    LOGINFO("Device entering Deep sleep with nwStandbyMode: %s", (nwStandbyMode ? "Enabled" : "Disabled"));
 
     while (retryCount && failed) {
-        errorCode = platform().SetDeepSleep(_deepSleepWakeupTimeoutSec, userWakeup, _nwStandbyMode);
+        errorCode = platform().SetDeepSleep(_deepSleepWakeupTimeoutSec, userWakeup, nwStandbyMode);
 
         failed = WPEFramework::Core::ERROR_NONE != errorCode;
 
@@ -399,7 +401,6 @@ void DeepSleepController::performActivate(uint32_t timeOut, bool nwStandbyMode)
         _deepsleepStartTime = MonotonicClock::now();
 
         // Perform the deep sleep operation
-        _nwStandbyMode             = nwStandbyMode;
         _deepSleepWakeupTimeoutSec = timeOut;
 
         _deepSleepDelaySec = 0; // reset before reading override; prevents stale value persisting across activations
