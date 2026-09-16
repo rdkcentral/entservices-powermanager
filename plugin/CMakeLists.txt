@@ -21,6 +21,8 @@ set(PLUGIN_IMPLEMENTATION ${MODULE_NAME}Implementation)
 
 set(PLUGIN_POWERMANAGER_AUTOSTART "false" CACHE STRING "Automatically start PowerManager plugin")
 set(PLUGIN_POWERMANAGER_STARTUPORDER "30" CACHE STRING "To configure startup order of PowerManager plugin")
+set(PLUGIN_POWERMANAGER_SCHEDULES_FILE "/mnt/secure_storage/pwrmgr/schedules.stg" CACHE STRING
+    "Filesystem path for deep-sleep wakeup schedules persistence file")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
@@ -85,6 +87,10 @@ include_directories(
 set_target_properties(${PLUGIN_IMPLEMENTATION} PROPERTIES
         CXX_STANDARD 11
         CXX_STANDARD_REQUIRED YES)
+
+target_compile_definitions(${PLUGIN_IMPLEMENTATION}
+                           PRIVATE
+                             POWERMANAGER_SCHEDULES_FILE=\"${PLUGIN_POWERMANAGER_SCHEDULES_FILE}\")
 
 if(RDK_SERVICES_L1_TEST OR RDK_SERVICE_L2_TEST)
 

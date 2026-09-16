@@ -194,12 +194,9 @@ DeepSleepController::DeepSleepController(INotification& parent, std::shared_ptr<
 DeepSleepController::~DeepSleepController()
 {
     LOGINFO(">> DTOR");
-    if (_deepSleepDelayJob.IsValid()) {
-        // Cancel the delay timer if it is still active
-        _workerPool.Revoke(_deepSleepDelayJob);
-        _deepSleepDelayJob.Release();
-        LOGINFO("Deepsleep delayed job cancelled");
-    }
+    // Revoke queued jobs and wait for any in-flight dispatch to finish before
+    // destroying the controller, since both jobs capture `this`.
+    cancelPendingWorkerJobs();
     LOGINFO("<< DTOR");
 }
 
@@ -217,10 +214,19 @@ uint32_t DeepSleepController::GetLastWakeupKeyCode(int& keyCode) const
 uint32_t DeepSleepController::Activate(uint32_t timeOut, bool nwStandbyMode)
 {
     LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
-    _workerPool.Submit(LambdaJob::Create([this, timeOut, nwStandbyMode]() {
+
+    // Replace any previous queued Activate job so teardown can always Revoke the latest,
+    // and so a stale queued activation (from a prior call) doesn't race this new one.
+    if (_activateJob.IsValid()) {
+        _workerPool.Revoke(_activateJob);
+        _activateJob.Release();
+    }
+
+    _activateJob = LambdaJob::Create([this, timeOut, nwStandbyMode]() {
         LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
         performActivate(timeOut, nwStandbyMode);
-    }));
+    });
+    _workerPool.Submit(_activateJob);
 
     return WPEFramework::Core::ERROR_NONE;
 }
@@ -228,12 +234,7 @@ uint32_t DeepSleepController::Activate(uint32_t timeOut, bool nwStandbyMode)
 // deactivate deep sleep mode
 uint32_t DeepSleepController::Deactivate()
 {
-    if (_deepSleepDelayJob.IsValid()) {
-        // Cancel the delay timer if it is still active
-        _workerPool.Revoke(_deepSleepDelayJob);
-        _deepSleepDelayJob.Release();
-        LOGINFO("Deepsleep delayed job cancelled");
-    }
+    cancelPendingWorkerJobs();
 
     uint32_t errorCode = platform().DeepSleepWakeup();
 
@@ -242,6 +243,21 @@ uint32_t DeepSleepController::Deactivate()
     LOGINFO("Deepsleep wakeup completed, errorCode: %u", errorCode);
 
     return errorCode;
+}
+
+void DeepSleepController::cancelPendingWorkerJobs()
+{
+    if (_activateJob.IsValid()) {
+        _workerPool.Revoke(_activateJob);
+        _activateJob.Release();
+        LOGINFO("Deepsleep activate job cancelled");
+    }
+
+    if (_deepSleepDelayJob.IsValid()) {
+        _workerPool.Revoke(_deepSleepDelayJob);
+        _deepSleepDelayJob.Release();
+        LOGINFO("Deepsleep delayed job cancelled");
+    }
 }
 
 bool DeepSleepController::read_integer_conf(const char* file_name, uint32_t& val)

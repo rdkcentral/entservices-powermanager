@@ -81,13 +81,15 @@ public:
         if (_wakeupScheduleRegister != nullptr) {
             auto nearest = _wakeupScheduleRegister->getNearestWakeupSchedule();
             if (nearest != nullptr) {
-                const auto now = static_cast<WakeupScheduleRegister::UnixTime>(time(nullptr));
+                const time_t nowTime = time(nullptr);
+                if (nowTime == static_cast<time_t>(-1)) {
+                    return _settings.deepSleepTimeout();
+                }
+                const auto now = static_cast<WakeupScheduleRegister::UnixTime>(nowTime);
                 const uint32_t secondsUntilWakeup = (nearest->unixTime > now)
                     ? static_cast<uint32_t>(nearest->unixTime - now)
                     : 1U;
-                // A pending schedule always governs the timeout, regardless of any separately
-                // configured value: Settings::deepSleepTimeout() owns this precedence decision.
-                return _settings.deepSleepTimeout(true, secondsUntilWakeup);
+                return secondsUntilWakeup;
             }
         }
 
@@ -199,6 +201,7 @@ private:
     void enterDeepSleepNow();
     void deepSleepTimerWakeup();
     void performActivate(uint32_t timeOut, bool nwStandbyMode);
+    void cancelPendingWorkerJobs();
 
 private:
     INotification& _parent;
@@ -209,6 +212,7 @@ private:
     uint32_t _deepSleepDelaySec;         // Duration to wait before entering deep sleep mode
     uint32_t _deepSleepWakeupTimeoutSec; // Total duration for which the system remains in deep sleep mode
 
+    WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> _activateJob;       // Queued Activate() -> performActivate() job
     WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> _deepSleepDelayJob; // Job to handle delay before entering deepsleep
 
     bool _nwStandbyMode; // Flag to indicate if network standby mode is enabled
