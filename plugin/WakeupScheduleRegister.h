@@ -21,6 +21,7 @@
 #define WAKEUP_SCHEDULE_REGISTER_H
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
@@ -415,10 +416,18 @@ class WakeupScheduleRegister
 
         if (!file)
         {
-            INFO_LOG("%s(): file does not exist or cannot be opened, path = '%s'", __FUNCTION__, path);
-            clearSchedules(wakeupSchedules);
-            clearSchedules(pastWakeupSchedules);
-            return Successful;
+            const int openError = errno;
+            if (openError == ENOENT)
+            {
+                INFO_LOG("%s(): file does not exist, path = '%s'", __FUNCTION__, path);
+                clearSchedules(wakeupSchedules);
+                clearSchedules(pastWakeupSchedules);
+                return Successful;
+            }
+
+            ERROR_LOG("%s(): failed to open existing schedule path for reading, path = '%s', error = %d (%s)",
+                __FUNCTION__, path, openError, std::strerror(openError));
+            return status;
         }
 
         fseek(file, 0, SEEK_END);
@@ -987,7 +996,8 @@ class WakeupScheduleRegister
         return schedule;
     }
 
-    bool isAlphaNumeric(const char* input)
+  public:
+    static bool isAlphaNumeric(const char* input)
     {
         const char* p = input;
         bool result = true;
@@ -1004,6 +1014,7 @@ class WakeupScheduleRegister
         return p != input ? result : false;
     }
 
+  private:
     const char* powerStateToString(PowerState powerState)
     {
         return powerState == Operational   ? "Operational"   :

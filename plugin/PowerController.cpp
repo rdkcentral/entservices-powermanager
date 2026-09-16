@@ -146,7 +146,7 @@ uint32_t PowerController::ActivateDeepSleep()
     const uint32_t timeout = _deepSleepWakeupSettings.timeout();
     uint32_t errCode = SetWakeupSourceConfig({{ WakeupSrcType::WAKEUP_SRC_TIMER, timeout != 0 }});
     if (errCode != WPEFramework::Core::ERROR_NONE) {
-        LOGERR("Failed to set TIMER wakeup source config: %u", errCode);
+        LOGINFO("Failed to set TIMER wakeup source config: %u", errCode);
         return errCode;
     }
 #ifdef CUSTOM_LGI

@@ -197,7 +197,7 @@ namespace Plugin {
         inline bool isSyncStateChange(PowerState currState, PowerState newState) const;
 
         // DeepSleepController::INotification
-        virtual void onDeepSleepTimerWakeup(const int wakeupTimeout) override;
+        virtual void onDeepSleepTimerWakeup(const int wakeupTimeout, WakeupReason wakeupReason) override;
         virtual void onDeepSleepUserWakeup(const bool userWakeup) override;
         virtual void onDeepSleepFailed() override;
         virtual uint32_t getPowerState(PowerState& currentState, PowerState& prevState) const override;
