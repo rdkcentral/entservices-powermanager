@@ -29,6 +29,7 @@ class RebootController {
     template <typename T>
     static inline typename T::rep now()
     {
+        struct timespec bootTime {};		
 #ifdef CLOCK_BOOTTIME
         if (clock_gettime(CLOCK_BOOTTIME, &bootTime) == 0) {
             const auto elapsed = std::chrono::seconds(bootTime.tv_sec) + std::chrono::nanoseconds(bootTime.tv_nsec);
