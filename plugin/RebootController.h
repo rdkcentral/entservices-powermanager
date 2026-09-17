@@ -29,7 +29,6 @@ class RebootController {
     template <typename T>
     static inline typename T::rep now()
     {
-        struct timespec bootTime {};		
 #ifdef CLOCK_BOOTTIME
         struct timespec bootTime{};
         if (clock_gettime(CLOCK_BOOTTIME, &bootTime) == 0) {
