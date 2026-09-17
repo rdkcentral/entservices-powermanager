@@ -344,11 +344,12 @@ namespace Plugin {
         return errorCode;
     }
 
-    // state change is sync only if transitioning from DEEP_SLEEP => LIGHT_SLEEP
+    // Wake transitions from DEEP_SLEEP to standby states are synchronous.
     bool PowerManagerImplementation::isSyncStateChange(PowerState currState, PowerState newState) const
     {
         return (currState == PowerState::POWER_STATE_STANDBY_DEEP_SLEEP
-            && newState == PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+            && (newState == PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP
+                || newState == PowerState::POWER_STATE_STANDBY));
     }
 
     // SetPowerState takes in a request to change PowerState, notify PowerModePreChange all reqistered clients
@@ -1239,9 +1240,13 @@ namespace Plugin {
         LOGINFO(">> DeepSleep timedout: %d", wakeupTimeout);
         dispatchDeepSleepTimeoutEvent(wakeupTimeout);
 
-        /*Scheduled maintanace reboot is disabled. Instead state will change to LIGHT_SLEEP*/
+#ifdef CUSTOM_LGI
+        LOGINFO("Set Device to standby on Deep Sleep timer expiry");
+        SetPowerState(0, PowerState::POWER_STATE_STANDBY, "DeepSleep timedout");
+#else
         LOGINFO("Set Device to light sleep on Deep Sleep timer expiry");
         SetPowerState(0, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "DeepSleep timedout");
+#endif
         LOGINFO("<<");
     }
 
