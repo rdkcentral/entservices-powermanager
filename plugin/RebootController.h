@@ -31,6 +31,7 @@ class RebootController {
     {
         struct timespec bootTime {};		
 #ifdef CLOCK_BOOTTIME
+        struct timespec bootTime{};
         if (clock_gettime(CLOCK_BOOTTIME, &bootTime) == 0) {
             const auto elapsed = std::chrono::seconds(bootTime.tv_sec) + std::chrono::nanoseconds(bootTime.tv_nsec);
             return std::chrono::duration_cast<T>(elapsed).count();
