@@ -1239,9 +1239,13 @@ namespace Plugin {
         LOGINFO(">> DeepSleep timedout: %d", wakeupTimeout);
         dispatchDeepSleepTimeoutEvent(wakeupTimeout);
 
-        /*Scheduled maintanace reboot is disabled. Instead state will change to LIGHT_SLEEP*/
+#ifdef CUSTOM_LGI
+        LOGINFO("Set Device to standby on Deep Sleep timer expiry");
+        SetPowerState(0, PowerState::POWER_STATE_STANDBY, "DeepSleep timedout");
+#else
         LOGINFO("Set Device to light sleep on Deep Sleep timer expiry");
         SetPowerState(0, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "DeepSleep timedout");
+#endif
         LOGINFO("<<");
     }
 
