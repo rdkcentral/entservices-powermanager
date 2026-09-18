@@ -1,0 +1,5 @@
+boot:
+  command: bootReason
+  params:
+    reason: "MAINTENANCE_REBOOT"
+
