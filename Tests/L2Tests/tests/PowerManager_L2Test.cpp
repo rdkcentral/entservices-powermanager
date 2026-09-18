@@ -45,6 +45,26 @@ using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
 using ThermalTemperature = WPEFramework::Exchange::IPowerManager::ThermalTemperature;
 using WakeupReason = WPEFramework::Exchange::IPowerManager::WakeupReason;
 
+namespace {
+PowerState expectedTimerWakeupState()
+{
+#ifdef CUSTOM_LGI
+    return PowerState::POWER_STATE_STANDBY;
+#else
+    return PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP;
+#endif
+}
+
+PWRMgr_PowerState_t expectedTimerWakeupHalState()
+{
+#ifdef CUSTOM_LGI
+    return PWRMGR_POWERSTATE_STANDBY;
+#else
+    return PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP;
+#endif
+}
+}
+
 typedef enum : uint32_t {
     POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED = 0x00000001,
     POWERMANAGERL2TEST_THERMALSTATE_CHANGED=0x00000002,
@@ -780,7 +800,7 @@ TEST_F(PowerManager_L2Test, deepSleepOnThermalChange)
                      }))
                     .WillOnce(::testing::Invoke(
                         [](PWRMgr_PowerState_t powerState) {
-                            EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                            EXPECT_EQ(powerState, expectedTimerWakeupHalState());
                             return PWRMGR_SUCCESS;
                      }));
 
@@ -1249,7 +1269,7 @@ TEST_F(PowerManager_L2Test,DeepSleepInvalidWakeup)
                         }))
                     .WillOnce(::testing::Invoke(
                         [](PWRMgr_PowerState_t powerState) {
-                            EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                            EXPECT_EQ(powerState, expectedTimerWakeupHalState());
                             return PWRMGR_SUCCESS;
                         }));
 
@@ -1291,7 +1311,7 @@ TEST_F(PowerManager_L2Test,DeepSleepInvalidWakeup)
 
                 status = PowerManagerPlugin->GetPowerState(newState, prevState);
                 EXPECT_EQ(status, Core::ERROR_NONE);
-                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(newState, expectedTimerWakeupState());
 
                 PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IRebootNotification>());
                 PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
