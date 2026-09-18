@@ -232,15 +232,32 @@ uint32_t PowerController::GetWakeupSourceConfig(std::list<WPEFramework::Exchange
 
 uint32_t PowerController::Reboot(const string& requestor, const string& reasonCustom, const string& reasonOther)
 {
-    _workerPool.Submit(LambdaJob::Create([requestor, reasonCustom, reasonOther]() {
+    /* Security: sanitize shell arguments to prevent injection via single-quote
+     * breakout or other metacharacters in rebootNow.sh arguments.
+     * Allow only alphanumeric chars, spaces, hyphens, underscores, and periods. */
+    auto sanitizeArg = [](const std::string &input) -> std::string {
+        std::string out;
+        out.reserve(input.size());
+        for (char c : input) {
+            if (std::isalnum(static_cast<unsigned char>(c)) || c == ' ' || c == '-' || c == '_' || c == '.') {
+                out += c;
+            }
+        }
+        return out;
+    };
+    std::string safeRequestor    = sanitizeArg(requestor);
+    std::string safeReasonCustom = sanitizeArg(reasonCustom);
+    std::string safeReasonOther  = sanitizeArg(reasonOther);
+
+    _workerPool.Submit(LambdaJob::Create([safeRequestor, safeReasonCustom, safeReasonOther]() {
         v_secure_system("echo 0 > /opt/.rebootFlag");
 
         LOGINFO("------------FINAL REBOOT NOTICE----------\n\tRebooting device requestor: %s, reasonCustom: %s, reasonOther: %s",
-            requestor.c_str(), reasonCustom.c_str(), reasonOther.c_str());
+            safeRequestor.c_str(), safeReasonCustom.c_str(), safeReasonOther.c_str());
         if (0 == access("/rebootNow.sh", F_OK)) {
-            v_secure_system("/rebootNow.sh -s '%s' -r '%s' -o '%s'", requestor.c_str(), reasonCustom.c_str(), reasonOther.c_str());
+            v_secure_system("/rebootNow.sh -s '%s' -r '%s' -o '%s'", safeRequestor.c_str(), safeReasonCustom.c_str(), safeReasonOther.c_str());
         } else {
-            v_secure_system("/lib/rdk/rebootNow.sh -s '%s' -r '%s' -o '%s'", requestor.c_str(), reasonCustom.c_str(), reasonOther.c_str());
+            v_secure_system("/lib/rdk/rebootNow.sh -s '%s' -r '%s' -o '%s'", safeRequestor.c_str(), safeReasonCustom.c_str(), safeReasonOther.c_str());
         }
     }));
 
