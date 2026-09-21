@@ -93,6 +93,12 @@ if(OVERRIDE_NEGOTIATION_ON_TPS)
                                 OVERRIDE_NEGOTIATION_ON_TPS)
 endif()
 
+if(CUSTOM_LGI)
+    target_compile_definitions(${PLUGIN_IMPLEMENTATION}
+                               PRIVATE
+                                 CUSTOM_LGI)
+endif()
+
 if(RDK_SERVICES_L1_TEST OR RDK_SERVICE_L2_TEST)
 
     target_compile_definitions(${PLUGIN_IMPLEMENTATION}

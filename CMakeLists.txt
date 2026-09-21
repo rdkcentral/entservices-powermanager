@@ -27,6 +27,10 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/")
 
 # This configuration enables generation of Test binaries which can be used to test respective plugins.
 option(TESTBINARIES "Generate plugin specific test binaries" OFF)
+
+option(CUSTOM_LGI
+       "Enable CUSTOM_LGI behavior: transition to standby after a deep-sleep timer wakeup" OFF)
+
 if(TESTBINARIES)
     message(INFO "Enabling test binaries")
     add_subdirectory(Tests)
