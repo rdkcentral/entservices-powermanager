@@ -81,6 +81,11 @@ public:
         return WPEFramework::Core::ERROR_NONE;
     }
 
+    inline uint32_t GetDeepSleepWakeupDuration() const
+    {
+        return _deepSleepWakeupSettings.getWakeupDuration();
+    }
+
     uint32_t SetNetworkStandbyMode(const bool standbyMode);
     uint32_t GetNetworkStandbyMode(bool& standbyMode) const;
     uint32_t SetWakeupSourceConfig(const std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig>& configs);

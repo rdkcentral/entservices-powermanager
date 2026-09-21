@@ -21,7 +21,9 @@
 
 #include "Module.h"
 
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 
 #include <com/com.h>
@@ -200,6 +202,24 @@ namespace Plugin {
         virtual void onThermalTemperatureChanged(const ThermalTemperature cur_Thermal_Level, const ThermalTemperature new_Thermal_Level, const float current_Temp) override;
         virtual void onDeepSleepForThermalChange() override;
 
+#ifdef CUSTOM_LGI
+        /* Structure to hold the lifetime information for re-sleep jobs */
+        typedef struct _ReSleepLifetime {
+            std::mutex mutex;
+            std::condition_variable condition;
+            bool shuttingDown { false };
+            uint32_t activeCallbacks { 0 };
+        } ReSleepLifetime_t;
+
+        std::shared_ptr<ReSleepLifetime_t> _reSleepLifetime;
+
+        /* Cancels (revokes + releases) any pending _reSleepJob under _reSleepJobLock. */
+        /* Safe to call even if no job is currently scheduled. */
+        void cancelReSleepJob();
+
+        uint64_t _reSleepGeneration { 0 };
+#endif
+
         template <typename T>
         Core::hresult Register(std::list<T*>& list, T* notification);
         template <typename T>
@@ -218,6 +238,15 @@ namespace Plugin {
         ThermalController _thermalController;
 
         friend class Job;
+
+        WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> _reSleepJob; /* Job to resleep after maintenance */
+#ifdef CUSTOM_LGI
+        // Guards all reads/writes of _reSleepJob (IsValid/Revoke/Release/assign/Schedule),
+        // since it is touched from multiple call sites (destructor, SetPowerState,
+        // onDeepSleepTimerWakeup, onDeepSleepFailed, onDeepSleepForThermalChange) that can
+        // run on different WorkerPool/JSON-RPC threads.
+        mutable Core::CriticalSection _reSleepJobLock;
+#endif
     };
 } // namespace Plugin
 } // namespace WPEFramework

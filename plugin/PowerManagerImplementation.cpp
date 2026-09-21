@@ -22,6 +22,7 @@
 
 #include "PowerManagerImplementation.h"
 
+#include "LambdaJob.h"
 #include "PowerUtils.h"
 #include "UtilsIarm.h"
 #include "UtilsLogging.h"
@@ -40,6 +41,8 @@ using WakeupSourceConfigIteratorImpl = WPEFramework::Core::Service<WPEFramework:
 int WPEFramework::Plugin::PowerManagerImplementation::PreModeChangeController::_nextTransactionId = 0;
 uint32_t WPEFramework::Plugin::PowerManagerImplementation::_nextClientId                          = 0;
 uint32_t WPEFramework::Plugin::PowerManagerImplementation::_nextAckClientId                       = 0;
+
+
 
 #ifndef POWER_MODE_PRECHANGE_TIMEOUT_SEC
 #define POWER_MODE_PRECHANGE_TIMEOUT_SEC 1
@@ -70,6 +73,9 @@ namespace Plugin {
         , _controller(nullptr)
         , _modeChangeController(nullptr)
         , _modeChangeAckController(nullptr)
+#ifdef CUSTOM_LGI
+        , _reSleepLifetime(std::make_shared<ReSleepLifetime_t>())
+#endif
         , _deepSleepController(DeepSleepController::Create(*this))
         , _powerController(PowerController::Create(_deepSleepController))
         , _thermalController(ThermalController::Create(*this))
@@ -83,7 +89,40 @@ namespace Plugin {
     PowerManagerImplementation::~PowerManagerImplementation()
     {
         LOGINFO(">> DTOR <<");
+#ifdef CUSTOM_LGI
+        auto lifetime = _reSleepLifetime;
+        /* Sets the lifetime of resleep job as shutting down */
+        {
+            std::lock_guard<std::mutex> lock(lifetime->mutex);
+            lifetime->shuttingDown = true;
+        }
+        /* Cancel any pending re-sleep job,revokes the job*/
+        cancelReSleepJob();
+
+        /* Wait for all active callbacks to complete,
+           so if setpowerstate to ON in progress its finished */
+        {
+            std::unique_lock<std::mutex> lock(lifetime->mutex);
+            lifetime->condition.wait(lock, [&lifetime]() {
+                return lifetime->activeCallbacks == 0;
+            });
+        }
+#endif
     }
+
+#ifdef CUSTOM_LGI
+    void PowerManagerImplementation::cancelReSleepJob()
+    {
+        _reSleepJobLock.Lock();
+        ++_reSleepGeneration ;
+        if (_reSleepJob.IsValid())
+        {
+            Core::IWorkerPool::Instance().Revoke(_reSleepJob);
+            _reSleepJob.Release();
+        }
+        _reSleepJobLock.Unlock();
+    }
+#endif
 
     void PowerManagerImplementation::dispatchPowerModeChangedEvent(const PowerState& prevState, const PowerState& newState)
     {
@@ -385,6 +424,17 @@ namespace Plugin {
 
         LOGINFO("selfLock Acquired");
 
+#ifdef CUSTOM_LGI
+        if (POWER_STATE_ON == newState)
+        {
+            LOGINFO("New state requested is POWER_STATE_ON");
+            /* Cancel while holding the state-transition lock so a wakeup
+             * callback cannot schedule a re-sleep job after ON checked an
+             * empty job but before the ON transition completed. */
+            cancelReSleepJob();
+        }
+#endif
+
         uint32_t errorCode = GetPowerState(currState, prevState);
 
         // Cannot determine current state, won't be able to process request
@@ -450,7 +500,6 @@ namespace Plugin {
                 LOGINFO("Device wakeup from DEEP_SLEEP to %s", util::str(newState));
                 _deepSleepController.Deactivate();
             }
-
             _apiLock.Lock();
 
             // If we're already in the acknowledgement negotiation, reject this request
@@ -1241,17 +1290,109 @@ namespace Plugin {
 
     void PowerManagerImplementation::onDeepSleepTimerWakeup(const int wakeupTimeout)
     {
-        LOGINFO(">> DeepSleep timedout: %d", wakeupTimeout);
+        LOGINFO(">> DeepSleep timedout: %d, DeepSleepWakeupDuration: %d", wakeupTimeout,_powerController.GetDeepSleepWakeupDuration());
+
+#ifdef CUSTOM_LGI
+        uint32_t errorCode = Core::ERROR_NONE;
+        /* Before scheduling a new job, defensively cancel any stale leftover job */
+        cancelReSleepJob();
+#endif
+
         dispatchDeepSleepTimeoutEvent(wakeupTimeout);
 
 #ifdef CUSTOM_LGI
-        LOGINFO("Set Device to standby on Deep Sleep timer expiry");
-        SetPowerState(0, PowerState::POWER_STATE_STANDBY, "DeepSleep timedout");
+            /*Scheduled maintenance reboot is disabled. Instead state will change to LIGHT_SLEEP*/
+            LOGINFO("Set Device to active standby on Deep Sleep timer expiry");
+            errorCode = SetPowerState(0, PowerState::POWER_STATE_STANDBY, "DeepSleep timedout");
+            /* Box waking up when in maintenance window,
+               so we need to wait for sometime on wakeup ,thereby goto deep sleep*/
+            if((_powerController.GetDeepSleepWakeupDuration() > 0) && (errorCode == Core::ERROR_NONE))
+            {
+                LOGINFO("Waiting for %d seconds before power state change", _powerController.GetDeepSleepWakeupDuration());
+
+                /* Schedule job to re-enter deep sleep after wakeupduration time.
+                 * Deliberately use the non-owning ::LambdaJob (not the
+                 * PowerManagerImplementation::LambdaJob nested class), which
+                 * does not AddRef/Release `this`. The resleep job can remain
+                 * scheduled for a long window (the full wakeup duration), and
+                 * an owning ref would keep this object alive indefinitely
+                 * (and prevent ~PowerManagerImplementation from ever running,
+                 * since object destruction requires refcount 0), so the
+                 * destructor's cancelReSleepJob() could never execute to
+                 * revoke it -- if the plugin were deactivated/destroyed
+                 * during this window, the job would eventually fire against
+                 * an object the rest of the system already considers gone.
+                 * With a non-owning job, destruction proceeds normally and
+                 * cancelReSleepJob() safely revokes any pending job first. */
+                auto lifetime = _reSleepLifetime;
+                _reSleepJobLock.Lock();
+                 const uint64_t generation = _reSleepGeneration;
+                 PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+                PowerState previousState = PowerState::POWER_STATE_UNKNOWN;
+                _powerController.GetPowerState(currentState, previousState);
+
+                /* Check if the job can be scheduled,
+                  if _reSleepGeneration is incremented means resleep job is invalidated */
+                const bool canSchedule =
+                    (generation == _reSleepGeneration) &&
+                    (currentState == PowerState::POWER_STATE_STANDBY);
+
+                if (canSchedule) {
+                    _reSleepJob = ::LambdaJob::Create([this, lifetime, generation]() {
+                        {
+                            std::unique_lock<std::mutex> lock(lifetime->mutex);
+                            /* If the destruction process has begun,
+                                exit early to avoid invoking the callback .
+                            */
+                            if (lifetime->shuttingDown) {
+                                return;
+                            }
+                            /* Increment the count of active callbacks i.e callback the sets the power state as standby */
+                            ++lifetime->activeCallbacks;
+                        }
+
+                        _reSleepJobLock.Lock();
+                        PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+                        PowerState previousState = PowerState::POWER_STATE_UNKNOWN;
+                        _powerController.GetPowerState(currentState, previousState);
+
+                        /* Rechecking the validity of the resleep job and power state */
+                        const bool valid =
+                            (generation == _reSleepGeneration) &&
+                            (currentState == PowerState::POWER_STATE_STANDBY);
+                        _reSleepJobLock.Unlock();
+
+                        if (valid) {
+                            LOGINFO("Re-entering deep sleep on Deep Sleep timer expiry");
+                            SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "DeepSleep timedout");
+                        }
+
+                        std::unique_lock<std::mutex> lock(lifetime->mutex);
+                        /* Decrement the count of active callbacks as the above callback has finished executing */
+                        --lifetime->activeCallbacks;
+                        if (lifetime->activeCallbacks == 0) {
+                            lifetime->condition.notify_all();
+                        }
+                    });
+
+                    WPEFramework::Core::WorkerPool::Instance().Schedule(
+                        WPEFramework::Core::Time(
+                            WPEFramework::Core::Time::Now().Add(_powerController.GetDeepSleepWakeupDuration() * 1000)),
+                        _reSleepJob);
+                }
+                _reSleepJobLock.Unlock();
+            }
+            else
+            {
+                LOGERR("Fail to deep sleep,powerstate is standby,wakeupduration:%d, errorCode:%u", _powerController.GetDeepSleepWakeupDuration(), errorCode);
+            }
 #else
-        LOGINFO("Set Device to light sleep on Deep Sleep timer expiry");
-        SetPowerState(0, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "DeepSleep timedout");
+            /*Scheduled maintenance reboot is disabled. Instead state will change to LIGHT_SLEEP*/
+            LOGINFO("Set Device to light sleep on Deep Sleep timer expiry");
+            SetPowerState(0, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "DeepSleep timedout");
 #endif
         LOGINFO("<<");
+
     }
 
     void PowerManagerImplementation::onDeepSleepUserWakeup(const bool userWakeup)
@@ -1273,6 +1414,12 @@ namespace Plugin {
 
 #ifdef PLATCO_BOOTTO_STANDBY
         newState = PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP;
+#endif
+
+#ifdef CUSTOM_LGI
+            newState = PowerState::POWER_STATE_STANDBY;
+            /* If deep sleep failed, cancelling re-sleep job */
+            cancelReSleepJob();
 #endif
         LOGINFO(">> Failed to enter DeepSleep, moving to powerState: %s", util::str(newState));
         t2_event_d((char*)"SYST_ERR_DSModeFail", 1);
@@ -1303,7 +1450,12 @@ namespace Plugin {
 
     void PowerManagerImplementation::onDeepSleepForThermalChange()
     {
-        /*Scheduled maintanace reboot is disabled. Instead state will change to LIGHT_SLEEP*/
+#ifdef CUSTOM_LGI
+            /* If _reSleepJob  is still pending when thermal logic forces deep sleep,
+               cancel it to avoid a double ActivateDeepSleep() call */
+            cancelReSleepJob();
+#endif
+        /*Scheduled maintenance reboot is disabled. Instead state will change to LIGHT_SLEEP*/
         LOGINFO(">> Set device to deepsleep on ThermalChange");
         SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "DeepSleep on Thermal change");
         LOGINFO("<<");
