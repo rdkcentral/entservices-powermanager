@@ -28,6 +28,10 @@ endif()
 
 add_library(${MODULE_NAME} SHARED ${SRC_FILES})
 
+if(CUSTOM_LGI)
+    target_compile_definitions(${MODULE_NAME} PRIVATE CUSTOM_LGI)
+endif()
+
 set_target_properties(${MODULE_NAME} PROPERTIES
         CXX_STANDARD 14
         CXX_STANDARD_REQUIRED YES)

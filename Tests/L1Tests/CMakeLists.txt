@@ -119,6 +119,10 @@ add_plugin_test_ex(PLUGIN_POWERMANAGER "tests/test_PowerManager.cpp;tests/test_P
 
 add_library(${MODULE_NAME} SHARED ${TEST_SRC})
 
+if(CUSTOM_LGI)
+    target_compile_definitions(${MODULE_NAME} PRIVATE CUSTOM_LGI)
+endif()
+
 set_source_files_properties(
         tests/test_PowerManager.cpp
         tests/test_PowerManagerSettings.cpp
@@ -146,5 +150,4 @@ target_include_directories(${MODULE_NAME}
 
 install(TARGETS ${MODULE_NAME} DESTINATION lib)
 write_config(${PLUGIN_NAME})
-
 

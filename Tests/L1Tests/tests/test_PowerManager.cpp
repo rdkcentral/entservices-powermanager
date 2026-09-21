@@ -48,6 +48,27 @@ using ::testing::NiceMock;
 
 using WakeupReason  = WPEFramework::Exchange::IPowerManager::WakeupReason;
 using WakeupSrcType = WPEFramework::Exchange::IPowerManager::WakeupSrcType;
+using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
+
+namespace {
+PWRMgr_PowerState_t expectedTimerWakeupHalState()
+{
+#ifdef CUSTOM_LGI
+    return PWRMGR_POWERSTATE_STANDBY;
+#else
+    return PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP;
+#endif
+}
+
+PowerState expectedTimerWakeupState()
+{
+#ifdef CUSTOM_LGI
+    return PowerState::POWER_STATE_STANDBY;
+#else
+    return PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP;
+#endif
+}
+}
 
 #define TEST_LOG(x, ...) fprintf(stderr, "\033[1;32m[%s:%d](%s)<PID:%d><TID:%d>" x "\n\033[0m", __FILE__, __LINE__, __FUNCTION__, getpid(), gettid(), ##__VA_ARGS__); fflush(stderr);
 
@@ -1618,7 +1639,7 @@ TEST_F(TestPowerManager, DeepSleepTimerWakeup)
             }))
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
-                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(powerState, expectedTimerWakeupHalState());
                 return PWRMGR_SUCCESS;
             }));
 
@@ -1633,7 +1654,7 @@ TEST_F(TestPowerManager, DeepSleepTimerWakeup)
         .WillOnce(::testing::Invoke(
             [&](const PowerState prevState, const PowerState newState) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
-                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(newState, expectedTimerWakeupState());
                 wg.Done();
             }));
 
@@ -1717,7 +1738,7 @@ TEST_F(TestPowerManager, DeepSleepDelayedTimerWakeup)
             }))
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
-                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(powerState, expectedTimerWakeupHalState());
                 return PWRMGR_SUCCESS;
             }));
 
@@ -1732,7 +1753,7 @@ TEST_F(TestPowerManager, DeepSleepDelayedTimerWakeup)
         .WillOnce(::testing::Invoke(
             [&](const PowerState prevState, const PowerState newState) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
-                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(newState, expectedTimerWakeupState());
                 wg.Done();
             }));
 
@@ -1827,7 +1848,7 @@ TEST_F(TestPowerManager, DeepSleepDelayNotPersistedAfterFileRemoved)
         .WillOnce(::testing::Invoke(
             [&wg1](const PowerState prevState, const PowerState newState) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
-                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(newState, expectedTimerWakeupState());
                 wg1.Done();
             }))
         .WillOnce(::testing::Invoke(
@@ -1837,7 +1858,7 @@ TEST_F(TestPowerManager, DeepSleepDelayNotPersistedAfterFileRemoved)
         .WillOnce(::testing::Invoke(
             [&wg2](const PowerState prevState, const PowerState newState) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
-                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(newState, expectedTimerWakeupState());
                 wg2.Done();
             }));
 
@@ -1937,7 +1958,7 @@ TEST_F(TestPowerManager, DeepSleepInvalidWakeup)
             }))
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
-                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(powerState, expectedTimerWakeupHalState());
                 return PWRMGR_SUCCESS;
             }));
 
@@ -1950,7 +1971,7 @@ TEST_F(TestPowerManager, DeepSleepInvalidWakeup)
         .WillOnce(::testing::Invoke(
             [](const PowerState prevState, const PowerState newState) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
-                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(newState, expectedTimerWakeupState());
             }));
 
     Core::ProxyType<DeepSleepWakeupEvent> deepSleepTimeout = Core::ProxyType<DeepSleepWakeupEvent>::Create();
@@ -2021,7 +2042,7 @@ TEST_F(TestPowerManager, DeepSleepEarlyWakeup)
             }))
         .WillOnce(::testing::Invoke(
             [](PWRMgr_PowerState_t powerState) {
-                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(powerState, expectedTimerWakeupHalState());
                 return PWRMGR_SUCCESS;
             }));
 
@@ -2036,7 +2057,7 @@ TEST_F(TestPowerManager, DeepSleepEarlyWakeup)
         .WillOnce(::testing::Invoke(
             [&](const PowerState prevState, const PowerState newState) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
-                EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_EQ(newState, expectedTimerWakeupState());
                 wg.Done();
             }));
 
