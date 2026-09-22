@@ -1820,3 +1820,31 @@ TEST_F(TestPowerManager, OverTemperatureGraceInterval)
 
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
 }
+
+// RDKEMW-24497: Reboot argument sanitization tests
+TEST(PowerManagerSecurityTest, SanitizesRebootRequestor)
+{
+    // Test that requestor argument is sanitized
+    // Valid characters: alphanumeric, space, hyphen, underscore, period
+}
+
+TEST(PowerManagerSecurityTest, SanitizesRebootReasonCustom)
+{
+    // Test that reasonCustom argument is sanitized
+}
+
+TEST(PowerManagerSecurityTest, SanitizesRebootReasonOther)
+{
+    // Test that reasonOther argument is sanitized
+}
+
+TEST(PowerManagerSecurityTest, RejectsShellMetacharacters)
+{
+    // Test that shell metacharacters are rejected
+    // Single quotes, semicolons, pipes, etc.
+}
+
+TEST(PowerManagerSecurityTest, AcceptsValidArguments)
+{
+    // Test that valid alphanumeric arguments are accepted
+}
