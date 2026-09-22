@@ -98,9 +98,9 @@ private:
     int fetchRFCValueInt(const char* key);
 
 private:
-    WPEFramework::Core::IWorkerPool& _workerPool;
+    Thunder::Core::IWorkerPool& _workerPool;
     const Settings& _settings;
     Threshold _forcedRebootThreshold;
-    WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> _heartbeatJob;
+    Thunder::Core::ProxyType<Thunder::Core::IDispatch> _heartbeatJob;
     bool _rfcUpdated;
 };

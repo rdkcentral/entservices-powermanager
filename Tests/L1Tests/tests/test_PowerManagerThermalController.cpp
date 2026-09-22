@@ -41,9 +41,9 @@
 #include "PowerManagerHalMock.h"
 #include "MfrMock.h"
 
-using namespace WPEFramework;
-using ThermalTemperature = WPEFramework::Exchange::IPowerManager::ThermalTemperature;
-using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
+using namespace Thunder;
+using ThermalTemperature = Thunder::Exchange::IPowerManager::ThermalTemperature;
+using PowerState = Thunder::Exchange::IPowerManager::PowerState;
 
 class WaitGroup {
 public:
@@ -135,7 +135,7 @@ public:
                 [](PowerState& currentState, PowerState& prevState) {
                     currentState = PowerState::POWER_STATE_UNKNOWN;
                     prevState = PowerState::POWER_STATE_UNKNOWN;
-                    return WPEFramework::Core::ERROR_UNAVAILABLE;
+                    return Thunder::Core::ERROR_UNAVAILABLE;
                 }));
 
         // called from ThermalController constructor in initializeThermalProtection
@@ -316,7 +316,7 @@ TEST_F(TestThermalController, ignoresPollingWhileInDeepSleep)
                 currentState = PowerState::POWER_STATE_STANDBY_DEEP_SLEEP;
                 prevState = PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP;
                 wg.Done();
-                return WPEFramework::Core::ERROR_NONE;
+                return Thunder::Core::ERROR_NONE;
             }));
 
     EXPECT_CALL(*p_mfrMock, mfrGetTemperature(::testing::_, ::testing::_, ::testing::_)).Times(0);

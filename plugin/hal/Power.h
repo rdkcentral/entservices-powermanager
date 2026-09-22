@@ -28,8 +28,8 @@ namespace power {
 
     // Power APIs
     class IPlatform {
-        using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
-        using WakeupSrcType = WPEFramework::Exchange::IPowerManager::WakeupSrcType;
+        using PowerState = Thunder::Exchange::IPowerManager::PowerState;
+        using WakeupSrcType = Thunder::Exchange::IPowerManager::WakeupSrcType;
 
     public:
         virtual ~IPlatform() {}

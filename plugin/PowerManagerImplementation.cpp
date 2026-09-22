@@ -33,12 +33,12 @@
 #define STANDBY_REASON_FILE "/opt/standbyReason.txt"
 
 using util                           = PowerUtils;
-using WakeupSourceConfig             = WPEFramework::Exchange::IPowerManager::WakeupSourceConfig;
-using IWakeupSourceConfigIterator    = WPEFramework::Exchange::IPowerManager::IWakeupSourceConfigIterator;
-using WakeupSourceConfigIteratorImpl = WPEFramework::Core::Service<WPEFramework::RPC::IteratorType<IWakeupSourceConfigIterator>>;
+using WakeupSourceConfig             = Thunder::Exchange::IPowerManager::WakeupSourceConfig;
+using IWakeupSourceConfigIterator    = Thunder::Exchange::IPowerManager::IWakeupSourceConfigIterator;
+using WakeupSourceConfigIteratorImpl = Thunder::Core::Service<Thunder::RPC::IteratorType<IWakeupSourceConfigIterator>>;
 
-int WPEFramework::Plugin::PowerManagerImplementation::PreModeChangeController::_nextTransactionId = 0;
-uint32_t WPEFramework::Plugin::PowerManagerImplementation::_nextClientId                          = 0;
+int Thunder::Plugin::PowerManagerImplementation::PreModeChangeController::_nextTransactionId = 0;
+uint32_t Thunder::Plugin::PowerManagerImplementation::_nextClientId                          = 0;
 
 #ifndef POWER_MODE_PRECHANGE_TIMEOUT_SEC
 #define POWER_MODE_PRECHANGE_TIMEOUT_SEC 1
@@ -51,7 +51,7 @@ static constexpr int kTransientDeepsleepThresholdSec = 5;
 
 using namespace std;
 
-namespace WPEFramework {
+namespace Thunder {
 namespace Plugin {
 
     SERVICE_REGISTRATION(PowerManagerImplementation, 1, 0);
@@ -344,7 +344,7 @@ namespace Plugin {
     //    - This was introduced because immerse ui was not launching if there is a direct transition from DEEP_SLEEP => ON (see RDKEMW-5633)
     Core::hresult PowerManagerImplementation::SetPowerState(const int keyCode, const PowerState newState, const string& reason)
     {
-        static WPEFramework::Core::BinairySemaphore selfLock{ 1, 1 };
+        static Thunder::Core::BinairySemaphore selfLock{ 1, 1 };
         static constexpr uint32_t kSelfLockRetryIntervalMs = 1000;
 
         PowerState currState = POWER_STATE_UNKNOWN;

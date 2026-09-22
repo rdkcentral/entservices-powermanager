@@ -30,7 +30,7 @@ using util = PowerUtils;
 
 class SettingsV1 {
 
-    using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
+    using PowerState = Thunder::Exchange::IPowerManager::PowerState;
 
     static constexpr const uint32_t UIMGR_SETTINGS_MAGIC = 0xFEBEEFAC;
     static constexpr const uint32_t PADDING_SIZE         = 32; // There is no strong reason to use padding, but maintained for compatibility

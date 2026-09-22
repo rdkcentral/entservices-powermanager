@@ -43,7 +43,7 @@
  *            from the instantiating class.
  */
 class AckController : public std::enable_shared_from_this<AckController> {
-    using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
+    using PowerState = Thunder::Exchange::IPowerManager::PowerState;
 
 public:
     /**
@@ -51,10 +51,10 @@ public:
      *        The TransactionId is unique for each instance.
      */
     AckController(PowerState powerState)
-        : _workerPool(WPEFramework::Core::WorkerPool::Instance())
+        : _workerPool(Thunder::Core::WorkerPool::Instance())
         , _powerState(powerState)
         , _transactionId(++_nextTransactionId)
-        , _timeout(WPEFramework::Core::Time::Now())
+        , _timeout(Thunder::Core::Time::Now())
         , _handler(nullptr)
         , _running(false)
     {
@@ -103,20 +103,20 @@ public:
      */
     uint32_t Ack(const uint32_t clientId, const int transactionId)
     {
-        uint32_t status = WPEFramework::Core::ERROR_NONE;
+        uint32_t status = Thunder::Core::ERROR_NONE;
 
         do {
 
             if (transactionId != _transactionId) {
                 LOGERR("Invalid transactionId: %d", transactionId);
-                status = WPEFramework::Core::ERROR_INVALID_PARAMETER;
+                status = Thunder::Core::ERROR_INVALID_PARAMETER;
                 break;
             }
 
             const auto it = _pending.find(clientId);
             if (it == _pending.cend()) {
                 LOGERR("Invalid clientId: %u", clientId);
-                status = WPEFramework::Core::ERROR_INVALID_PARAMETER;
+                status = Thunder::Core::ERROR_INVALID_PARAMETER;
                 break;
             }
 
@@ -202,7 +202,7 @@ public:
             _handler                          = std::move(handler);
 
             // If timeout is already set (via Reschedule), use max of offset or timeout
-            auto newTimeout = WPEFramework::Core::Time::Now().Add(offsetInMilliseconds);
+            auto newTimeout = Thunder::Core::Time::Now().Add(offsetInMilliseconds);
             _timeout        = std::max(newTimeout, _timeout);
 
             _timerJob = LambdaJob::Create([wPtr]() {
@@ -239,30 +239,30 @@ public:
      */
     uint32_t Reschedule(const uint32_t clientId, const int transactionId, const int offsetInMilliseconds)
     {
-        uint32_t status = WPEFramework::Core::ERROR_NONE;
+        uint32_t status = Thunder::Core::ERROR_NONE;
         ASSERT(nullptr != _handler);
 
         do {
-            auto newTimeout = WPEFramework::Core::Time::Now().Add(offsetInMilliseconds);
+            auto newTimeout = Thunder::Core::Time::Now().Add(offsetInMilliseconds);
 
             // If Reschedule is called even before Schedule, cache the timeout value
             // use timeout value later when Schedule gets called
             if (!_running) {
                 _timeout = std::max(_timeout, newTimeout);
-                status = WPEFramework::Core::ERROR_NONE;
+                status = Thunder::Core::ERROR_NONE;
                 break;
             }
 
             if (transactionId != _transactionId) {
                 LOGERR("Invalid transactionId: %d", transactionId);
-                status = WPEFramework::Core::ERROR_INVALID_PARAMETER;
+                status = Thunder::Core::ERROR_INVALID_PARAMETER;
                 break;
             }
 
             const auto it = _pending.find(clientId);
             if (it == _pending.cend()) {
                 LOGERR("Invalid clientId: %u", clientId);
-                status = WPEFramework::Core::ERROR_INVALID_PARAMETER;
+                status = Thunder::Core::ERROR_INVALID_PARAMETER;
                 break;
             }
 
@@ -319,13 +319,13 @@ private:
     }
 
 private:
-    using TimerJob = WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch>;
+    using TimerJob = Thunder::Core::ProxyType<Thunder::Core::IDispatch>;
 
-    WPEFramework::Core::IWorkerPool& _workerPool; // Thunder worker pool
+    Thunder::Core::IWorkerPool& _workerPool; // Thunder worker pool
     PowerState _powerState;                       // target / next powerState to change
     std::unordered_set<uint32_t> _pending;        // Set of pending acknowledgements.
     int _transactionId;                           // Unique transaction ID for each AckController instance.
-    WPEFramework::Core::Time _timeout;            // Absolute timeout value for _timerJob (not duration)
+    Thunder::Core::Time _timeout;            // Absolute timeout value for _timerJob (not duration)
     TimerJob _timerJob;                           // job scheduler to timeout
     std::function<void(bool, bool)> _handler;     // Completion handler to be called on timeout or all acknowledgements.
     std::atomic<bool> _running;                   // Flag to synchronize timer timeout callback and Ack* APIs.

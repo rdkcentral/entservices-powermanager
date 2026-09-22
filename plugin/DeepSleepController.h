@@ -36,7 +36,7 @@
 #include "hal/DeepSleepImpl.h" // for DeepSleepImpl
 
 // forward declarations
-namespace WPEFramework {
+namespace Thunder {
 namespace Core {
     struct IDispatch;
     struct IWorkerPool;
@@ -111,8 +111,8 @@ class DeepSleepController {
 
     using MonotonicClock = std::chrono::steady_clock;
     using Timestamp      = std::chrono::time_point<MonotonicClock>;
-    using WakeupReason   = WPEFramework::Exchange::IPowerManager::WakeupReason;
-    using PowerState     = WPEFramework::Exchange::IPowerManager::PowerState;
+    using WakeupReason   = Thunder::Exchange::IPowerManager::WakeupReason;
+    using PowerState     = Thunder::Exchange::IPowerManager::PowerState;
     using IPlatform      = hal::deepsleep::IPlatform;
     using DefaultImpl    = DeepSleepImpl;
 
@@ -211,14 +211,14 @@ private:
 
 private:
     INotification& _parent;
-    WPEFramework::Core::IWorkerPool& _workerPool;
+    Thunder::Core::IWorkerPool& _workerPool;
     Timestamp _deepsleepStartTime;
     std::shared_ptr<IPlatform> _platform;
     DeepSleepState _deepSleepState;
     uint32_t _deepSleepDelaySec;         // Duration to wait before entering deep sleep mode
     uint32_t _deepSleepWakeupTimeoutSec; // Total duration for which the system remains in deep sleep mode
 
-    WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> _deepSleepDelayJob; // Job to handle delay before entering deepsleep
+    Thunder::Core::ProxyType<Thunder::Core::IDispatch> _deepSleepDelayJob; // Job to handle delay before entering deepsleep
 
     bool _nwStandbyMode; // Flag to indicate if network standby mode is enabled
 

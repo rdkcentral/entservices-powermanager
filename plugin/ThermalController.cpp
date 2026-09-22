@@ -59,16 +59,16 @@ uint32_t ThermalController::GetThermalState(ThermalTemperature &curLevel, float 
     _therm_mutex->unlock();
     LOGINFO("curTemperature: %d, curLevel %d", m_cur_Thermal_Value, int(m_cur_Thermal_Level));
 
-    return WPEFramework::Core::ERROR_NONE;
+    return Thunder::Core::ERROR_NONE;
 }
 
 uint32_t ThermalController::GetTemperatureThresholds(float &tempHigh,float &tempCritical) const
 {
-    uint32_t retCode = WPEFramework::Core::ERROR_GENERAL;
+    uint32_t retCode = Thunder::Core::ERROR_GENERAL;
 
     retCode = platform().GetTemperatureThresholds(tempHigh, tempCritical);
 
-    if (retCode == WPEFramework::Core::ERROR_NONE) {
+    if (retCode == Thunder::Core::ERROR_NONE) {
         LOGINFO("Current thermal threshold : %f , %f ", tempHigh, tempCritical);
     } else {
         LOGERR("Failed to get thermal thresholds. Error code: %u", retCode);
@@ -78,7 +78,7 @@ uint32_t ThermalController::GetTemperatureThresholds(float &tempHigh,float &temp
 
 uint32_t ThermalController::SetTemperatureThresholds(float tempHigh,float tempCritical)
 {
-    uint32_t retCode = WPEFramework::Core::ERROR_NONE;
+    uint32_t retCode = Thunder::Core::ERROR_NONE;
 
     LOGINFO("Setting thermal threshold : %f , %f ", tempHigh,tempCritical);  //CID:127982 ,127475,103705 - Print_args
 
@@ -89,10 +89,10 @@ uint32_t ThermalController::SetTemperatureThresholds(float tempHigh,float tempCr
 
 uint32_t ThermalController::GetOvertempGraceInterval(int &graceInterval) const
 {
-    uint32_t retCode = WPEFramework::Core::ERROR_NONE;
+    uint32_t retCode = Thunder::Core::ERROR_NONE;
 
     graceInterval = rebootThreshold.graceInterval;
-    retCode = WPEFramework::Core::ERROR_NONE;
+    retCode = Thunder::Core::ERROR_NONE;
     LOGINFO("Current over temparature grace interval : %d", graceInterval);
 
     return retCode;
@@ -100,7 +100,7 @@ uint32_t ThermalController::GetOvertempGraceInterval(int &graceInterval) const
 
 uint32_t ThermalController::SetOvertempGraceInterval(int graceInterval)
 {
-    uint32_t retCode = WPEFramework::Core::ERROR_NONE;
+    uint32_t retCode = Thunder::Core::ERROR_NONE;
 
     if(graceInterval >= 0 )
     {
@@ -112,11 +112,11 @@ uint32_t ThermalController::SetOvertempGraceInterval(int graceInterval)
 
         _grace_interval_mutex->unlock();
 
-        retCode = WPEFramework::Core::ERROR_NONE;
+        retCode = Thunder::Core::ERROR_NONE;
     }
     else
     {
-        retCode = WPEFramework::Core::ERROR_INVALID_PARAMETER;
+        retCode = Thunder::Core::ERROR_INVALID_PARAMETER;
     }
 
     return retCode;
@@ -155,7 +155,7 @@ void ThermalController::initializeThermalProtection()
         }
 #endif
 
-        if(WPEFramework::Core::ERROR_NONE != platform().SetTemperatureThresholds(declockThreshold.concern, declockThreshold.critical))
+        if(Thunder::Core::ERROR_NONE != platform().SetTemperatureThresholds(declockThreshold.concern, declockThreshold.critical))
         {
             LOGINFO("*****Critical*** Fails to set temperature thresholds.. ");
         }
@@ -306,7 +306,7 @@ void ThermalController::declockIfNeeded()
     {
         if (cur_Cpu_Speed != PLAT_CPU_SPEED_MINIMAL) {
             LOGINFO("Temperature threshold crossed (%d) !!!! Switching to minimal mode !!", m_cur_Thermal_Value);
-            if ( WPEFramework::Core::ERROR_NONE != platform().SetClockSpeed(PLAT_CPU_SPEED_MINIMAL))
+            if ( Thunder::Core::ERROR_NONE != platform().SetClockSpeed(PLAT_CPU_SPEED_MINIMAL))
             {
                 LOGERR("SetClockSpeed Failed");
             }
@@ -322,7 +322,7 @@ void ThermalController::declockIfNeeded()
             /* Switching from normal to scaled */
             LOGINFO("CPU Scaling threshold crossed (%d) !!!! Switching to scaled mode (%d) from normal mode(%d) !!",
                 m_cur_Thermal_Value,PLAT_CPU_SPEED_SCALED,PLAT_CPU_SPEED_NORMAL );
-            if ( WPEFramework::Core::ERROR_NONE != platform().SetClockSpeed(PLAT_CPU_SPEED_SCALED))
+            if ( Thunder::Core::ERROR_NONE != platform().SetClockSpeed(PLAT_CPU_SPEED_SCALED))
             {
                 LOGERR("SetClockSpeed Failed");
             }
@@ -342,7 +342,7 @@ void ThermalController::declockIfNeeded()
             {
                 LOGINFO("CPU Scaling threshold crossed (%d) !!!! Switching to scaled mode (%d) from minimal mode(%d) !!",
                     m_cur_Thermal_Value,PLAT_CPU_SPEED_SCALED,PLAT_CPU_SPEED_MINIMAL );
-                if ( WPEFramework::Core::ERROR_NONE != platform().SetClockSpeed(PLAT_CPU_SPEED_SCALED))
+                if ( Thunder::Core::ERROR_NONE != platform().SetClockSpeed(PLAT_CPU_SPEED_SCALED))
                 {
                     LOGERR("SetClockSpeed Failed");
                 }
@@ -366,7 +366,7 @@ void ThermalController::declockIfNeeded()
             {
                 LOGINFO(" CPU rescaling threshold crossed (%d) !!!! Switching to normal mode !!",
                     m_cur_Thermal_Value );
-                if ( WPEFramework::Core::ERROR_NONE != platform().SetClockSpeed(PLAT_CPU_SPEED_NORMAL))
+                if ( Thunder::Core::ERROR_NONE != platform().SetClockSpeed(PLAT_CPU_SPEED_NORMAL))
                 {
                     LOGERR("SetClockSpeed Failed");
                 }
@@ -400,7 +400,7 @@ void ThermalController::pollThermalLevels()
     while(!_stopThread)
     {
         const uint32_t powerStateResult = _parent.getPowerState(currentPowerState, prevPowerState);
-        if ((WPEFramework::Core::ERROR_NONE == powerStateResult) && (PowerState::POWER_STATE_STANDBY_DEEP_SLEEP == currentPowerState)){
+        if ((Thunder::Core::ERROR_NONE == powerStateResult) && (PowerState::POWER_STATE_STANDBY_DEEP_SLEEP == currentPowerState)){
             LOGINFO("Ignoring Thermal polling in DEEPSLEEP state");
 			sleep(thermal_poll_interval);
             continue;
@@ -408,7 +408,7 @@ void ThermalController::pollThermalLevels()
 
         _therm_mutex->lock();
         uint32_t result = platform().GetTemperature(state, current_Temp, current_WifiTemp);//m_cur_Thermal_Level
-        if(WPEFramework::Core::ERROR_NONE == result)
+        if(Thunder::Core::ERROR_NONE == result)
         {
             if(m_cur_Thermal_Level != state)//State changed, need to broadcast
             {
@@ -441,7 +441,7 @@ void ThermalController::pollThermalLevels()
 
         _therm_mutex->unlock();
 
-        if(WPEFramework::Core::ERROR_NONE == result)
+        if(Thunder::Core::ERROR_NONE == result)
         {
             _grace_interval_mutex->lock();
             /* Check if we should enter deepsleep based on the current temperature */

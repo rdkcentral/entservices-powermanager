@@ -26,10 +26,10 @@
 
 #include "UtilsLogging.h"
 
-using PowerState         = WPEFramework::Exchange::IPowerManager::PowerState;
-using ThermalTemperature = WPEFramework::Exchange::IPowerManager::ThermalTemperature;
+using PowerState         = Thunder::Exchange::IPowerManager::PowerState;
+using ThermalTemperature = Thunder::Exchange::IPowerManager::ThermalTemperature;
 
-namespace WPEFramework {
+namespace Thunder {
 namespace Plugin {
 
     class PowerManager : public PluginHost::IPlugin, public PluginHost::JSONRPC {
@@ -168,4 +168,4 @@ namespace Plugin {
     };
 
 } // namespace Plugin
-} // namespace WPEFramework
+} // namespace Thunder

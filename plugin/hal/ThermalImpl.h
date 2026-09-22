@@ -35,7 +35,7 @@ typedef enum _PWRMgr_ThermalState_t {
 } PWRMgr_ThermalState_t;
 
 class ThermalImpl : public hal::Thermal::IPlatform {
-    using ThermalTemperature = WPEFramework::Exchange::IPowerManager::ThermalTemperature;
+    using ThermalTemperature = Thunder::Exchange::IPowerManager::ThermalTemperature;
 
     // delete copy constructor and assignment operator
     ThermalImpl(const ThermalImpl&) = delete;
@@ -85,14 +85,14 @@ public:
 
     virtual uint32_t GetTemperatureThresholds(float &tempHigh,float &tempCritical) const override
     {
-        uint32_t result = WPEFramework::Core::ERROR_GENERAL;
+        uint32_t result = Thunder::Core::ERROR_GENERAL;
         int high = 0;
         int critical = 0;
 
         mfrError_t response = mfrGetTempThresholds(&high, &critical);
         if(mfrERR_NONE == response)
         {
-            result = WPEFramework::Core::ERROR_NONE;
+            result = Thunder::Core::ERROR_NONE;
             tempHigh = (float)high;
             tempCritical = (float)critical;
         }
@@ -106,7 +106,7 @@ public:
     {
         LOGINFO("Setting High Temperature Threshold as : %0.6f and Critical Temperature Threshold as : %0.6f",tempHigh, tempCritical);
         mfrError_t response = mfrSetTempThresholds(tempHigh,tempCritical);
-        uint32_t result = (response == mfrERR_NONE) ?WPEFramework::Core::ERROR_NONE:WPEFramework::Core::ERROR_GENERAL;
+        uint32_t result = (response == mfrERR_NONE) ?Thunder::Core::ERROR_NONE:Thunder::Core::ERROR_GENERAL;
 
         return result;
     }
@@ -116,7 +116,7 @@ public:
         FILE* fp = fopen ("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq", "r");
         if (nullptr == fp) {
             LOGERR("Unable to open '/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq' for writing");
-            return WPEFramework::Core::ERROR_GENERAL;
+            return Thunder::Core::ERROR_GENERAL;
         }
 
         if(0 >= fscanf(fp, "%u", &speed)) {
@@ -124,7 +124,7 @@ public:
         }
         fclose(fp);  //CID:103784 - checked return
 
-        return WPEFramework::Core::ERROR_NONE;
+        return Thunder::Core::ERROR_NONE;
     }
 
     virtual uint32_t SetClockSpeed(uint32_t speed) override
@@ -136,7 +136,7 @@ public:
 
         if (nullptr == fp) {
             LOGERR("Unable to open '/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor' for writing");
-            return WPEFramework::Core::ERROR_GENERAL;
+            return Thunder::Core::ERROR_GENERAL;
         }
 
         /* Switch to 'userspace' mode */
@@ -146,21 +146,21 @@ public:
         fp = fopen ("/sys/devices/system/cpu/cpu0/cpufreq/scaling_setspeed", "w");
         if (nullptr == fp) {
             LOGERR("Unable to open '/sys/devices/system/cpu/cpu0/cpufreq/scaling_setspeed' for writing" );
-            return WPEFramework::Core::ERROR_GENERAL;
+            return Thunder::Core::ERROR_GENERAL;
         }
 
         /* Set the desired speed */
         fprintf(fp, "%u", speed);
         fclose(fp);
 
-        if (GetClockSpeed(cur_speed) != WPEFramework::Core::ERROR_NONE ) {
+        if (GetClockSpeed(cur_speed) != Thunder::Core::ERROR_NONE ) {
             LOGERR("Failed to read current CPU speed");
-            return WPEFramework::Core::ERROR_NONE;
+            return Thunder::Core::ERROR_NONE;
         }
 
         LOGINFO("Clock speed set to [%d]", cur_speed );
 
-        return (speed == cur_speed) ? WPEFramework::Core::ERROR_NONE : WPEFramework::Core::ERROR_GENERAL;
+        return (speed == cur_speed) ? Thunder::Core::ERROR_NONE : Thunder::Core::ERROR_GENERAL;
     }
 
     virtual uint32_t DetemineClockSpeeds(uint32_t &cpu_rate_Normal, uint32_t &cpu_rate_Scaled, uint32_t &cpu_rate_Minimal) override
@@ -176,7 +176,7 @@ public:
         fp = fopen ("/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_frequencies", "r");
         if (nullptr == fp) {
             LOGERR("Unable to open '/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_frequencies' for reading");
-            return WPEFramework::Core::ERROR_GENERAL;
+            return Thunder::Core::ERROR_GENERAL;
         }
 
         /* Determine available frequencies */
@@ -186,7 +186,7 @@ public:
         if (numFreqs<=0) {
             LOGERR("**ERROR** Unable to read sacaling frequencies!");
             fclose(fp);  //CID:158617 - Resource leak
-            return WPEFramework::Core::ERROR_GENERAL;
+            return Thunder::Core::ERROR_GENERAL;
         }
 
         /* Ensure frequencies are sorted */
@@ -205,7 +205,7 @@ public:
         if (!cpu_rate_Normal)  cpu_rate_Normal = normal;
         if (!cpu_rate_Scaled)  cpu_rate_Scaled = scaled;
         if (!cpu_rate_Minimal) cpu_rate_Minimal = minimal;
-        return WPEFramework::Core::ERROR_NONE;
+        return Thunder::Core::ERROR_NONE;
     }
 
     virtual uint32_t GetTemperature(ThermalTemperature &curState, float &curTemperature, float &wifiTemperature) const override
@@ -213,7 +213,7 @@ public:
         mfrTemperatureState_t state = mfrTEMPERATURE_NORMAL;
         int temperatureValue        = 0;
         int wifiTempValue           = 0;
-        uint32_t retValue           = WPEFramework::Core::ERROR_GENERAL;
+        uint32_t retValue           = Thunder::Core::ERROR_GENERAL;
 
         mfrError_t result = mfrGetTemperature(&state, &temperatureValue, &wifiTempValue);
 
@@ -253,7 +253,7 @@ public:
             curState = conv((PWRMgr_ThermalState_t)state);
             curTemperature = temperatureValue;
             wifiTemperature = wifiTempValue;
-            retValue = WPEFramework::Core::ERROR_NONE;
+            retValue = Thunder::Core::ERROR_NONE;
         }
 
         return retValue;

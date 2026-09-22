@@ -39,11 +39,11 @@
 #define POWERMANAGER_MOCK (*p_powerManagerHalMock)
 
 using ::testing::NiceMock;
-using namespace WPEFramework;
+using namespace Thunder;
 using testing::StrictMock;
-using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
-using ThermalTemperature = WPEFramework::Exchange::IPowerManager::ThermalTemperature;
-using WakeupReason = WPEFramework::Exchange::IPowerManager::WakeupReason;
+using PowerState = Thunder::Exchange::IPowerManager::PowerState;
+using ThermalTemperature = Thunder::Exchange::IPowerManager::ThermalTemperature;
+using WakeupReason = Thunder::Exchange::IPowerManager::WakeupReason;
 
 typedef enum : uint32_t {
     POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED = 0x00000001,
@@ -576,10 +576,10 @@ void PowerManager_L2Test::Test_PowerStateChange( Exchange::IPowerManager* PowerM
     }
 }
 
-using IWakeupSourceConfigIterator  = WPEFramework::Exchange::IPowerManager::IWakeupSourceConfigIterator;
-using WakeupSourceConfigIteratorImpl = WPEFramework::Core::Service<WPEFramework::RPC::IteratorType<IWakeupSourceConfigIterator>>;
-using WakeupSrcConfig           = WPEFramework::Exchange::IPowerManager::WakeupSourceConfig;
-using WakeupSrcType             = WPEFramework::Exchange::IPowerManager::WakeupSrcType;
+using IWakeupSourceConfigIterator  = Thunder::Exchange::IPowerManager::IWakeupSourceConfigIterator;
+using WakeupSourceConfigIteratorImpl = Thunder::Core::Service<Thunder::RPC::IteratorType<IWakeupSourceConfigIterator>>;
+using WakeupSrcConfig           = Thunder::Exchange::IPowerManager::WakeupSourceConfig;
+using WakeupSrcType             = Thunder::Exchange::IPowerManager::WakeupSrcType;
 
 /* COM-RPC tests */
 void PowerManager_L2Test::Test_WakeupSrcConfig( Exchange::IPowerManager* PowerManagerPlugin )
@@ -594,7 +594,7 @@ void PowerManager_L2Test::Test_WakeupSrcConfig( Exchange::IPowerManager* PowerMa
                 return PWRMGR_SUCCESS;
             }));
 
-    std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig> configs = {{WakeupSrcType::WAKEUP_SRC_VOICE, true}};
+    std::list<Thunder::Exchange::IPowerManager::WakeupSourceConfig> configs = {{WakeupSrcType::WAKEUP_SRC_VOICE, true}};
     auto wakeupsrcsSetIter = WakeupSourceConfigIteratorImpl::Create<IWakeupSourceConfigIterator>(configs);
 
     status = PowerManagerPlugin->SetWakeupSourceConfig(wakeupsrcsSetIter);
@@ -619,14 +619,14 @@ void PowerManager_L2Test::Test_WakeupSrcConfig( Exchange::IPowerManager* PowerMa
                 }
             }));
 
-    WPEFramework::RPC::IIteratorType<WakeupSrcConfig, WPEFramework::Exchange::IDS::ID_POWER_MANAGER_WAKEUP_SRC_ITERATOR>* wakeupsrcsGetIter;
+    Thunder::RPC::IIteratorType<WakeupSrcConfig, Thunder::Exchange::IDS::ID_POWER_MANAGER_WAKEUP_SRC_ITERATOR>* wakeupsrcsGetIter;
 
     status = PowerManagerPlugin->GetWakeupSourceConfig(wakeupsrcsGetIter);
     EXPECT_EQ(status, Core::ERROR_NONE);
 
     bool ok = false;
 
-    WPEFramework::Exchange::IPowerManager::WakeupSourceConfig config{WakeupSrcType::WAKEUP_SRC_UNKNOWN, false};
+    Thunder::Exchange::IPowerManager::WakeupSourceConfig config{WakeupSrcType::WAKEUP_SRC_UNKNOWN, false};
     while (wakeupsrcsGetIter->Next(config)) {
         if (WakeupSrcType::WAKEUP_SRC_VOICE == config.wakeupSource) {
             EXPECT_TRUE(config.enabled);

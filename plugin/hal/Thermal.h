@@ -22,7 +22,7 @@
 namespace hal {
 namespace Thermal {
     class IPlatform {
-        using ThermalTemperature = WPEFramework::Exchange::IPowerManager::ThermalTemperature;
+        using ThermalTemperature = Thunder::Exchange::IPowerManager::ThermalTemperature;
 
     public:
         virtual ~IPlatform() {}

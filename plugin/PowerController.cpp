@@ -31,10 +31,10 @@
 #include "PowerController.h"
 #include "PowerUtils.h"
 
-using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
-using WakeupSrcType = WPEFramework::Exchange::IPowerManager::WakeupSrcType;
-using WakeupReason = WPEFramework::Exchange::IPowerManager::WakeupReason;
-using WakeupSourceConfig = WPEFramework::Exchange::IPowerManager::WakeupSourceConfig;
+using PowerState = Thunder::Exchange::IPowerManager::PowerState;
+using WakeupSrcType = Thunder::Exchange::IPowerManager::WakeupSrcType;
+using WakeupReason = Thunder::Exchange::IPowerManager::WakeupReason;
+using WakeupSourceConfig = Thunder::Exchange::IPowerManager::WakeupSourceConfig;
 using IPlatform = hal::power::IPlatform;
 using DefaultImpl = PowerImpl;
 using util = PowerUtils;
@@ -45,7 +45,7 @@ PowerController::PowerController(DeepSleepController& deepSleep, std::unique_ptr
     , _lastKnownPowerState(PowerState::POWER_STATE_ON)
     , _settings(Settings::Load(m_settingsFile))
     , _deepSleepWakeupSettings(_settings)
-    , _workerPool(WPEFramework::Core::WorkerPool::Instance())
+    , _workerPool(Thunder::Core::WorkerPool::Instance())
     , _wakeupTimestamp{}
     , _deepSleep(deepSleep)
 #ifdef OFFLINE_MAINT_REBOOT
@@ -79,7 +79,7 @@ void PowerController::init()
 
         uint32_t errorCode = platform().GetPowerState(currentState);
 
-        if (WPEFramework::Core::ERROR_NONE != errorCode) {
+        if (Thunder::Core::ERROR_NONE != errorCode) {
             LOGINFO("Failed to get current power state from platform: %u", errorCode);
             break;
         }
@@ -91,7 +91,7 @@ void PowerController::init()
 
         errorCode = SetPowerState(0, _settings.powerState(), "Initialization");
 
-        if (WPEFramework::Core::ERROR_NONE == errorCode) {
+        if (Thunder::Core::ERROR_NONE == errorCode) {
             LOGINFO("Successfull at syncing powerState %s with hardware", util::str(_settings.powerState()));
             break;
         }
@@ -116,7 +116,7 @@ uint32_t PowerController::SetPowerState(const int keyCode, const PowerState powe
     if (access("/tmp/ignoredeepsleep", F_OK) == 0) {
         if (PowerState::POWER_STATE_STANDBY_DEEP_SLEEP == powerState) {
             LOGINFO("Ignoring DEEPSLEEP state due to tmp override /tmp/ignoredeepsleep");
-            return WPEFramework::Core::ERROR_ILLEGAL_STATE;
+            return Thunder::Core::ERROR_ILLEGAL_STATE;
         }
     }
 
@@ -124,7 +124,7 @@ uint32_t PowerController::SetPowerState(const int keyCode, const PowerState powe
 
     /* Independent of Deep sleep */
     uint32_t errCode = platform().SetPowerState(powerState);
-    if (WPEFramework::Core::ERROR_NONE != errCode) {
+    if (Thunder::Core::ERROR_NONE != errCode) {
         LOGERR("Failed to set power state: %u", errCode);
     } else {
         _settings.SetPowerState(powerState);
@@ -151,7 +151,7 @@ uint32_t PowerController::SetNetworkStandbyMode(const bool standbyMode)
 {
     if (standbyMode == _settings.nwStandbyMode()) {
         LOGINFO("Network Standby mode is already set to %s", standbyMode ? "Enabled" : "Disabled");
-        return WPEFramework::Core::ERROR_NONE;
+        return Thunder::Core::ERROR_NONE;
     }
 
     std::list<WakeupSourceConfig> configs = {
@@ -161,7 +161,7 @@ uint32_t PowerController::SetNetworkStandbyMode(const bool standbyMode)
 
     uint32_t errorCode = SetWakeupSourceConfig(configs);
 
-    if (WPEFramework::Core::ERROR_NONE == errorCode) {
+    if (Thunder::Core::ERROR_NONE == errorCode) {
 
         _settings.SetNwStandbyMode(standbyMode);
 
@@ -169,7 +169,7 @@ uint32_t PowerController::SetNetworkStandbyMode(const bool standbyMode)
 
         if (!ok) {
             LOGERR("Failed to save settings");
-            errorCode = WPEFramework::Core::ERROR_GENERAL;
+            errorCode = Thunder::Core::ERROR_GENERAL;
         }
     }
 
@@ -179,30 +179,30 @@ uint32_t PowerController::SetNetworkStandbyMode(const bool standbyMode)
 uint32_t PowerController::GetNetworkStandbyMode(bool& standbyMode) const
 {
     standbyMode = _settings.nwStandbyMode();
-    return WPEFramework::Core::ERROR_NONE;
+    return Thunder::Core::ERROR_NONE;
 }
 
-uint32_t PowerController::SetWakeupSourceConfig(const std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig>& configs)
+uint32_t PowerController::SetWakeupSourceConfig(const std::list<Thunder::Exchange::IPowerManager::WakeupSourceConfig>& configs)
 {
     bool failed = false;
 
     for (auto& config : configs) {
         bool supported = false;
         int result = platform().SetWakeupSrc(config.wakeupSource, config.enabled, supported);
-        if (WPEFramework::Core::ERROR_NONE != result && supported) {
+        if (Thunder::Core::ERROR_NONE != result && supported) {
             // latch failed status
             failed = true;
         }
     }
 
-    uint32_t errorCode = failed ? WPEFramework::Core::ERROR_GENERAL : WPEFramework::Core::ERROR_NONE;
+    uint32_t errorCode = failed ? Thunder::Core::ERROR_GENERAL : Thunder::Core::ERROR_NONE;
 
     LOGINFO("errorCode: %d", errorCode);
 
     return errorCode;
 }
 
-uint32_t PowerController::GetWakeupSourceConfig(std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig>& configs) const
+uint32_t PowerController::GetWakeupSourceConfig(std::list<Thunder::Exchange::IPowerManager::WakeupSourceConfig>& configs) const
 {
     bool failed = false;
 
@@ -213,7 +213,7 @@ uint32_t PowerController::GetWakeupSourceConfig(std::list<WPEFramework::Exchange
 
         uint32_t result = platform().GetWakeupSrc(wakeupSrc, enabled, supported);
 
-        if (WPEFramework::Core::ERROR_NONE == result) {
+        if (Thunder::Core::ERROR_NONE == result) {
             configs.push_back({ wakeupSrc, enabled });
         } else if (!supported) {
             // Not supported, won't append to config list
@@ -223,7 +223,7 @@ uint32_t PowerController::GetWakeupSourceConfig(std::list<WPEFramework::Exchange
             failed = true;
         }
     }
-    uint32_t errorCode = failed ? WPEFramework::Core::ERROR_GENERAL : WPEFramework::Core::ERROR_NONE;
+    uint32_t errorCode = failed ? Thunder::Core::ERROR_GENERAL : Thunder::Core::ERROR_NONE;
 
     LOGINFO("errorCode: %d", errorCode);
 
@@ -244,14 +244,14 @@ uint32_t PowerController::Reboot(const string& requestor, const string& reasonCu
         }
     }));
 
-    return WPEFramework::Core::ERROR_NONE;
+    return Thunder::Core::ERROR_NONE;
 }
 
 uint32_t PowerController::SetDeepSleepTimer(const int timeOut)
 {
     _deepSleepWakeupSettings.SetTimeout(timeOut);
     _settings.Save(m_settingsFile);
-    return WPEFramework::Core::ERROR_NONE;
+    return Thunder::Core::ERROR_NONE;
 }
 
 uint32_t PowerController::GetTimeSinceWakeup(uint32_t& secondsSinceWakeup)
@@ -259,7 +259,7 @@ uint32_t PowerController::GetTimeSinceWakeup(uint32_t& secondsSinceWakeup)
     // Return 0 if device is not in ON state
     if (_settings.powerState() != PowerState::POWER_STATE_ON) {
         secondsSinceWakeup = 0;
-        return WPEFramework::Core::ERROR_NONE;
+        return Thunder::Core::ERROR_NONE;
     }
 
     auto now = std::chrono::steady_clock::now();
@@ -274,5 +274,5 @@ uint32_t PowerController::GetTimeSinceWakeup(uint32_t& secondsSinceWakeup)
         secondsSinceWakeup = static_cast<uint32_t>(elapsedSeconds);
     }
 
-    return WPEFramework::Core::ERROR_NONE;
+    return Thunder::Core::ERROR_NONE;
 }

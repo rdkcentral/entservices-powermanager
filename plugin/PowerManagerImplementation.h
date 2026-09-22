@@ -37,12 +37,12 @@
 #include "PowerController.h"
 #include "ThermalController.h"
 
-using PowerState         = WPEFramework::Exchange::IPowerManager::PowerState;
-using WakeupReason       = WPEFramework::Exchange::IPowerManager::WakeupReason;
-using ThermalTemperature = WPEFramework::Exchange::IPowerManager::ThermalTemperature;
-using TimeSinceWakeup    = WPEFramework::Exchange::IPowerManager::TimeSinceWakeup;
+using PowerState         = Thunder::Exchange::IPowerManager::PowerState;
+using WakeupReason       = Thunder::Exchange::IPowerManager::WakeupReason;
+using ThermalTemperature = Thunder::Exchange::IPowerManager::ThermalTemperature;
+using TimeSinceWakeup    = Thunder::Exchange::IPowerManager::TimeSinceWakeup;
 
-namespace WPEFramework {
+namespace Thunder {
 namespace Plugin {
     class PowerManagerImplementation : public Exchange::IPowerManager, public DeepSleepController::INotification, public ThermalController::INotification {
     public:
@@ -207,4 +207,4 @@ namespace Plugin {
         friend class Job;
     };
 } // namespace Plugin
-} // namespace WPEFramework
+} // namespace Thunder

@@ -27,7 +27,7 @@
 #include "secure_wrapper.h" // for v_secure_system
 
 class DeepSleepImpl : public hal::deepsleep::IPlatform {
-    using WakeupReason = WPEFramework::Exchange::IPowerManager::WakeupReason;
+    using WakeupReason = Thunder::Exchange::IPowerManager::WakeupReason;
     using Utils = PowerUtils;
 
     // delete copy constructor and assignment operator
@@ -117,20 +117,20 @@ public:
     {
         switch (status) {
         case DEEPSLEEPMGR_SUCCESS:
-            return WPEFramework::Core::ERROR_NONE;
+            return Thunder::Core::ERROR_NONE;
         case DEEPSLEEPMGR_INVALID_ARGUMENT:
-            return WPEFramework::Core::ERROR_INVALID_PARAMETER;
+            return Thunder::Core::ERROR_INVALID_PARAMETER;
         case DEEPSLEEPMGR_ALREADY_INITIALIZED:
         case DEEPSLEEPMGR_NOT_INITIALIZED:
         case DEEPSLEEPMGR_INIT_FAILURE:
         case DEEPSLEEPMGR_WAKEUP_FAILURE:
         case DEEPSLEEPMGR_TERM_FAILURE:
-            return WPEFramework::Core::ERROR_GENERAL;
+            return Thunder::Core::ERROR_GENERAL;
         case DEEPSLEEPMGR_SET_FAILURE:
-            return WPEFramework::Core::ERROR_ABORTED;
+            return Thunder::Core::ERROR_ABORTED;
         default:
             LOGERR("Unknown status: %d", status);
-            return WPEFramework::Core::ERROR_GENERAL;
+            return Thunder::Core::ERROR_GENERAL;
         }
     }
 
@@ -147,7 +147,7 @@ public:
 
         uint32_t retCode = conv(status);
 
-        if (WPEFramework::Core::ERROR_NONE == retCode) {
+        if (Thunder::Core::ERROR_NONE == retCode) {
             LOGINFO("Device wake-up from Deepsleep Mode! GPIOWakeup: %d, networkStandby: %d",
                 isGPIOWakeup, networkStandby);
         } else {
@@ -163,7 +163,7 @@ public:
 
         uint32_t retCode = conv(status);
 
-        if (WPEFramework::Core::ERROR_NONE == retCode) {
+        if (Thunder::Core::ERROR_NONE == retCode) {
             LOGINFO("Device resumed from Deep sleep Mode, status :%s", str(status));
         } else {
             LOGERR("Failed to resume from deep sleep mode: %s", str(status));
@@ -179,7 +179,7 @@ public:
 
         uint32_t retCode = conv(status);
 
-        if (WPEFramework::Core::ERROR_NONE == retCode) {
+        if (Thunder::Core::ERROR_NONE == retCode) {
             wakeupReason = conv(reason);
         }
 
@@ -195,7 +195,7 @@ public:
 
         uint32_t retCode = conv(status);
 
-        if (WPEFramework::Core::ERROR_NONE == retCode) {
+        if (Thunder::Core::ERROR_NONE == retCode) {
             wakeupKeyCode = param.keyCode;
         }
 

@@ -28,7 +28,7 @@
 class SettingsV1;
 
 class Settings {
-    using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
+    using PowerState = Thunder::Exchange::IPowerManager::PowerState;
     using MonotonicClock = std::chrono::steady_clock;
     using Timestamp = std::chrono::time_point<MonotonicClock>;
 

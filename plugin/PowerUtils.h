@@ -23,9 +23,9 @@
 
 class PowerUtils {
 public:
-    static const char* str(const WPEFramework::Exchange::IPowerManager::WakeupReason reason);
-    static const char* str(const WPEFramework::Exchange::IPowerManager::PowerState state);
-    static const char* str(const WPEFramework::Exchange::IPowerManager::WakeupSrcType wakeupSrc);
+    static const char* str(const Thunder::Exchange::IPowerManager::WakeupReason reason);
+    static const char* str(const Thunder::Exchange::IPowerManager::PowerState state);
+    static const char* str(const Thunder::Exchange::IPowerManager::WakeupSrcType wakeupSrc);
 
-    static WPEFramework::Exchange::IPowerManager::WakeupSrcType conv(const std::string& wakeupSrc);
+    static Thunder::Exchange::IPowerManager::WakeupSrcType conv(const std::string& wakeupSrc);
 };

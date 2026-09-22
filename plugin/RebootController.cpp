@@ -36,7 +36,7 @@ using TimestampSec = std::chrono::time_point<std::chrono::steady_clock, std::chr
 static constexpr const int HEARTBEAT_INTERVAL_SEC = 300;
 
 RebootController::RebootController(const Settings& settings)
-    : _workerPool(WPEFramework::Core::WorkerPool::Instance())
+    : _workerPool(Thunder::Core::WorkerPool::Instance())
     , _settings(settings)
     , _forcedRebootThreshold(172800 * 3)
     , _rfcUpdated(false)
@@ -60,7 +60,7 @@ RebootController::~RebootController()
 void RebootController::scheduleHeartbeat()
 {
     _workerPool.Schedule(
-        WPEFramework::Core::Time::Now().Add(HEARTBEAT_INTERVAL_SEC * 1000),
+        Thunder::Core::Time::Now().Add(HEARTBEAT_INTERVAL_SEC * 1000),
         _heartbeatJob);
 }
 

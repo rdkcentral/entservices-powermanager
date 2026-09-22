@@ -2,7 +2,7 @@
 
 ## Product Description
 
-The PowerManager plugin is an enterprise-grade power management solution designed for embedded devices and set-top boxes running the WPEFramework/Thunder middleware. It provides comprehensive power state control, advanced thermal protection, intelligent deep sleep management, and coordinated system reboot capabilities. The plugin serves as the centralized power management hub for device manufacturers and system integrators requiring sophisticated power control with reliability and performance.
+The PowerManager plugin is an enterprise-grade power management solution designed for embedded devices and set-top boxes running the Thunder middleware. It provides comprehensive power state control, advanced thermal protection, intelligent deep sleep management, and coordinated system reboot capabilities. The plugin serves as the centralized power management hub for device manufacturers and system integrators requiring sophisticated power control with reliability and performance.
 
 ## Core Functionality and Features
 
@@ -59,8 +59,8 @@ The PowerManager plugin is an enterprise-grade power management solution designe
 - **Real-Time Event Notifications**: Asynchronous event system for power state and thermal changes
 - **Multi-Client Support**: Concurrent client access with proper arbitration and notification
 
-### WPEFramework Integration
-- **Native Thunder Plugin**: Seamless integration with WPEFramework/Thunder middleware ecosystem
+### Thunder Integration
+- **Native Thunder Plugin**: Seamless integration with Thunder middleware ecosystem
 - **Service Discovery**: Automatic service registration and discovery within Thunder framework
 - **Inter-Plugin Communication**: Direct integration with other Thunder-based system services
 - **Configuration Management**: Integrated configuration persistence and runtime updates
@@ -106,7 +106,7 @@ The PowerManager plugin is an enterprise-grade power management solution designe
 ## Deployment and Maintenance Benefits
 
 ### Easy Integration and Deployment
-- **Standard Plugin Architecture**: Follows WPEFramework plugin standards for consistent deployment
+- **Standard Plugin Architecture**: Follows Thunder plugin standards for consistent deployment
 - **Configuration-Driven Setup**: Flexible configuration system reducing integration complexity
 - **Platform Adaptation**: Hardware abstraction enabling deployment across diverse hardware platforms
 - **Testing Framework**: Comprehensive test suite ensuring reliable deployment

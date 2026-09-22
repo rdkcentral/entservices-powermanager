@@ -2,14 +2,14 @@
 
 ## Overview
 
-The PowerManager plugin is a comprehensive power state management system for WPEFramework/Thunder, providing centralized control over device power states, thermal management, deep sleep functionality, and system reboot operations. The plugin follows a modular controller-based architecture with well-defined interfaces and separation of concerns.
+The PowerManager plugin is a comprehensive power state management system for Thunder, providing centralized control over device power states, thermal management, deep sleep functionality, and system reboot operations. The plugin follows a modular controller-based architecture with well-defined interfaces and separation of concerns.
 
 ## System Architecture
 
 ### Core Components
 
 #### PowerManager Plugin Entry Point
-- **PowerManager**: Main plugin class that implements WPEFramework plugin interfaces
+- **PowerManager**: Main plugin class that implements Thunder plugin interfaces
 - **PowerManagerImplementation**: Core implementation class providing the IPowerManager interface
 - Manages plugin lifecycle, service registration, and client communication through Thunder framework
 
@@ -108,7 +108,7 @@ The plugin employs a specialized controller pattern with four distinct controlle
 ## Dependencies and Interfaces
 
 ### Internal Dependencies
-- WPEFramework/Thunder core libraries
+- Thunder core libraries
 - Plugin framework infrastructure
 - JSON-RPC communication layer
 
@@ -144,4 +144,4 @@ The plugin employs a specialized controller pattern with four distinct controlle
 - Performance monitoring and metrics collection
 - Debug support for development and troubleshooting
 
-This architecture ensures a robust, scalable, and maintainable power management system that integrates seamlessly with the WPEFramework ecosystem while providing comprehensive power control capabilities for embedded devices.
+This architecture ensures a robust, scalable, and maintainable power management system that integrates seamlessly with the Thunder ecosystem while providing comprehensive power control capabilities for embedded devices.

@@ -30,7 +30,7 @@ namespace hal {
 namespace deepsleep {
 
     class IPlatform {
-        using WakeupReason = WPEFramework::Exchange::IPowerManager::WakeupReason;
+        using WakeupReason = Thunder::Exchange::IPowerManager::WakeupReason;
 
     public:
         virtual ~IPlatform() {}

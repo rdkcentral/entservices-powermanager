@@ -30,8 +30,8 @@
 #include "UtilsLogging.h"
 
 class PowerImpl : public hal::power::IPlatform {
-    using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
-    using WakeupSrcType = WPEFramework::Exchange::IPowerManager::WakeupSrcType;
+    using PowerState = Thunder::Exchange::IPowerManager::PowerState;
+    using WakeupSrcType = Thunder::Exchange::IPowerManager::WakeupSrcType;
 
     const char* str(PWRMGR_WakeupSrcType_t src) const
     {
@@ -160,27 +160,27 @@ class PowerImpl : public hal::power::IPlatform {
     uint32_t conv(pmStatus_t result) const
     {
         if (result < 0) {
-            return WPEFramework::Core::ERROR_GENERAL;
+            return Thunder::Core::ERROR_GENERAL;
         }
 
         switch (result) {
         case PWRMGR_SUCCESS:
-            return WPEFramework::Core::ERROR_NONE;
+            return Thunder::Core::ERROR_NONE;
         case PWRMGR_INVALID_ARGUMENT:
-            return WPEFramework::Core::ERROR_INVALID_PARAMETER;
+            return Thunder::Core::ERROR_INVALID_PARAMETER;
         case PWRMGR_NOT_INITIALIZED:
-            return WPEFramework::Core::ERROR_ILLEGAL_STATE;
+            return Thunder::Core::ERROR_ILLEGAL_STATE;
         case PWRMGR_SET_FAILURE:
-            return WPEFramework::Core::ERROR_WRITE_ERROR;
+            return Thunder::Core::ERROR_WRITE_ERROR;
         case PWRMGR_GET_FAILURE:
-            return WPEFramework::Core::ERROR_READ_ERROR;
+            return Thunder::Core::ERROR_READ_ERROR;
         case PWRMGR_ALREADY_INITIALIZED:
         case PWRMGR_OPERATION_NOT_SUPPORTED:
         case PWRMGR_INIT_FAILURE:
         case PWRMGR_TERM_FAILURE:
         case PWRMGR_MAX:
         default:
-            return WPEFramework::Core::ERROR_GENERAL;
+            return Thunder::Core::ERROR_GENERAL;
         }
     }
 
@@ -277,7 +277,7 @@ public:
 
     virtual uint32_t SetPowerState(PowerState newState) override
     {
-        uint32_t retCode = WPEFramework::Core::ERROR_GENERAL;
+        uint32_t retCode = Thunder::Core::ERROR_GENERAL;
 
         // arg validation to be done in the caller
         PWRMgr_PowerState_t state = conv(newState);
@@ -285,7 +285,7 @@ public:
         pmStatus_t result = PLAT_API_SetPowerState(state);
 
         if (PWRMGR_SUCCESS == result) {
-            retCode = WPEFramework::Core::ERROR_NONE;
+            retCode = Thunder::Core::ERROR_NONE;
         }
 
         return retCode;
@@ -294,12 +294,12 @@ public:
     virtual uint32_t GetPowerState(PowerState& curState) override
     {
         PWRMgr_PowerState_t state = PWRMGR_POWERSTATE_MAX;
-        uint32_t retCode = WPEFramework::Core::ERROR_GENERAL;
+        uint32_t retCode = Thunder::Core::ERROR_GENERAL;
         pmStatus_t result = PLAT_API_GetPowerState(&state);
 
         if (PWRMGR_SUCCESS == result) {
             curState = conv(state);
-            retCode = WPEFramework::Core::ERROR_NONE;
+            retCode = Thunder::Core::ERROR_NONE;
         }
 
         LOGINFO("PowerState: %s, result: %s", str(state), str(result));

@@ -45,8 +45,8 @@
 #include "secure_wrapper.h" // for v_secure_system
 #include "sysMgr.h"         // for IARM_BUS_SYSMGR_API_GetSystemStates
 
-using WakeupReason = WPEFramework::Exchange::IPowerManager::WakeupReason;
-using PowerState   = WPEFramework::Exchange::IPowerManager::PowerState;
+using WakeupReason = Thunder::Exchange::IPowerManager::WakeupReason;
+using PowerState   = Thunder::Exchange::IPowerManager::PowerState;
 using IPlatform    = hal::deepsleep::IPlatform;
 using util         = PowerUtils;
 
@@ -181,7 +181,7 @@ uint32_t DeepSleepWakeupSettings::getWakeupTime() const
 
 DeepSleepController::DeepSleepController(INotification& parent, std::shared_ptr<IPlatform> platform)
     : _parent(parent)
-    , _workerPool(WPEFramework::Core::WorkerPool::Instance())
+    , _workerPool(Thunder::Core::WorkerPool::Instance())
     , _platform(std::move(platform))
     , _deepSleepState(DeepSleepState::NotStarted)
     , _deepSleepDelaySec(0)
@@ -224,7 +224,7 @@ uint32_t DeepSleepController::Activate(uint32_t timeOut, bool nwStandbyMode)
         performActivate(timeOut, nwStandbyMode);
     }));
 
-    return WPEFramework::Core::ERROR_NONE;
+    return Thunder::Core::ERROR_NONE;
 }
 
 // deactivate deep sleep mode
@@ -290,7 +290,7 @@ void DeepSleepController::enterDeepSleepNow()
         return;
     }
 
-    uint32_t errorCode = WPEFramework::Core::ERROR_NONE;
+    uint32_t errorCode = Thunder::Core::ERROR_NONE;
     bool failed           = true;
     int retryCount        = 5;
     bool userWakeup       = 0;
@@ -305,13 +305,13 @@ void DeepSleepController::enterDeepSleepNow()
 
         errorCode = platform().SetDeepSleep(_deepSleepWakeupTimeoutSec, userWakeup, _nwStandbyMode);
 
-        failed = WPEFramework::Core::ERROR_NONE != errorCode;
+        failed = Thunder::Core::ERROR_NONE != errorCode;
 
         if (failed) {
             _deepSleepState = DeepSleepState::Failed;
             retryCount--;
 
-            if ((errorCode == WPEFramework::Core::ERROR_ABORTED) && (retryCount > 0)) {
+            if ((errorCode == Thunder::Core::ERROR_ABORTED) && (retryCount > 0)) {
                 LOGINFO("Failed to enter deep sleep mode: %u, retry after 5s", errorCode);
                 if (waitForAbortableDelay(std::chrono::seconds(5))) {
                     abortRequested = true;
@@ -357,7 +357,7 @@ void DeepSleepController::deepSleepTimerWakeup()
         auto pending       = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::seconds(_deepSleepWakeupTimeoutSec) - Elapsed()).count();
         uint32_t errorCode = platform().GetLastWakeupReason(wakeupReason);
 
-        std::string wakeupReasonStr = WPEFramework::Core::ERROR_NONE == errorCode ? util::str(wakeupReason) : "UNKOWN";
+        std::string wakeupReasonStr = Thunder::Core::ERROR_NONE == errorCode ? util::str(wakeupReason) : "UNKOWN";
 
         LOGERR("DeepSleep wakeupReason: %s, timeout: %ds, elapsed: %llds, pending: %lldms", wakeupReasonStr.c_str(),
             _deepSleepWakeupTimeoutSec, std::chrono::duration_cast<std::chrono::seconds>(Elapsed()).count(), pending);
@@ -402,9 +402,9 @@ void DeepSleepController::performActivate(uint32_t timeOut, bool nwStandbyMode)
                 enterDeepSleepDelayed();
             });
 
-            WPEFramework::Core::WorkerPool::Instance().Schedule(
-                WPEFramework::Core::Time(
-                    WPEFramework::Core::Time::Now().Add(_deepSleepDelaySec * 1000)),
+            Thunder::Core::WorkerPool::Instance().Schedule(
+                Thunder::Core::Time(
+                    Thunder::Core::Time::Now().Add(_deepSleepDelaySec * 1000)),
                 _deepSleepDelayJob);
         } else {
             enterDeepSleepNow();

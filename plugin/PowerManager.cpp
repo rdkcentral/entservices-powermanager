@@ -24,7 +24,7 @@
 #define API_VERSION_NUMBER_MINOR 0
 #define API_VERSION_NUMBER_PATCH 0
 
-namespace WPEFramework {
+namespace Thunder {
 
 namespace {
 
@@ -42,7 +42,7 @@ namespace {
 namespace Plugin {
 
     /*
-     *Register PowerManager module as wpeframework plugin
+     *Register PowerManager module as thunder plugin
      **/
     SERVICE_REGISTRATION(PowerManager, API_VERSION_NUMBER_MAJOR, API_VERSION_NUMBER_MINOR, API_VERSION_NUMBER_PATCH);
 
@@ -88,7 +88,7 @@ namespace Plugin {
             _powerManager->Register(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IDeepSleepTimeoutNotification>());
             _powerManager->Register(_powermanagersNotification.baseInterface<Exchange::IPowerManager::INetworkStandbyModeChangedNotification>());
             _powerManager->Register(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IThermalModeChangedNotification>());
-            // Invoking Plugin API register to wpeframework
+            // Invoking Plugin API register to thunder
             Exchange::JPowerManager::Register(*this, _powerManager);
         } else {
             SYSLOG(Logging::Startup, (_T("PowerManager::Initialize: Failed to initialise PowerManager plugin")));
@@ -217,4 +217,4 @@ namespace Plugin {
         LOGINFO("<<");
     }
 } // namespace Plugin
-} // namespace WPEFramework
+} // namespace Thunder

@@ -127,9 +127,9 @@ static constexpr int DECLOCK_GRACE_INTERVAL = 60;
 
 #endif //MFR_TEMP_CLOCK_READ
 
-    using ThermalTemperature = WPEFramework::Exchange::IPowerManager::ThermalTemperature;
+    using ThermalTemperature = Thunder::Exchange::IPowerManager::ThermalTemperature;
     using IPlatform = hal::Thermal::IPlatform;
-    using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
+    using PowerState = Thunder::Exchange::IPowerManager::PowerState;
 #ifdef MFR_TEMP_CLOCK_READ
     using DefaultImpl = ThermalMfrImpl;
 #else
@@ -188,7 +188,7 @@ public:
             virtual uint32_t getPowerState(PowerState& currentState, PowerState& prevState) const {
                 currentState = PowerState::POWER_STATE_UNKNOWN;
                 prevState = PowerState::POWER_STATE_UNKNOWN;
-                return WPEFramework::Core::ERROR_UNAVAILABLE;
+                return Thunder::Core::ERROR_UNAVAILABLE;
             }
 
             virtual void onThermalTemperatureChanged(const ThermalTemperature cur_Thermal_Level,const ThermalTemperature new_Thermal_Level, const float current_Temp) = 0;

@@ -43,11 +43,11 @@
 // utils
 #include "WaitGroup.h"
 
-using namespace WPEFramework;
+using namespace Thunder;
 using ::testing::NiceMock;
 
-using WakeupReason  = WPEFramework::Exchange::IPowerManager::WakeupReason;
-using WakeupSrcType = WPEFramework::Exchange::IPowerManager::WakeupSrcType;
+using WakeupReason  = Thunder::Exchange::IPowerManager::WakeupReason;
+using WakeupSrcType = Thunder::Exchange::IPowerManager::WakeupSrcType;
 
 #define TEST_LOG(x, ...) fprintf(stderr, "\033[1;32m[%s:%d](%s)<PID:%d><TID:%d>" x "\n\033[0m", __FILE__, __LINE__, __FUNCTION__, getpid(), gettid(), ##__VA_ARGS__); fflush(stderr);
 
@@ -115,7 +115,7 @@ public:
     EnumSet<PWRMGR_WakeupSrcType_t, PWRMGR_WAKEUPSRC_MAX> _wakeupSources;
     WaitGroup setupWg; // wait group created specifically for setup / init (SetUpMocks)
 
-    struct PowerModePreChangeEvent : public WPEFramework::Exchange::IPowerManager::IModePreChangeNotification {
+    struct PowerModePreChangeEvent : public Thunder::Exchange::IPowerManager::IModePreChangeNotification {
         MOCK_METHOD(void, OnPowerModePreChange, (const PowerState currentState, const PowerState newState, const int transactionId, const int stateChangeAfter), (override));
 
         BEGIN_INTERFACE_MAP(PowerModePreChangeEvent)
@@ -123,7 +123,7 @@ public:
         END_INTERFACE_MAP
     };
 
-    struct PowerModeChangedEvent : public WPEFramework::Exchange::IPowerManager::IModeChangedNotification {
+    struct PowerModeChangedEvent : public Thunder::Exchange::IPowerManager::IModeChangedNotification {
         MOCK_METHOD(void, OnPowerModeChanged, (const PowerState, const PowerState), (override));
 
         BEGIN_INTERFACE_MAP(PowerModeChangedEvent)
@@ -131,7 +131,7 @@ public:
         END_INTERFACE_MAP
     };
 
-    struct DeepSleepWakeupEvent : public WPEFramework::Exchange::IPowerManager::IDeepSleepTimeoutNotification {
+    struct DeepSleepWakeupEvent : public Thunder::Exchange::IPowerManager::IDeepSleepTimeoutNotification {
         MOCK_METHOD(void, OnDeepSleepTimeout, (const int), (override));
 
         BEGIN_INTERFACE_MAP(DeepSleepWakeupEvent)
@@ -139,7 +139,7 @@ public:
         END_INTERFACE_MAP
     };
 
-    struct RebootEvent : public WPEFramework::Exchange::IPowerManager::IRebootNotification {
+    struct RebootEvent : public Thunder::Exchange::IPowerManager::IRebootNotification {
         MOCK_METHOD(void, OnRebootBegin, (const string&, const string&, const string&), (override));
 
         BEGIN_INTERFACE_MAP(RebootEvent)
@@ -147,7 +147,7 @@ public:
         END_INTERFACE_MAP
     };
 
-    struct NetworkStandbyChangedEvent : public WPEFramework::Exchange::IPowerManager::INetworkStandbyModeChangedNotification {
+    struct NetworkStandbyChangedEvent : public Thunder::Exchange::IPowerManager::INetworkStandbyModeChangedNotification {
         MOCK_METHOD(void, OnNetworkStandbyModeChanged, (const bool), (override));
 
         BEGIN_INTERFACE_MAP(NetworkStandbyChangedEvent)
@@ -370,9 +370,9 @@ public:
 
     static void SetUpTestSuite()
     {
-        // static WorkerPoolImplementation workerPool(4, WPEFramework::Core::Thread::DefaultStackSize(), 16);
+        // static WorkerPoolImplementation workerPool(4, Thunder::Core::Thread::DefaultStackSize(), 16);
         static WorkerPoolImplementation workerPool(4, 64 * 1024, 16);
-        WPEFramework::Core::WorkerPool::Assign(&workerPool);
+        Thunder::Core::WorkerPool::Assign(&workerPool);
         workerPool.Run();
     }
 
@@ -429,7 +429,7 @@ TEST_F(TestPowerManager, GetTimeSinceWakeup_NoWakeupOccurred)
     // Test case: Device has not woken up yet (in standby or initial state)
     // Expected: secondsSinceWakeup should be 0
 
-    WPEFramework::Exchange::IPowerManager::TimeSinceWakeup timeSinceWakeup;
+    Thunder::Exchange::IPowerManager::TimeSinceWakeup timeSinceWakeup;
     timeSinceWakeup.secondsSinceWakeup = 999; // Initialize with non-zero value
 
     uint32_t status = powerManagerImpl->GetTimeSinceWakeup(timeSinceWakeup);
@@ -458,7 +458,7 @@ TEST_F(TestPowerManager, GetTimeSinceWakeup_AfterWakeup)
     std::this_thread::sleep_for(std::chrono::seconds(2));
 
     // Now get the time since wakeup
-    WPEFramework::Exchange::IPowerManager::TimeSinceWakeup timeSinceWakeup;
+    Thunder::Exchange::IPowerManager::TimeSinceWakeup timeSinceWakeup;
     status = powerManagerImpl->GetTimeSinceWakeup(timeSinceWakeup);
 
     EXPECT_EQ(status, Core::ERROR_NONE);
@@ -467,7 +467,7 @@ TEST_F(TestPowerManager, GetTimeSinceWakeup_AfterWakeup)
     EXPECT_LE(timeSinceWakeup.secondsSinceWakeup, 5);
 }
 
-using WakeupSourceConfigIteratorImpl = WPEFramework::Core::Service<WPEFramework::RPC::IteratorType<WPEFramework::Exchange::IPowerManager::IWakeupSourceConfigIterator>>;
+using WakeupSourceConfigIteratorImpl = Thunder::Core::Service<Thunder::RPC::IteratorType<Thunder::Exchange::IPowerManager::IWakeupSourceConfigIterator>>;
 
 TEST_F(TestPowerManager, SetWakeupSourceConfig)
 {
@@ -479,8 +479,8 @@ TEST_F(TestPowerManager, SetWakeupSourceConfig)
                 return PWRMGR_SUCCESS;
             }));
 
-    std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig> configs = {{WakeupSrcType::WAKEUP_SRC_WIFI, true}};
-    auto iterator = WakeupSourceConfigIteratorImpl::Create<WPEFramework::Exchange::IPowerManager::IWakeupSourceConfigIterator>(configs);
+    std::list<Thunder::Exchange::IPowerManager::WakeupSourceConfig> configs = {{WakeupSrcType::WAKEUP_SRC_WIFI, true}};
+    auto iterator = WakeupSourceConfigIteratorImpl::Create<Thunder::Exchange::IPowerManager::IWakeupSourceConfigIterator>(configs);
 
     uint32_t status = powerManagerImpl->SetWakeupSourceConfig(iterator);
 
@@ -503,12 +503,12 @@ TEST_F(TestPowerManager, GetWakeupSourceConfig)
                 return PWRMGR_SUCCESS;
             }));
 
-    WPEFramework::RPC::IIteratorType<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig, WPEFramework::Exchange::IDS::ID_POWER_MANAGER_WAKEUP_SRC_ITERATOR>* _wakeupSources{};
+    Thunder::RPC::IIteratorType<Thunder::Exchange::IPowerManager::WakeupSourceConfig, Thunder::Exchange::IDS::ID_POWER_MANAGER_WAKEUP_SRC_ITERATOR>* _wakeupSources{};
 
     uint32_t status = powerManagerImpl->GetWakeupSourceConfig(_wakeupSources);
     EXPECT_EQ(status, Core::ERROR_NONE);
 
-    WPEFramework::Exchange::IPowerManager::WakeupSourceConfig config{WakeupSrcType::WAKEUP_SRC_UNKNOWN, false};
+    Thunder::Exchange::IPowerManager::WakeupSourceConfig config{WakeupSrcType::WAKEUP_SRC_UNKNOWN, false};
 
     EXPECT_EQ(_wakeupSources->Count(), 10U);
 
@@ -1697,8 +1697,8 @@ TEST_F(TestPowerManager, DisableWakeOnLAN)
     wg.Add(1);
 
     {
-        std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig> configs = {{WakeupSrcType::WAKEUP_SRC_WIFI, false}};
-        auto iterator = WakeupSourceConfigIteratorImpl::Create<WPEFramework::Exchange::IPowerManager::IWakeupSourceConfigIterator>(configs);
+        std::list<Thunder::Exchange::IPowerManager::WakeupSourceConfig> configs = {{WakeupSrcType::WAKEUP_SRC_WIFI, false}};
+        auto iterator = WakeupSourceConfigIteratorImpl::Create<Thunder::Exchange::IPowerManager::IWakeupSourceConfigIterator>(configs);
 
         powerManagerImpl->SetWakeupSourceConfig(iterator);
         EXPECT_EQ(status, Core::ERROR_NONE);
@@ -1712,8 +1712,8 @@ TEST_F(TestPowerManager, DisableWakeOnLAN)
 
     {
 
-        std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig> configs = {{WakeupSrcType::WAKEUP_SRC_LAN, false}};
-        auto iterator = WakeupSourceConfigIteratorImpl::Create<WPEFramework::Exchange::IPowerManager::IWakeupSourceConfigIterator>(configs);
+        std::list<Thunder::Exchange::IPowerManager::WakeupSourceConfig> configs = {{WakeupSrcType::WAKEUP_SRC_LAN, false}};
+        auto iterator = WakeupSourceConfigIteratorImpl::Create<Thunder::Exchange::IPowerManager::IWakeupSourceConfigIterator>(configs);
 
         // only after both WIFI and LAN wakeupSrc is enabled nwStandbyMode gets disabled
         powerManagerImpl->SetWakeupSourceConfig(iterator);
@@ -1747,8 +1747,8 @@ TEST_F(TestPowerManager, EnableWakeOnLAN)
     EXPECT_EQ(status, Core::ERROR_NONE);
 
     {
-        std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig> configs = {{WakeupSrcType::WAKEUP_SRC_WIFI, true}};
-        auto iterator = WakeupSourceConfigIteratorImpl::Create<WPEFramework::Exchange::IPowerManager::IWakeupSourceConfigIterator>(configs);
+        std::list<Thunder::Exchange::IPowerManager::WakeupSourceConfig> configs = {{WakeupSrcType::WAKEUP_SRC_WIFI, true}};
+        auto iterator = WakeupSourceConfigIteratorImpl::Create<Thunder::Exchange::IPowerManager::IWakeupSourceConfigIterator>(configs);
 
         powerManagerImpl->SetWakeupSourceConfig(iterator);
         EXPECT_EQ(status, Core::ERROR_NONE);
@@ -1761,8 +1761,8 @@ TEST_F(TestPowerManager, EnableWakeOnLAN)
     EXPECT_EQ(standbyMode, false);
 
     {
-        std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig> configs = {{WakeupSrcType::WAKEUP_SRC_LAN, true}};
-        auto iterator = WakeupSourceConfigIteratorImpl::Create<WPEFramework::Exchange::IPowerManager::IWakeupSourceConfigIterator>(configs);
+        std::list<Thunder::Exchange::IPowerManager::WakeupSourceConfig> configs = {{WakeupSrcType::WAKEUP_SRC_LAN, true}};
+        auto iterator = WakeupSourceConfigIteratorImpl::Create<Thunder::Exchange::IPowerManager::IWakeupSourceConfigIterator>(configs);
 
         // only after both WIFI and LAN wakeupSrc is enabled nwStandbyMode gets enabled
         powerManagerImpl->SetWakeupSourceConfig(iterator);

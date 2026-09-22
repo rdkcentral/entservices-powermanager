@@ -23,7 +23,7 @@
 #include <core/Portability.h>
 #include <core/Proxy.h>
 
-class EXTERNAL LambdaJob : public WPEFramework::Core::IDispatch {
+class EXTERNAL LambdaJob : public Thunder::Core::IDispatch {
 protected:
     LambdaJob(std::function<void()> lambda)
         : _lambda(std::move(lambda))
@@ -36,9 +36,9 @@ public:
     LambdaJob& operator=(const LambdaJob&) = delete;
     ~LambdaJob() = default;
 
-    static WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> Create(std::function<void()> lambda)
+    static Thunder::Core::ProxyType<Thunder::Core::IDispatch> Create(std::function<void()> lambda)
     {
-        return (WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch>(WPEFramework::Core::ProxyType<LambdaJob>::Create(std::move(lambda))));
+        return (Thunder::Core::ProxyType<Thunder::Core::IDispatch>(Thunder::Core::ProxyType<LambdaJob>::Create(std::move(lambda))));
     }
 
     virtual void Dispatch()

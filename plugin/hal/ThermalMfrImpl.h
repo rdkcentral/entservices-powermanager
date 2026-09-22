@@ -36,7 +36,7 @@ typedef enum _PWRMgr_ThermalState_t {
 } PWRMgr_ThermalState_t;
 
 class ThermalMfrImpl : public hal::Thermal::IPlatform {
-    using ThermalTemperature = WPEFramework::Exchange::IPowerManager::ThermalTemperature;
+    using ThermalTemperature = Thunder::Exchange::IPowerManager::ThermalTemperature;
 
     // delete copy constructor and assignment operator
     ThermalMfrImpl(const ThermalMfrImpl&) = delete;
@@ -76,7 +76,7 @@ public:
 
     virtual uint32_t GetTemperatureThresholds(float &tempHigh,float &tempCritical) const override
     {
-        uint32_t result = WPEFramework::Core::ERROR_GENERAL;
+        uint32_t result = Thunder::Core::ERROR_GENERAL;
 
         IARM_Result_t iarm_result = IARM_RESULT_IPCCORE_FAIL;
         IARM_Bus_MFRLib_ThermalSoCTemp_Param_t param = {};
@@ -85,7 +85,7 @@ public:
 
         if (IARM_RESULT_SUCCESS == iarm_result) {
         LOGINFO("Success IARM_BUS_MFRLIB_API_GetTemperatureThresholds\n");
-            result = WPEFramework::Core::ERROR_NONE;
+            result = Thunder::Core::ERROR_NONE;
             tempHigh = param.highTemp;
             tempCritical = param.criticalTemp;
             LOGINFO("Received High Temperature Threshold as : %0.6f and Critical Temperature Threshold as : %0.6f \n",tempHigh ,tempCritical);
@@ -98,7 +98,7 @@ public:
 
     virtual uint32_t SetTemperatureThresholds(float tempHigh,float tempCritical) override
     {
-        uint32_t result = WPEFramework::Core::ERROR_GENERAL;
+        uint32_t result = Thunder::Core::ERROR_GENERAL;
 
         IARM_Result_t iarm_result = IARM_RESULT_IPCCORE_FAIL;
         IARM_Bus_MFRLib_ThermalSoCTemp_Param_t param = {};
@@ -113,7 +113,7 @@ public:
         if (IARM_RESULT_SUCCESS == iarm_result)
         {
             LOGINFO("Success IARM_BUS_MFRLIB_API_SetTemperatureThresholds\n");
-            result = WPEFramework::Core::ERROR_NONE;
+            result = Thunder::Core::ERROR_NONE;
         }
         else
         {
@@ -125,7 +125,7 @@ public:
 
     virtual uint32_t GetClockSpeed(uint32_t &speed) const override
     {
-        uint32_t retValue = WPEFramework::Core::ERROR_GENERAL;
+        uint32_t retValue = Thunder::Core::ERROR_GENERAL;
         IARM_Result_t iarm_result = IARM_RESULT_IPCCORE_FAIL;
         IARM_Bus_MFRLib_ThermalSoCFreq_Param_t param = {};
 
@@ -134,7 +134,7 @@ public:
         {
             LOGINFO("Success IARM_BUS_MFRLIB_API_GetCPUClockSpeed\n");
             speed = param.cpu_clock_speed;
-            retValue = WPEFramework::Core::ERROR_NONE;
+            retValue = Thunder::Core::ERROR_NONE;
             LOGINFO("Getting CPU Clock Speed  as [%u]\n",speed);
         }
         else
@@ -147,7 +147,7 @@ public:
 
     virtual uint32_t SetClockSpeed(uint32_t speed) override
     {
-        uint32_t retValue = WPEFramework::Core::ERROR_GENERAL;
+        uint32_t retValue = Thunder::Core::ERROR_GENERAL;
 
         IARM_Result_t iarm_result = IARM_RESULT_IPCCORE_FAIL;
         IARM_Bus_MFRLib_ThermalSoCFreq_Param_t param = {};
@@ -158,7 +158,7 @@ public:
         if (IARM_RESULT_SUCCESS == iarm_result)
         {
             LOGINFO("Success IARM_BUS_MFRLIB_API_SetCPUClockSpeed\n");
-            retValue = WPEFramework::Core::ERROR_NONE;
+            retValue = Thunder::Core::ERROR_NONE;
         }
         else
         {
@@ -170,7 +170,7 @@ public:
 
     virtual uint32_t DetemineClockSpeeds(uint32_t &cpu_rate_Normal, uint32_t &cpu_rate_Scaled, uint32_t &cpu_rate_Minimal) override
     {
-        uint32_t retValue = WPEFramework::Core::ERROR_GENERAL;
+        uint32_t retValue = Thunder::Core::ERROR_GENERAL;
 
         IARM_Result_t iarm_result = IARM_RESULT_IPCCORE_FAIL;
         IARM_Bus_MFRLib_ThermalSoCFreq_Param_t param = {};
@@ -182,7 +182,7 @@ public:
             cpu_rate_Normal   =  param.cpu_rate_Normal;
             cpu_rate_Scaled   =  param.cpu_rate_Scaled;
             cpu_rate_Minimal  =  param.cpu_rate_Minimal;
-            retValue = WPEFramework::Core::ERROR_NONE;
+            retValue = Thunder::Core::ERROR_NONE;
             LOGINFO("Available CPU Frequencies are: Normal:%u Scaled:%u Minimal:%u\n",cpu_rate_Normal ,cpu_rate_Scaled ,cpu_rate_Minimal);
         }
         else
@@ -195,7 +195,7 @@ public:
 
     virtual uint32_t GetTemperature(ThermalTemperature &curState, float &curTemperature, float &wifiTemperature) const override
     {
-        uint32_t retValue = WPEFramework::Core::ERROR_GENERAL;
+        uint32_t retValue = Thunder::Core::ERROR_GENERAL;
 
         IARM_Result_t iarm_result = IARM_RESULT_IPCCORE_FAIL;
         IARM_Bus_MFRLib_ThermalSoCTemp_Param_t param = {};
@@ -235,7 +235,7 @@ public:
             curState = conv((PWRMgr_ThermalState_t)param.curState);
             curTemperature = param.curSoCTemperature;
             wifiTemperature = param.curWiFiTemperature;
-            retValue = WPEFramework::Core::ERROR_NONE;
+            retValue = Thunder::Core::ERROR_NONE;
             LOGINFO("SoC Temperature : %d and Wifi Temperature : %d\n",(int)(curTemperature), (int)(wifiTemperature));
         } else {
             LOGERR("Failed IARM_BUS_MFRLIB_API_GetTemperature\n");

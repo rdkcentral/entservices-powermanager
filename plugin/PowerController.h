@@ -35,7 +35,7 @@
 #include "Settings.h"            // for Settings
 #include "hal/PowerImpl.h"       // for IPlatform, PowerImpl
 
-namespace WPEFramework {
+namespace Thunder {
 namespace Core {
     struct IDispatch;
     struct IWorkerPool;
@@ -43,9 +43,9 @@ namespace Core {
 }
 
 class PowerController {
-    using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
-    using WakeupSrcType = WPEFramework::Exchange::IPowerManager::WakeupSrcType;
-    using WakeupReason = WPEFramework::Exchange::IPowerManager::WakeupReason;
+    using PowerState = Thunder::Exchange::IPowerManager::PowerState;
+    using WakeupSrcType = Thunder::Exchange::IPowerManager::WakeupSrcType;
+    using WakeupReason = Thunder::Exchange::IPowerManager::WakeupReason;
     using IPlatform = hal::power::IPlatform;
     using DefaultImpl = PowerImpl;
 
@@ -72,19 +72,19 @@ public:
     {
         currentState = _settings.powerState();
         prevState = _lastKnownPowerState;
-        return WPEFramework::Core::ERROR_NONE;
+        return Thunder::Core::ERROR_NONE;
     }
 
     inline uint32_t GetPowerStateBeforeReboot(PowerState& state)
     {
         state = _settings.powerStateBeforeReboot();
-        return WPEFramework::Core::ERROR_NONE;
+        return Thunder::Core::ERROR_NONE;
     }
 
     uint32_t SetNetworkStandbyMode(const bool standbyMode);
     uint32_t GetNetworkStandbyMode(bool& standbyMode) const;
-    uint32_t SetWakeupSourceConfig(const std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig>& configs);
-    uint32_t GetWakeupSourceConfig(std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig>& configs) const;
+    uint32_t SetWakeupSourceConfig(const std::list<Thunder::Exchange::IPowerManager::WakeupSourceConfig>& configs);
+    uint32_t GetWakeupSourceConfig(std::list<Thunder::Exchange::IPowerManager::WakeupSourceConfig>& configs) const;
     uint32_t GetWakeupSourceConfig(int& powerMode, int& srcType, int& config) const;
     uint32_t GetTimeSinceWakeup(uint32_t& secondsSinceWakeup);
     uint32_t Reboot(const string& requestor, const string& reasonCustom, const string& reasonOther);
@@ -112,7 +112,7 @@ private:
     PowerState _lastKnownPowerState;
     Settings _settings;
     DeepSleepWakeupSettings _deepSleepWakeupSettings;
-    WPEFramework::Core::IWorkerPool& _workerPool;
+    Thunder::Core::IWorkerPool& _workerPool;
     std::chrono::steady_clock::time_point _wakeupTimestamp;
 
     // keep this last

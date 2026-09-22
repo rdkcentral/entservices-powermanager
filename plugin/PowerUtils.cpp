@@ -20,9 +20,9 @@
 #include "PowerUtils.h"
 #include "UtilsLogging.h"
 
-using PowerState    = WPEFramework::Exchange::IPowerManager::PowerState;
-using WakeupReason  = WPEFramework::Exchange::IPowerManager::WakeupReason;
-using WakeupSrcType = WPEFramework::Exchange::IPowerManager::WakeupSrcType;
+using PowerState    = Thunder::Exchange::IPowerManager::PowerState;
+using WakeupReason  = Thunder::Exchange::IPowerManager::WakeupReason;
+using WakeupSrcType = Thunder::Exchange::IPowerManager::WakeupSrcType;
 
 const char* PowerUtils::str(const WakeupReason reason)
 {
