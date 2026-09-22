@@ -20,6 +20,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <ctime>
 
 #include <core/Time.h>
 #include <interfaces/IPowerManager.h>
@@ -87,7 +88,7 @@ public:
     inline uint32_t version() const { return _version; }
     inline PowerState powerState() const { return _powerState; }
     inline PowerState powerStateBeforeReboot() const { return _powerStateBeforeReboot; }
-    inline uint32_t deepSleepTimeout() const { return _deepSleepTimeout; }
+    uint32_t deepSleepTimeout() const;
     inline bool nwStandbyMode() const { return _nwStandbyMode; }
 
     void printDetails(const std::string& prefix) const;
