@@ -28,6 +28,8 @@ ThermalController::ThermalController (INotification& parent, std::shared_ptr<IPl
     , m_cur_Thermal_Level(ThermalTemperature::THERMAL_TEMPERATURE_NORMAL)
     , _parent(parent)
     , _stopThread(false)
+    , _stopMutex(std::make_shared<std::mutex>())
+    , _stopCondition(std::make_shared<std::condition_variable>())
 {
     initializeThermalProtection();
     LOGINFO(">> CTOR <<");
@@ -37,10 +39,10 @@ ThermalController::~ThermalController()
 {
     LOGINFO(">> DTOR");
     {
-        std::lock_guard<std::mutex> lock(_stopMutex);
+        std::lock_guard<std::mutex> lock(*_stopMutex);
         _stopThread = true;
     }
-    _stopCondition.notify_all();
+    _stopCondition->notify_all();
     if ( nullptr != thermalThreadId )
     {
         if (thermalThreadId->joinable())
@@ -407,8 +409,8 @@ void ThermalController::pollThermalLevels()
         if ((WPEFramework::Core::ERROR_NONE == powerStateResult) && (PowerState::POWER_STATE_STANDBY_DEEP_SLEEP == currentPowerState)){
             LOGINFO("Ignoring Thermal polling in DEEPSLEEP state");
             {
-                std::unique_lock<std::mutex> lock(_stopMutex);
-                _stopCondition.wait_for(lock, std::chrono::seconds(thermal_poll_interval), [this]{ return _stopThread; });
+                std::unique_lock<std::mutex> lock(*_stopMutex);
+                _stopCondition->wait_for(lock, std::chrono::seconds(thermal_poll_interval), [this]{ return _stopThread; });
             }
             continue;
         }
@@ -466,8 +468,8 @@ void ThermalController::pollThermalLevels()
             LOGINFO("Warning - Failed to retrieve temperature from OEM");
         }
         {
-            std::unique_lock<std::mutex> lock(_stopMutex);
-            _stopCondition.wait_for(lock, std::chrono::seconds(thermal_poll_interval), [this]{ return _stopThread; });
+            std::unique_lock<std::mutex> lock(*_stopMutex);
+            _stopCondition->wait_for(lock, std::chrono::seconds(thermal_poll_interval), [this]{ return _stopThread; });
         }
         pollCount++;
     }

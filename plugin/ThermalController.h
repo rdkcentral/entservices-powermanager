@@ -210,8 +210,9 @@ private:
     INotification& _parent;
     volatile bool _stopThread;
     // Guards _stopThread and lets the poll thread's sleep be interrupted immediately on shutdown.
-    std::mutex _stopMutex;
-    std::condition_variable _stopCondition;
+    // shared_ptr (not a plain member) keeps ThermalController copyable, matching _therm_mutex/_grace_interval_mutex.
+    std::shared_ptr<std::mutex> _stopMutex;
+    std::shared_ptr<std::condition_variable> _stopCondition;
 
     void initializeThermalProtection();
     bool isThermalProtectionEnabled();
