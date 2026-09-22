@@ -73,15 +73,30 @@ namespace Plugin {
         , _controller(nullptr)
         , _modeChangeController(nullptr)
         , _modeChangeAckController(nullptr)
+        , _wakeupScheduleRegister(createWakeupScheduleRegister())
         , _deepSleepController(DeepSleepController::Create(*this))
-        , _powerController(PowerController::Create(_deepSleepController, &_wakeupScheduleRegister))
+        , _powerController(PowerController::Create(_deepSleepController, _wakeupScheduleRegister.get()))
         , _thermalController(ThermalController::Create(*this))
     {
         // Coverity Fix: ID 581 - Uninitialized pointer field
         PowerManagerImplementation::_instance = this;
         Utils::IARM::init();
-        _wakeupScheduleRegister.loadWakeupSchedulesFromFile(POWERMANAGER_SCHEDULES_FILE);
+        if (_wakeupScheduleRegister) {
+            _wakeupScheduleRegister->loadWakeupSchedulesFromFile(POWERMANAGER_SCHEDULES_FILE);
+        }
         LOGINFO(">> CTOR <<");
+    }
+
+    std::unique_ptr<WakeupScheduleRegister> PowerManagerImplementation::createWakeupScheduleRegister()
+    {
+        // Empty path means the wakeup-schedule feature is not configured/available on
+        // this build; keep the register absent so ScheduleDeepSleepWakeup() and the
+        // deep-sleep-timeout handling can treat it as an optional feature.
+        if (POWERMANAGER_SCHEDULES_FILE == nullptr || POWERMANAGER_SCHEDULES_FILE[0] == '\0') {
+            LOGINFO("Wakeup schedule persistence file not configured; wakeup-schedule feature disabled");
+            return nullptr;
+        }
+        return std::unique_ptr<WakeupScheduleRegister>(new WakeupScheduleRegister());
     }
 
     PowerManagerImplementation::~PowerManagerImplementation()
@@ -699,9 +714,16 @@ namespace Plugin {
 
         uint32_t errorCode = Core::ERROR_INVALID_PARAMETER;
 
+        if (!_wakeupScheduleRegister) {
+            LOGERR("Wakeup-schedule feature not available (POWERMANAGER_SCHEDULES_FILE not configured)");
+            _apiLock.Unlock();
+            LOGINFO("<< errorCode: %u", Core::ERROR_UNAVAILABLE);
+            return Core::ERROR_UNAVAILABLE;
+        }
+
         if (!requestorId.empty())
         {
-            if (!_wakeupScheduleRegister.isAlphaNumeric(requestorId.c_str())) {
+            if (!_wakeupScheduleRegister->isAlphaNumeric(requestorId.c_str())) {
                 LOGERR("requestorId contains invalid characters: '%s'", requestorId.c_str());
                 _apiLock.Unlock();
                 LOGINFO("<< errorCode: %u", errorCode);
@@ -734,7 +756,7 @@ namespace Plugin {
                 return errorCode;
             }
 
-            WakeupScheduleRegister::OperationStatus status = _wakeupScheduleRegister.addWakeupSchedule(
+            WakeupScheduleRegister::OperationStatus status = _wakeupScheduleRegister->addWakeupSchedule(
                 static_cast<WakeupScheduleRegister::UnixTime>(requestedTime),
                 WakeupScheduleRegister::ActiveStandby,
                 requestorId.c_str()
@@ -742,14 +764,14 @@ namespace Plugin {
 
             if (status == WakeupScheduleRegister::Successful)
             {
-                status = _wakeupScheduleRegister.storeWakeupSchedulesToFile(POWERMANAGER_SCHEDULES_FILE);
+                status = _wakeupScheduleRegister->storeWakeupSchedulesToFile(POWERMANAGER_SCHEDULES_FILE);
                 if (status == WakeupScheduleRegister::Successful)
                 {
                     errorCode = Core::ERROR_NONE;
                 }
                 else
                 {
-                    _wakeupScheduleRegister.removeWakeupSchedule(
+                    _wakeupScheduleRegister->removeWakeupSchedule(
                         static_cast<WakeupScheduleRegister::UnixTime>(requestedTime),
                         WakeupScheduleRegister::ActiveStandby,
                         requestorId.c_str()
@@ -1332,26 +1354,32 @@ namespace Plugin {
         // after the scheduled time could wrongly consume it and force STANDBY.
         const bool timerWakeup = (wakeupReason == WakeupReason::WAKEUP_REASON_TIMER);
 
-        auto schedule = timerWakeup ? _wakeupScheduleRegister.getMostRecentlyExpiredWakeupSchedule() : nullptr;
-        bool scheduleConsumed = (schedule != nullptr);
+        bool scheduleConsumed = false;
         string requestors;
 
-        if (schedule != nullptr)
+        // Wakeup-schedule feature is optional; nothing to consume/persist when it's disabled.
+        if (_wakeupScheduleRegister)
         {
-            for (const auto& requestor : schedule->requestorIds)
+            auto schedule = timerWakeup ? _wakeupScheduleRegister->getMostRecentlyExpiredWakeupSchedule() : nullptr;
+            scheduleConsumed = (schedule != nullptr);
+
+            if (schedule != nullptr)
             {
-                requestors += requestors.empty() ? requestor : " " + requestor;
+                for (const auto& requestor : schedule->requestorIds)
+                {
+                    requestors += requestors.empty() ? requestor : " " + requestor;
+                }
+            }
+
+            if (scheduleConsumed &&
+                _wakeupScheduleRegister->storeWakeupSchedulesToFile(POWERMANAGER_SCHEDULES_FILE) != WakeupScheduleRegister::Successful) {
+                LOGERR("Failed to persist wakeup schedules to '%s' after consuming schedule", POWERMANAGER_SCHEDULES_FILE);
             }
         }
 
         _apiLock.Lock();
         _pendingRequestors = requestors;
         _apiLock.Unlock();
-
-        if (scheduleConsumed &&
-            _wakeupScheduleRegister.storeWakeupSchedulesToFile(POWERMANAGER_SCHEDULES_FILE) != WakeupScheduleRegister::Successful) {
-            LOGERR("Failed to persist wakeup schedules to '%s' after consuming schedule", POWERMANAGER_SCHEDULES_FILE);
-        }
 
         if (scheduleConsumed)
         {

@@ -178,8 +178,12 @@ namespace Plugin {
         std::unordered_map<uint32_t, std::string> _modeChangeClients;
         std::shared_ptr<PreModeChangeController> _modeChangeAckController;
         std::unordered_map<uint32_t, std::string> _modeChangeAckClients;
-        WakeupScheduleRegister _wakeupScheduleRegister;
+        // Optional: only created when POWERMANAGER_SCHEDULES_FILE is configured (non-empty).
+        // A null pointer means the wakeup-schedule feature is not available on this build.
+        std::unique_ptr<WakeupScheduleRegister> _wakeupScheduleRegister;
         std::string _pendingRequestors;
+
+        static std::unique_ptr<WakeupScheduleRegister> createWakeupScheduleRegister();
 
         void dispatchPowerModeChangedEvent(const PowerState& currentState, const PowerState& newState);
         void dispatchDeepSleepTimeoutEvent(const uint32_t& timeout);

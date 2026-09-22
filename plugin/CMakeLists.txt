@@ -21,8 +21,9 @@ set(PLUGIN_IMPLEMENTATION ${MODULE_NAME}Implementation)
 
 set(PLUGIN_POWERMANAGER_AUTOSTART "false" CACHE STRING "Automatically start PowerManager plugin")
 set(PLUGIN_POWERMANAGER_STARTUPORDER "30" CACHE STRING "To configure startup order of PowerManager plugin")
-set(PLUGIN_POWERMANAGER_SCHEDULES_FILE "/mnt/secure_storage/pwrmgr/schedules.stg" CACHE STRING
-    "Filesystem path for deep-sleep wakeup schedules persistence file")
+set(PLUGIN_POWERMANAGER_SCHEDULES_FILE "" CACHE STRING
+    "Filesystem path for deep-sleep wakeup schedules persistence file. Empty means the \
+feature is not available and no WakeupScheduleRegister will be created")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
