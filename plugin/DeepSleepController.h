@@ -78,12 +78,25 @@ public:
 
     uint32_t timeout() const
     {
+        /* TODO: Earliest set timer needs to be considered,
+           i.e, earliest among either user set timer or maintenance timeout
+        */
         if (_isDeepSleepTimeoutSet) {
+            LOGINFO("Deep Sleep timer user set timer returned");
             return _settings.deepSleepTimeout();
         }
-
+#ifdef CUSTOM_LGI
+        if (_maintenanceConfigUpdated) {
+            LOGINFO("Deep Sleep timer custom maintenance returned");
+            return getCustomMaintenanceWakeupTime();
+        }
+#endif
+        LOGINFO("Deep Sleep timer upstream returned");
         return getWakeupTime();
     }
+
+    /* Returns the value of wakeup duration */
+    uint32_t getWakeupDuration() const ;
 
 private:
     uint32_t getTZDiffInSec() const;
@@ -101,6 +114,13 @@ private:
     /* Secure 32-bit random number from /dev/urandom. */
     uint32_t secure_random() const;
 
+#ifdef CUSTOM_LGI
+    /*  Get Wakeup timeout for custom maintenance.
+        Wakeup the box to do Maintenance related activities.
+    */
+    uint32_t getCustomMaintenanceWakeupTime() const;
+#endif
+
 private:
     Settings& _settings;
     bool _isDeepSleepTimeoutSet;
@@ -108,7 +128,6 @@ private:
 
     /* Flags for maintenance wakeup */
     bool _maintenanceConfigUpdated = false ;
-    bool _maintenanceRfcUpdated    = false ;
 
     /* Maintenance window related RFC params */
     uint32_t _wakeupDurationSec = 0 ;
