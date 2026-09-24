@@ -1821,30 +1821,39 @@ TEST_F(TestPowerManager, OverTemperatureGraceInterval)
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
 }
 
+bool isSafeRebootArgument(const std::string& input);
+
 // RDKEMW-24497: Reboot argument sanitization tests
 TEST(PowerManagerSecurityTest, SanitizesRebootRequestor)
 {
     // Test that requestor argument is sanitized
     // Valid characters: alphanumeric, space, hyphen, underscore, period
+    EXPECT_TRUE(isSafeRebootArgument("Power Manager_1.0"));
 }
 
 TEST(PowerManagerSecurityTest, SanitizesRebootReasonCustom)
 {
     // Test that reasonCustom argument is sanitized
+    EXPECT_FALSE(isSafeRebootArgument("reason; reboot"));
 }
 
 TEST(PowerManagerSecurityTest, SanitizesRebootReasonOther)
 {
     // Test that reasonOther argument is sanitized
+    EXPECT_FALSE(isSafeRebootArgument("reason'quoted"));
 }
 
 TEST(PowerManagerSecurityTest, RejectsShellMetacharacters)
 {
     // Test that shell metacharacters are rejected
     // Single quotes, semicolons, pipes, etc.
+    EXPECT_FALSE(isSafeRebootArgument("$(command)"));
+    EXPECT_FALSE(isSafeRebootArgument("reason|other"));
 }
 
 TEST(PowerManagerSecurityTest, AcceptsValidArguments)
 {
     // Test that valid alphanumeric arguments are accepted
+    EXPECT_TRUE(isSafeRebootArgument("requestor-1_reason.other"));
+    EXPECT_TRUE(isSafeRebootArgument(""));
 }
