@@ -814,7 +814,14 @@ namespace Plugin {
 
         uint32_t errorCode = Core::ERROR_INVALID_PARAMETER;
 
-        if (!requestorId.empty() && !_wakeupScheduleRegister.isAlphaNumeric(requestorId.c_str()))
+        if (!_wakeupScheduleRegister) {
+            LOGERR("Wakeup-schedule feature not available (POWERMANAGER_SCHEDULES_FILE not configured)");
+            _apiLock.Unlock();
+            LOGINFO("<< errorCode: %u", Core::ERROR_UNAVAILABLE);
+            return Core::ERROR_UNAVAILABLE;
+        }
+
+        if (!requestorId.empty() && !_wakeupScheduleRegister->isAlphaNumeric(requestorId.c_str()))
         {
             LOGERR("requestorId contains invalid characters: '%s'", requestorId.c_str());
             _apiLock.Unlock();
@@ -836,49 +843,19 @@ namespace Plugin {
         }
 
         const WakeupScheduleRegister::UnixTime targetUnixTime = static_cast<WakeupScheduleRegister::UnixTime>(unixTime);
-        WakeupScheduleRegister::OperationStatus status = WakeupScheduleRegister::Failed;
+        const WakeupScheduleRegister::CancellationStatus status =
+            _wakeupScheduleRegister->cancelWakeupSchedules(
+                targetUnixTime,
+                requestorId.empty() ? NULL : requestorId.c_str(),
+                POWERMANAGER_SCHEDULES_FILE);
 
-        if (targetUnixTime != 0 && !requestorId.empty())
+        if (status == WakeupScheduleRegister::CancellationSuccessful)
         {
-            /* Exact schedule match. ScheduleDeepSleepWakeup always registers with ActiveStandby,
-               so that's the only PowerState a caller could ever have scheduled via this API. */
-            status = _wakeupScheduleRegister.removeWakeupSchedule(
-                targetUnixTime, WakeupScheduleRegister::ActiveStandby, requestorId.c_str());
+            errorCode = Core::ERROR_NONE;
         }
-        else if (targetUnixTime == 0 && !requestorId.empty())
+        else if (status == WakeupScheduleRegister::CancellationNoMatch)
         {
-            status = _wakeupScheduleRegister.removeByRequestorId(requestorId.c_str());
-        }
-        else if (targetUnixTime != 0 && requestorId.empty())
-        {
-            status = _wakeupScheduleRegister.removeByUnixTime(targetUnixTime);
-        }
-        else
-        {
-            status = _wakeupScheduleRegister.removeAllWakeupSchedules();
-        }
-
-        if (status == WakeupScheduleRegister::Successful)
-        {
-            status = _wakeupScheduleRegister.storeWakeupSchedulesToFile(POWERMANAGER_SCHEDULES_FILE);
-            if (status == WakeupScheduleRegister::Successful)
-            {
-                errorCode = Core::ERROR_NONE;
-            }
-            else
-            {
-                /* Cancel can touch many entries at once (unlike the single-entry add path in
-                   ScheduleDeepSleepWakeup), so a surgical undo isn't practical here. Reload the
-                   last-persisted state from disk instead, which fully restores in-memory state
-                   to match what's actually on disk. */
-                _wakeupScheduleRegister.loadWakeupSchedulesFromFile(POWERMANAGER_SCHEDULES_FILE);
-                LOGERR("Failed to persist wakeup schedules to '%s' after cancel, reloaded previous state from disk", POWERMANAGER_SCHEDULES_FILE);
-                errorCode = Core::ERROR_GENERAL;
-            }
-        }
-        else
-        {
-            if (_wakeupScheduleRegister.anyPastScheduleMatches(targetUnixTime, requestorId.empty() ? NULL : requestorId.c_str()))
+            if (_wakeupScheduleRegister->anyPastScheduleMatches(targetUnixTime, requestorId.empty() ? NULL : requestorId.c_str()))
             {
                 LOGERR("no matching FUTURE schedule for unixTime: %u, requestorId: '%s' (already expired or already fired)",
                     targetUnixTime, requestorId.c_str());
@@ -889,6 +866,11 @@ namespace Plugin {
                     targetUnixTime, requestorId.c_str());
             }
             errorCode = Core::ERROR_INVALID_PARAMETER;
+        }
+        else
+        {
+            LOGERR("Failed to cancel wakeup schedules transactionally, status: %d", status);
+            errorCode = Core::ERROR_GENERAL;
         }
 
         _apiLock.Unlock();

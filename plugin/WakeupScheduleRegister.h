@@ -72,6 +72,14 @@ class WakeupScheduleRegister
         Failed
     };
 
+    enum CancellationStatus
+    {
+        CancellationSuccessful,
+        CancellationNoMatch,
+        CancellationPersistenceFailed,
+        CancellationClockFailed
+    };
+
     struct NearestWakeupSchedule
     {
         UnixTime unixTime;
@@ -224,7 +232,14 @@ class WakeupScheduleRegister
     {
         std::lock_guard<std::mutex> lock(_mutex);
         std::unique_ptr<NearestWakeupSchedule> result;
-        const UnixTime currentUnixTime = (UnixTime)time(NULL);
+        const time_t now = time(NULL);
+        if (now == static_cast<time_t>(-1))
+        {
+            ERROR_LOG("%s(): failed to read current time", __FUNCTION__);
+            return result;
+        }
+
+        const UnixTime currentUnixTime = static_cast<UnixTime>(now);
         Schedule* expiredSchedule = NULL;
 
         static const size_t kMaxPastWakeupSchedules = 128;
@@ -348,6 +363,10 @@ class WakeupScheduleRegister
     OperationStatus removeWakeupSchedule(UnixTime unixTime, PowerState powerState, const char* requestorId = NULL)
     {
         std::lock_guard<std::mutex> lock(_mutex);
+        if (!removeExpiredSchedules())
+        {
+            return Failed;
+        }
         std::vector<Schedule*>::iterator it = findUnixTime(unixTime);
         OperationStatus status = Failed;
 
@@ -383,26 +402,21 @@ class WakeupScheduleRegister
         return status;
     }
 
-    /* Reports Successful only if at least one FUTURE schedule existed and was removed; past-only
-       (already expired) content is still cleared as a side effect, but does not by itself make
-       this call Successful, since ONEM-42971 review decision requires callers to be able to tell
-       "there was nothing actionable to cancel" apart from "cancelled everything". */
+    /* Reports Successful only if at least one future schedule existed and was removed. */
     OperationStatus removeAllWakeupSchedules()
     {
         std::lock_guard<std::mutex> lock(_mutex);
         OperationStatus status = Failed;
+        if (!removeExpiredSchedules())
+        {
+            return status;
+        }
 
         if (!wakeupSchedules.empty())
         {
             clearSchedules(wakeupSchedules);
             DEBUG_LOG("%s(): all future schedules removed\n", __FUNCTION__);
             status = Successful;
-        }
-
-        if (!pastWakeupSchedules.empty())
-        {
-            clearSchedules(pastWakeupSchedules);
-            DEBUG_LOG("%s(): all past schedules removed\n", __FUNCTION__);
         }
 
         return status;
@@ -416,6 +430,10 @@ class WakeupScheduleRegister
     {
         std::lock_guard<std::mutex> lock(_mutex);
         OperationStatus status = Failed;
+        if (!removeExpiredSchedules())
+        {
+            return status;
+        }
 
         if (!requestorId || !requestorId[0])
         {
@@ -460,6 +478,10 @@ class WakeupScheduleRegister
     {
         std::lock_guard<std::mutex> lock(_mutex);
         OperationStatus status = Failed;
+        if (!removeExpiredSchedules())
+        {
+            return status;
+        }
         std::vector<Schedule*>::iterator it = findUnixTime(unixTime);
 
         if (it != wakeupSchedules.end())
@@ -472,6 +494,61 @@ class WakeupScheduleRegister
         DEBUG_LOG("%s(): unixTime = %u, status = %d\n", __FUNCTION__, unixTime, status);
 
         return status;
+    }
+
+    CancellationStatus cancelWakeupSchedules(UnixTime unixTime, const char* requestorId, const char* path)
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        if (!removeExpiredSchedules())
+        {
+            return CancellationClockFailed;
+        }
+
+        std::vector<Schedule*> futureSnapshot = cloneSchedules(wakeupSchedules);
+        std::vector<Schedule*> pastSnapshot = cloneSchedules(pastWakeupSchedules);
+        OperationStatus status = Failed;
+        const bool anyRequestor = (!requestorId || !requestorId[0]);
+
+        if (unixTime != 0 && !anyRequestor)
+        {
+            status = removeWakeupScheduleUnsafe(unixTime, ActiveStandby, requestorId);
+        }
+        else if (unixTime == 0 && !anyRequestor)
+        {
+            status = removeByRequestorIdUnsafe(requestorId);
+        }
+        else if (unixTime != 0)
+        {
+            status = removeByUnixTimeUnsafe(unixTime);
+        }
+        else
+        {
+            if (!wakeupSchedules.empty())
+            {
+                status = Successful;
+                clearSchedules(wakeupSchedules);
+            }
+        }
+
+        if (status != Successful)
+        {
+            clearSchedules(futureSnapshot);
+            clearSchedules(pastSnapshot);
+            return CancellationNoMatch;
+        }
+
+        if (storeWakeupSchedulesToFileUnsafe(path) == Successful)
+        {
+            clearSchedules(futureSnapshot);
+            clearSchedules(pastSnapshot);
+            return CancellationSuccessful;
+        }
+
+        clearSchedules(wakeupSchedules);
+        clearSchedules(pastWakeupSchedules);
+        wakeupSchedules.swap(futureSnapshot);
+        pastWakeupSchedules.swap(pastSnapshot);
+        return CancellationPersistenceFailed;
     }
 
     /* Read-only helper used purely to produce a more precise log message when a cancel request
@@ -694,69 +771,12 @@ class WakeupScheduleRegister
     OperationStatus storeWakeupSchedulesToFile(const char* path)
     {
         std::lock_guard<std::mutex> lock(_mutex);
-        OperationStatus status = Failed;
-
-        if (!path || path[0] == '\0')
+        if (!removeExpiredSchedules())
         {
-            ERROR_LOG("%s(): invalid (null or empty) path", __FUNCTION__);
-            return status;
+            return Failed;
         }
 
-        ensureDirectoryExists(path);
-
-        std::vector<Schedule*>::const_iterator it;
-        std::string data = "{v:1}[";
-
-        removeExpiredSchedules();
-        dumpSchedules(pastWakeupSchedules, "past");
-        dumpSchedules(wakeupSchedules, "future");
-
-        for (it = wakeupSchedules.begin(); it != wakeupSchedules.end(); it++)
-        {
-            data += it != wakeupSchedules.begin() ? "," : "";
-            data += scheduleToString(*it);
-        }
-
-        data += "]";
-
-        /*  Write to a temporary file and rename() it over the target, so that a failed or
-            partial write never leaves the on-disk schedules truncated/corrupted. On failure
-            the previously persisted content is preserved, keeping disk consistent with the
-            caller's in-memory rollback.
-        */
-        const std::string tmpPath = std::string(path) + ".tmp";
-        FILE* file = fopen(tmpPath.c_str(), "w");
-
-        if (!file)
-        {
-            ERROR_LOG("%s(): failed to open file for writing, path = '%s'", __FUNCTION__, tmpPath.c_str());
-            return status;
-        }
-
-        const size_t bytesWritten = fwrite(data.c_str(), 1, data.size(), file);
-        const bool flushed = (fflush(file) == 0) && (fsync(fileno(file)) == 0);
-
-        if (fclose(file) == 0 && flushed && bytesWritten == data.size())
-        {
-            if (rename(tmpPath.c_str(), path) == 0)
-            {
-                status = Successful;
-            }
-            else
-            {
-                ERROR_LOG("%s(): failed to rename '%s' to '%s'", __FUNCTION__, tmpPath.c_str(), path);
-                remove(tmpPath.c_str());
-            }
-        }
-        else
-        {
-            ERROR_LOG("%s(): failed to write file, path = '%s', bytesWritten = %zu, expected = %zu",
-                __FUNCTION__, tmpPath.c_str(), bytesWritten, data.size());
-            remove(tmpPath.c_str());
-        }
-
-        INFO_LOG("%s(): path = '%s', status = %d", __FUNCTION__, path, status);
-        return status;
+        return storeWakeupSchedulesToFileUnsafe(path);
     }
 
   private:
@@ -802,9 +822,16 @@ class WakeupScheduleRegister
         return result;
     }
 
-    void removeExpiredSchedules()
+    bool removeExpiredSchedules()
     {
-        const UnixTime currentUnixTime = (UnixTime)time(NULL);
+        const time_t now = time(NULL);
+        if (now == static_cast<time_t>(-1))
+        {
+            ERROR_LOG("%s(): failed to read current time", __FUNCTION__);
+            return false;
+        }
+
+        const UnixTime currentUnixTime = static_cast<UnixTime>(now);
         static const size_t kMaxPastWakeupSchedules = 128;
 
         while (!wakeupSchedules.empty() && wakeupSchedules[0]->unixTime <= currentUnixTime)
@@ -816,6 +843,146 @@ class WakeupScheduleRegister
             }
             wakeupSchedules.erase(wakeupSchedules.begin());
         }
+
+        return true;
+    }
+
+    std::vector<Schedule*> cloneSchedules(const std::vector<Schedule*>& schedules)
+    {
+        std::vector<Schedule*> result;
+        result.reserve(schedules.size());
+
+        for (std::vector<Schedule*>::const_iterator it = schedules.begin(); it != schedules.end(); it++)
+        {
+            Schedule* schedule = new Schedule((*it)->unixTime);
+            schedule->requestorIds = (*it)->requestorIds;
+            schedule->powerStates = (*it)->powerStates;
+            result.push_back(schedule);
+        }
+
+        return result;
+    }
+
+    OperationStatus removeWakeupScheduleUnsafe(UnixTime unixTime, PowerState powerState, const char* requestorId)
+    {
+        std::vector<Schedule*>::iterator it = findUnixTime(unixTime);
+        if (it == wakeupSchedules.end())
+        {
+            return Failed;
+        }
+
+        for (size_t i = 0; i < (*it)->powerStates.size() && i < (*it)->requestorIds.size(); i++)
+        {
+            if ((*it)->powerStates[i] == powerState && (*it)->requestorIds[i] == requestorId)
+            {
+                (*it)->powerStates.erase((*it)->powerStates.begin() + i);
+                (*it)->requestorIds.erase((*it)->requestorIds.begin() + i);
+                if ((*it)->powerStates.empty())
+                {
+                    delete (*it);
+                    wakeupSchedules.erase(it);
+                }
+                return Successful;
+            }
+        }
+
+        return Failed;
+    }
+
+    OperationStatus removeByRequestorIdUnsafe(const char* requestorId)
+    {
+        OperationStatus status = Failed;
+        for (std::vector<Schedule*>::iterator it = wakeupSchedules.begin(); it != wakeupSchedules.end(); )
+        {
+            for (size_t i = 0; i < (*it)->requestorIds.size() && i < (*it)->powerStates.size(); )
+            {
+                if ((*it)->requestorIds[i] == requestorId)
+                {
+                    (*it)->requestorIds.erase((*it)->requestorIds.begin() + i);
+                    (*it)->powerStates.erase((*it)->powerStates.begin() + i);
+                    status = Successful;
+                }
+                else
+                {
+                    i++;
+                }
+            }
+
+            if ((*it)->requestorIds.empty())
+            {
+                delete (*it);
+                it = wakeupSchedules.erase(it);
+            }
+            else
+            {
+                it++;
+            }
+        }
+        return status;
+    }
+
+    OperationStatus removeByUnixTimeUnsafe(UnixTime unixTime)
+    {
+        std::vector<Schedule*>::iterator it = findUnixTime(unixTime);
+        if (it == wakeupSchedules.end())
+        {
+            return Failed;
+        }
+
+        delete (*it);
+        wakeupSchedules.erase(it);
+        return Successful;
+    }
+
+    OperationStatus storeWakeupSchedulesToFileUnsafe(const char* path)
+    {
+        OperationStatus status = Failed;
+        if (!path || path[0] == '\0')
+        {
+            ERROR_LOG("%s(): invalid (null or empty) path", __FUNCTION__);
+            return status;
+        }
+
+        ensureDirectoryExists(path);
+        std::string data = "{v:1}[";
+        for (std::vector<Schedule*>::const_iterator it = wakeupSchedules.begin(); it != wakeupSchedules.end(); it++)
+        {
+            data += it != wakeupSchedules.begin() ? "," : "";
+            data += scheduleToString(*it);
+        }
+        data += "]";
+
+        const std::string tmpPath = std::string(path) + ".tmp";
+        FILE* file = fopen(tmpPath.c_str(), "w");
+        if (!file)
+        {
+            ERROR_LOG("%s(): failed to open file for writing, path = '%s'", __FUNCTION__, tmpPath.c_str());
+            return status;
+        }
+
+        const size_t bytesWritten = fwrite(data.c_str(), 1, data.size(), file);
+        const bool flushed = (fflush(file) == 0) && (fsync(fileno(file)) == 0);
+        if (fclose(file) == 0 && flushed && bytesWritten == data.size())
+        {
+            if (rename(tmpPath.c_str(), path) == 0)
+            {
+                status = Successful;
+            }
+            else
+            {
+                ERROR_LOG("%s(): failed to rename '%s' to '%s'", __FUNCTION__, tmpPath.c_str(), path);
+                remove(tmpPath.c_str());
+            }
+        }
+        else
+        {
+            ERROR_LOG("%s(): failed to write file, path = '%s', bytesWritten = %zu, expected = %zu",
+                __FUNCTION__, tmpPath.c_str(), bytesWritten, data.size());
+            remove(tmpPath.c_str());
+        }
+
+        INFO_LOG("%s(): path = '%s', status = %d", __FUNCTION__, path, status);
+        return status;
     }
 
     std::vector<std::pair<UnixTime, PowerState> > getPrioritizedSchedules(const std::vector<Schedule*>& schedules)
