@@ -2318,7 +2318,7 @@ TEST_F(PowerManager_L2Test, ScheduleDeepSleepWakeupMultiple)
 }
 
 /***
-** Test: CancelScheduledDeepSleepWakeups - Exact Match (ONEM-42971)
+** Test: CancelScheduledDeepSleepWakeups - Exact Match
 ** Verify that a previously scheduled wakeup can be cancelled by its exact
 ** (unixTime, requestorId) pair, and that re-cancelling it afterwards fails.
 ****/
@@ -2369,19 +2369,19 @@ TEST_F(PowerManager_L2Test, CancelScheduledDeepSleepWakeupsExactMatch)
             }
             else
             {
-                TEST_LOG("PowerManagerPlugin is NULL");
+                ADD_FAILURE() << "PowerManagerPlugin is NULL";
             }
             mController_PowerManager->Release();
         }
         else
         {
-            TEST_LOG("mController_PowerManager is NULL");
+            ADD_FAILURE() << "mController_PowerManager is NULL";
         }
     }
 }
 
 /***
-** Test: CancelScheduledDeepSleepWakeups - Cancel All (ONEM-42971)
+** Test: CancelScheduledDeepSleepWakeups - Cancel All
 ** Verify that passing unixTime=0 and an empty requestorId cancels every
 ** scheduled wakeup at once.
 ****/
@@ -2437,13 +2437,13 @@ TEST_F(PowerManager_L2Test, CancelScheduledDeepSleepWakeupsAll)
             }
             else
             {
-                TEST_LOG("PowerManagerPlugin is NULL");
+                ADD_FAILURE() << "PowerManagerPlugin is NULL";
             }
             mController_PowerManager->Release();
         }
         else
         {
-            TEST_LOG("mController_PowerManager is NULL");
+            ADD_FAILURE() << "mController_PowerManager is NULL";
         }
     }
 }

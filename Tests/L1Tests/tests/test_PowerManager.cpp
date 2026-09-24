@@ -3002,7 +3002,7 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupSequentialConsumptionAcrossMulti
     TEST_LOG("<< Test passed");
 }
 
-// ---- ONEM-42971: CancelScheduledDeepSleepWakeups ----
+// ---- CancelScheduledDeepSleepWakeups ----
 
 TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsExactMatch)
 {
@@ -3103,6 +3103,106 @@ TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsNoMatch)
     EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
 
     TEST_LOG("<< Test passed");
+}
+
+TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsExpiredSchedule)
+{
+    TEST_LOG(">> Test: Cancel an expired schedule returns ERROR_INVALID_PARAMETER");
+
+    time_t futureTime = time(nullptr) + 1;
+    EXPECT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime, "expiredApp"), Core::ERROR_NONE);
+
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+
+    uint32_t status = powerManagerImpl->CancelScheduledDeepSleepWakeups(futureTime, "expiredApp");
+    EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+    TEST_LOG("<< Test passed");
+}
+
+TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsPersistsAcrossReload)
+{
+    const std::string path = "/tmp/powermanager-cancel-persistence.stg";
+    remove(path.c_str());
+    remove((path + ".tmp").c_str());
+
+    const WakeupScheduleRegister::UnixTime targetTime =
+        static_cast<WakeupScheduleRegister::UnixTime>(time(nullptr) + 300);
+    const WakeupScheduleRegister::UnixTime retainedTime = targetTime + 300;
+
+    WakeupScheduleRegister schedules;
+    ASSERT_EQ(schedules.addWakeupSchedule(targetTime, WakeupScheduleRegister::ActiveStandby, "target"),
+        WakeupScheduleRegister::Successful);
+    ASSERT_EQ(schedules.addWakeupSchedule(retainedTime, WakeupScheduleRegister::ActiveStandby, "retained"),
+        WakeupScheduleRegister::Successful);
+    ASSERT_EQ(schedules.storeWakeupSchedulesToFile(path.c_str()), WakeupScheduleRegister::Successful);
+
+    ASSERT_EQ(schedules.cancelWakeupSchedules(targetTime, "target", path.c_str()),
+        WakeupScheduleRegister::CancellationSuccessful);
+
+    WakeupScheduleRegister reloadedSchedules;
+    ASSERT_EQ(reloadedSchedules.loadWakeupSchedulesFromFile(path.c_str()), WakeupScheduleRegister::Successful);
+    EXPECT_EQ(reloadedSchedules.removeWakeupSchedule(
+        targetTime, WakeupScheduleRegister::ActiveStandby, "target"), WakeupScheduleRegister::Failed);
+    EXPECT_EQ(reloadedSchedules.removeWakeupSchedule(
+        retainedTime, WakeupScheduleRegister::ActiveStandby, "retained"), WakeupScheduleRegister::Successful);
+
+    remove(path.c_str());
+}
+
+TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsRestoresSnapshotOnPersistenceFailure)
+{
+    const std::string path = "/tmp/powermanager-cancel-rollback.stg";
+    const std::string tmpPath = path + ".tmp";
+    remove(path.c_str());
+    rmdir(tmpPath.c_str());
+
+    const WakeupScheduleRegister::UnixTime expiredTime =
+        static_cast<WakeupScheduleRegister::UnixTime>(time(nullptr) - 1);
+    const WakeupScheduleRegister::UnixTime futureTime =
+        static_cast<WakeupScheduleRegister::UnixTime>(time(nullptr) + 300);
+
+    WakeupScheduleRegister schedules;
+    ASSERT_EQ(schedules.addWakeupSchedule(expiredTime, WakeupScheduleRegister::ActiveStandby, "expired"),
+        WakeupScheduleRegister::Successful);
+    ASSERT_EQ(schedules.addWakeupSchedule(futureTime, WakeupScheduleRegister::ActiveStandby, "future"),
+        WakeupScheduleRegister::Successful);
+    ASSERT_EQ(schedules.storeWakeupSchedulesToFile(path.c_str()), WakeupScheduleRegister::Successful);
+    ASSERT_TRUE(schedules.anyPastScheduleMatches(expiredTime, "expired"));
+
+    ASSERT_EQ(mkdir(tmpPath.c_str(), 0700), 0);
+    EXPECT_EQ(schedules.cancelWakeupSchedules(futureTime, "future", path.c_str()),
+        WakeupScheduleRegister::CancellationPersistenceFailed);
+    EXPECT_TRUE(schedules.anyPastScheduleMatches(expiredTime, "expired"));
+
+    ASSERT_EQ(rmdir(tmpPath.c_str()), 0);
+    EXPECT_EQ(schedules.cancelWakeupSchedules(0, NULL, path.c_str()),
+        WakeupScheduleRegister::CancellationSuccessful);
+    EXPECT_TRUE(schedules.anyPastScheduleMatches(expiredTime, "expired"));
+
+    remove(path.c_str());
+}
+
+TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsNoMatchPreservesPastSchedules)
+{
+    const std::string path = "/tmp/powermanager-cancel-no-match.stg";
+    remove(path.c_str());
+    remove((path + ".tmp").c_str());
+
+    const WakeupScheduleRegister::UnixTime expiredTime =
+        static_cast<WakeupScheduleRegister::UnixTime>(time(nullptr) - 1);
+
+    WakeupScheduleRegister schedules;
+    ASSERT_EQ(schedules.addWakeupSchedule(expiredTime, WakeupScheduleRegister::ActiveStandby, "expired"),
+        WakeupScheduleRegister::Successful);
+    ASSERT_EQ(schedules.storeWakeupSchedulesToFile(path.c_str()), WakeupScheduleRegister::Successful);
+    ASSERT_TRUE(schedules.anyPastScheduleMatches(expiredTime, "expired"));
+
+    EXPECT_EQ(schedules.cancelWakeupSchedules(0, NULL, path.c_str()),
+        WakeupScheduleRegister::CancellationNoMatch);
+    EXPECT_TRUE(schedules.anyPastScheduleMatches(expiredTime, "expired"));
+
+    remove(path.c_str());
 }
 
 TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsInvalidRequestor)
