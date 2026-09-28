@@ -83,6 +83,12 @@ public:
         return WPEFramework::Core::ERROR_NONE;
     }
 
+    inline uint32_t GetRebootReason(std::string& reason) const
+    {
+        reason = _settings.rebootReason();
+        return WPEFramework::Core::ERROR_NONE;
+    }
+
     uint32_t SetNetworkStandbyMode(const bool standbyMode);
     uint32_t GetNetworkStandbyMode(bool& standbyMode) const;
     uint32_t SetWakeupSourceConfig(const std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig>& configs);
