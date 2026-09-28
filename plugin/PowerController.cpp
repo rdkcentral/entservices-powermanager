@@ -121,6 +121,12 @@ uint32_t PowerController::SetPowerState(const int keyCode, const PowerState powe
 
     PowerState curState = _settings.powerState();
 
+    if (PowerState::POWER_STATE_OFF == powerState) {
+        // Persist the reboot reason before the actual power-off/reboot is executed
+        _settings.SetRebootReason(reason);
+        _settings.Save(m_settingsFile);
+    }
+
     /* Independent of Deep sleep */
     uint32_t errCode = platform().SetPowerState(powerState);
     if (WPEFramework::Core::ERROR_NONE != errCode) {
@@ -243,6 +249,10 @@ uint32_t PowerController::GetWakeupSourceConfig(std::list<WPEFramework::Exchange
 
 uint32_t PowerController::Reboot(const string& requestor, const string& reasonCustom, const string& reasonOther)
 {
+    // Persist the reboot reason before the actual reboot is executed
+    _settings.SetRebootReason(reasonCustom.empty() ? "Unknown" : reasonCustom);
+    _settings.Save(m_settingsFile);
+
     _workerPool.Submit(LambdaJob::Create([this, requestor, reasonCustom, reasonOther]() {
         platform().Reboot(requestor, reasonCustom, reasonOther);
     }));

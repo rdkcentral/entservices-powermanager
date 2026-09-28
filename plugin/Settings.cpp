@@ -50,6 +50,7 @@ class SettingsV1 {
         PWRMgr_LED_Settings_t ledSettings;
         uint32_t deep_sleep_timeout;
         bool nwStandbyMode;
+        char rebootReason[Settings::REBOOT_REASON_MAX_LEN];
         char padding[PADDING_SIZE];
     } PWRMgr_Settings_t;
 
@@ -129,6 +130,7 @@ public:
                 settings._powerState       = conv(pwrSettings.powerState);
                 settings._deepSleepTimeout = pwrSettings.deep_sleep_timeout;
                 settings._nwStandbyMode    = pwrSettings.nwStandbyMode;
+                settings._rebootReason     = std::string(pwrSettings.rebootReason, strnlen(pwrSettings.rebootReason, Settings::REBOOT_REASON_MAX_LEN));
 
                 ok = true;
             }
@@ -152,8 +154,11 @@ public:
             },
             .deep_sleep_timeout = settings.deepSleepTimeout(),
             .nwStandbyMode      = settings.nwStandbyMode(),
+            .rebootReason       = { 0 },
             .padding            = { 0 }
         };
+
+        strncpy(pwrSettings.rebootReason, settings.rebootReason().c_str(), Settings::REBOOT_REASON_MAX_LEN - 1);
 
         off_t ret = lseek(fd, 0, SEEK_SET);
         if (ret == (off_t)-1) {
@@ -286,5 +291,6 @@ void Settings::printDetails(const std::string& prefix) const
     LOGINFO("Power State Before Reboot: %s", util::str(_powerStateBeforeReboot));
     LOGINFO("Deep Sleep Timeout (sec): %u", _deepSleepTimeout);
     LOGINFO("Network Standby Mode: %s", _nwStandbyMode ? "Enabled" : "Disabled");
+    LOGINFO("Reboot Reason: %s", _rebootReason.c_str());
     LOGINFO("==================================================");
 }
