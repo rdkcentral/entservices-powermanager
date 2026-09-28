@@ -93,6 +93,7 @@ TEST_F(TestPowerManagerSettings, Empty)
     EXPECT_EQ(settings.powerStateBeforeReboot(), PowerState::POWER_STATE_ON);
     EXPECT_EQ(settings.deepSleepTimeout(), 8U * 60U * 60U); // 8 hours
     EXPECT_EQ(settings.nwStandbyMode(), false);
+    EXPECT_EQ(settings.rebootReason(), "");
 
     int ret = access("/tmp/uimgr_settings.bin", F_OK);
     EXPECT_EQ(ret, 0); // file should be present
@@ -103,6 +104,18 @@ TEST_F(TestPowerManagerSettings, Empty)
     Settings ramsettings = Settings::Load(_settingsFile);
     // Last PowerState is ON while boot
     EXPECT_EQ(ramsettings.powerStateBeforeReboot(), PowerState::POWER_STATE_ON);
+}
+
+TEST_F(TestPowerManagerSettings, RebootReasonPersistence)
+{
+    Settings settings = Settings::Load(_settingsFile);
+    EXPECT_EQ(settings.rebootReason(), "");
+
+    settings.SetRebootReason("MAINTENANCE_REBOOT");
+    settings.Save(_settingsFile);
+
+    Settings reloaded = Settings::Load(_settingsFile);
+    EXPECT_EQ(reloaded.rebootReason(), "MAINTENANCE_REBOOT");
 }
 
 TEST_P(TestPowerManagerSettings, AllTests)

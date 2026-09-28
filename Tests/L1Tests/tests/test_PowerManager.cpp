@@ -2395,6 +2395,60 @@ TEST_F(TestPowerManager, Reboot)
     EXPECT_EQ(status, Core::ERROR_NONE);
 }
 
+TEST_F(TestPowerManager, GetRebootReason_ViaReboot)
+{
+    Core::ProxyType<RebootEvent> rebootEvent = Core::ProxyType<RebootEvent>::Create();
+    EXPECT_CALL(*rebootEvent, OnRebootBegin(::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Return());
+
+    WaitGroup wg;
+    wg.Add(2);
+    EXPECT_CALL(*p_wrapsImplMock, v_secure_system(::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const char* command, va_list args) {
+                wg.Done();
+                return Core::ERROR_NONE;
+            }))
+        .WillOnce(::testing::Invoke(
+            [&](const char* command, va_list args) {
+                wg.Done();
+                return Core::ERROR_NONE;
+            }));
+
+    uint32_t status = powerManagerImpl->Register(&(*rebootEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    powerManagerImpl->Reboot("L1Test", "REBOOT_REASON_TEST", "");
+
+    wg.Wait();
+
+    string reason;
+    status = powerManagerImpl->GetRebootReason(reason);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    EXPECT_EQ(reason, "REBOOT_REASON_TEST");
+
+    status = powerManagerImpl->Unregister(&(*rebootEvent));
+    EXPECT_EQ(status, Core::ERROR_NONE);
+}
+
+TEST_F(TestPowerManager, GetRebootReason_ViaSetPowerStateOff)
+{
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_OFF);
+                return PWRMGR_SUCCESS;
+            }));
+
+    uint32_t status = powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_OFF, "OVERHEATING_REBOOT");
+    EXPECT_EQ(status, Core::ERROR_NONE);
+
+    string reason;
+    status = powerManagerImpl->GetRebootReason(reason);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    EXPECT_EQ(reason, "OVERHEATING_REBOOT");
+}
+
 TEST_F(TestPowerManager, NetworkStandby)
 {
     WaitGroup wg;

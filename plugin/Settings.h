@@ -20,7 +20,7 @@
 
 #include <chrono>
 #include <cstdint>
-#include <ctime>
+#include <string>
 
 #include <core/Time.h>
 #include <interfaces/IPowerManager.h>
@@ -53,6 +53,7 @@ class Settings {
         , _deepSleepTimeout(kDeepSleepTimeoutSec)
         , _nwStandbyMode(false)
         , _lastUpdateTime(MonotonicClock::now())
+        , _rebootReason()
     {
     }
 
@@ -83,6 +84,7 @@ public:
 
     inline void SetDeepSleepTimeout(uint32_t timeout) { _deepSleepTimeout = timeout; }
     inline void SetNwStandbyMode(bool mode) { _nwStandbyMode = mode; }
+    inline void SetRebootReason(const std::string& reason) { _rebootReason = reason; }
 
     inline uint32_t magic() const { return _magic; }
     inline uint32_t version() const { return _version; }
@@ -90,6 +92,7 @@ public:
     inline PowerState powerStateBeforeReboot() const { return _powerStateBeforeReboot; }
     uint32_t deepSleepTimeout() const;
     inline bool nwStandbyMode() const { return _nwStandbyMode; }
+    inline const std::string& rebootReason() const { return _rebootReason; }
 
     void printDetails(const std::string& prefix) const;
 
@@ -106,6 +109,7 @@ private:
     uint32_t _deepSleepTimeout;         // Deep sleep timeout in seconds
     bool _nwStandbyMode;                // Network standby mode, true if enabled, false if disabled
     Timestamp _lastUpdateTime;          // Timestamp when power state was updated, used for calculating inactive duration
+    std::string _rebootReason;          // Reason of the most recent reboot executed via PowerManager
 
     friend class SettingsV1;
 };
