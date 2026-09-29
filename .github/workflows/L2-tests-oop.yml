@@ -474,7 +474,7 @@ jobs:
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/tvSettingsExtODM.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/tvSettingsODM.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/tvTypes.h
-          -Werror -Wall -Wno-unused-result -Wno-deprecated-declarations -Wno-error=format=
+          -Werror -Wall -Wno-unused-result -Wno-deprecated-declarations -Wno-error=unused-function -Wno-error=format=
           -Wl,--no-as-needed
           -DUSE_IARMBUS
           -DRDK_SERVICE_L2_TEST
