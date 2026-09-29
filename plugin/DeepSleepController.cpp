@@ -387,7 +387,7 @@ uint32_t DeepSleepController::Activate(uint32_t timeOut, bool nwStandbyMode, boo
 #else
 uint32_t DeepSleepController::Activate(uint32_t timeOut, bool nwStandbyMode)
 {
-    LOGINFO("timeOut: %u, nwStandbyMode: %s",timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
+    LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
     _workerPool.Submit(LambdaJob::Create([this, timeOut, nwStandbyMode]() {
         LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
         performActivate(timeOut, nwStandbyMode);

@@ -1247,7 +1247,6 @@ namespace Plugin {
         dispatchDeepSleepTimeoutEvent(wakeupTimeout);
 
 #ifdef CUSTOM_LGI
-        /*Scheduled maintenance reboot is disabled. Instead state will change to STANDBY */
         LOGINFO("Set Device to active standby on Deep Sleep timer expiry");
         uint32_t errorCode = SetPowerState(0, PowerState::POWER_STATE_STANDBY, "DeepSleep timedout");
         if( errorCode != Core::ERROR_NONE )
@@ -1255,7 +1254,6 @@ namespace Plugin {
             LOGERR("Fail to set power state to active standby,errorCode:%u", errorCode);
         }
 #else
-        /*Scheduled maintenance reboot is disabled. Instead state will change to LIGHT_SLEEP*/
         LOGINFO("Set Device to light sleep on Deep Sleep timer expiry");
         SetPowerState(0, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "DeepSleep timedout");
 #endif

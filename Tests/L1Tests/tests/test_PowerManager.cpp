@@ -1716,7 +1716,7 @@ TEST_F(TestPowerManager, DeepSleepTimerWakeup_CustomLgi_StaysInStandby)
     PowerState previousState = PowerState::POWER_STATE_UNKNOWN;
     ASSERT_EQ(powerManagerImpl->GetPowerState(newState, previousState), Core::ERROR_NONE);
     EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY);
-    EXPECT_TRUE(powerManagerImpl->_deepSleepController._maintenanceWakeupScheduled);
+    EXPECT_TRUE(powerManagerImpl->_deepSleepController._maintenanceWakeupScheduled->load());
 
     ASSERT_EQ(0, system("rm -f /tmp/deepSleepWakeupTimer"));
     ASSERT_EQ(powerManagerImpl->Unregister(&(*modeChanged)), Core::ERROR_NONE);
