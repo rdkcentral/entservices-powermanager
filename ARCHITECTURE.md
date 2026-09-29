@@ -13,6 +13,16 @@ The PowerManager plugin is a comprehensive power state management system for WPE
 - **PowerManagerImplementation**: Core implementation class providing the IPowerManager interface
 - Manages plugin lifecycle, service registration, and client communication through Thunder framework
 
+#### PowerController COM-RPC Client
+- **PowerController**: Client-side library (C API) that connects to the PowerManager plugin via COM-RPC
+- Provides simplified C interface wrapping IPowerManager COM-RPC interface
+- Handles connection lifecycle: initialization, COM-RPC channel management, automatic reconnection on plugin restart
+- Manages plugin activation state monitoring and operational status tracking
+- Forwards power management operations (SetPowerState, GetPowerState, thermal controls, deep sleep, reboot)
+- Supports event notification subscriptions with callback-based delivery
+- Implements thread-safe callback management and Thunder framework integration
+- Monitors Thunder process lifecycle via PID file tracking for automatic reconnect
+
 #### Controller Layer
 The plugin employs a specialized controller pattern with four distinct controllers:
 
@@ -102,6 +112,8 @@ The plugin employs a specialized controller pattern with four distinct controlle
 
 ### Client Communication
 - **JSON-RPC API**: RESTful API for power management operations
+- **COM-RPC Interface**: Binary interface for efficient inter-process communication
+- **PowerController Client Library**: C API wrapper for COM-RPC access to PowerManager functionality
 - **Event Notifications**: Asynchronous notifications for state changes
 - **Client Registration**: Support for multiple client subscriptions
 
