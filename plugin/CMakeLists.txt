@@ -27,6 +27,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package(${NAMESPACE}Plugins REQUIRED)
 find_package(${NAMESPACE}Definitions REQUIRED)
 find_package(${NAMESPACE}Helpers REQUIRED)
+find_package(${NAMESPACE}COM REQUIRED)
 find_package(CompileSettingsDebug CONFIG REQUIRED)
 find_library(PROCPS_LIBRARIES NAMES procps)
 
@@ -38,7 +39,8 @@ find_package(Telemetry)
 
 add_library(${MODULE_NAME} SHARED
     PowerManager.cpp
-    Module.cpp)
+    Module.cpp
+    powercontroller/power_controller.cpp)
 
 set_target_properties(${MODULE_NAME} PROPERTIES
         CXX_STANDARD 11
@@ -47,9 +49,14 @@ set_target_properties(${MODULE_NAME} PROPERTIES
 target_link_libraries(${MODULE_NAME}
     PRIVATE
         CompileSettingsDebug::CompileSettingsDebug
+        ${NAMESPACE}COM::${NAMESPACE}COM
         ${NAMESPACE}Plugins::${NAMESPACE}Plugins
         ${NAMESPACE}Definitions::${NAMESPACE}Definitions
         ${NAMESPACE}::${NAMESPACE}Helpers)
+
+target_include_directories(${MODULE_NAME}
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/powercontroller)
 
 if(TELEMETRY_FOUND)
     target_link_libraries(${MODULE_NAME} PRIVATE ${TELEMETRY_LIBRARIES})
