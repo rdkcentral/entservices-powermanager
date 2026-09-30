@@ -233,6 +233,9 @@ public:
     // deactivate deep sleep mode
     uint32_t Deactivate();
 
+    // stop worker callbacks before dependent owner members are destroyed
+    void Shutdown();
+
     // perform maintenance reboot
     void MaintenanceReboot();
 
@@ -254,6 +257,7 @@ private:
     void enterDeepSleepDelayed();
     void enterDeepSleepNow();
     void deepSleepTimerWakeup();
+    uint32_t submitActivation(uint32_t timeOut, bool nwStandbyMode);
     void performActivate(uint32_t timeOut, bool nwStandbyMode);
     void cancelPendingWorkerJobs();
     void waitForInFlightEntry();

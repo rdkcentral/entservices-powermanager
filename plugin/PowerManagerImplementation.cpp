@@ -101,6 +101,9 @@ namespace Plugin {
 
     PowerManagerImplementation::~PowerManagerImplementation()
     {
+        // Drain callbacks while _powerController and the other callback targets
+        // are still alive; members are destroyed only after this body returns.
+        _deepSleepController.Shutdown();
         LOGINFO(">> DTOR <<");
     }
 

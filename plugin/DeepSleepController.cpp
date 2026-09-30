@@ -355,11 +355,21 @@ DeepSleepController::DeepSleepController(INotification& parent, std::shared_ptr<
 DeepSleepController::~DeepSleepController()
 {
     LOGINFO(">> DTOR");
+    Shutdown();
+    LOGINFO("<< DTOR");
+}
+
+void DeepSleepController::Shutdown()
+{
     // Revoke queued jobs and wait for any in-flight dispatch to finish before
-    // destroying the controller, since both jobs capture `this`.
+    // dependent owner members are destroyed, since both jobs capture `this`
+    // and can callback through _parent.
     cancelPendingWorkerJobs();
     waitForInFlightEntry();
-    LOGINFO("<< DTOR");
+    // An activation can schedule delayed entry before completing. Re-check after
+    // the in-flight activation has finished so that job cannot outlive teardown.
+    cancelPendingWorkerJobs();
+    waitForInFlightEntry();
 }
 
 uint32_t DeepSleepController::GetLastWakeupReason(WakeupReason& wakeupReason) const
@@ -386,38 +396,54 @@ uint32_t DeepSleepController::Activate(uint32_t timeOut, bool nwStandbyMode, boo
             timeOut,(nwStandbyMode ? "Enabled" : "Disabled"),
                 (isMaintenanceWakeupScheduled ? "true" : "false"));
     _maintenanceWakeupScheduled->store(isMaintenanceWakeupScheduled);
-    _workerPool.Submit(LambdaJob::Create([this, timeOut, nwStandbyMode]() {
-        LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
-        performActivate(timeOut, nwStandbyMode);
-    }));
-
-    return WPEFramework::Core::ERROR_NONE;
+    return submitActivation(timeOut, nwStandbyMode);
 }
 #else
 uint32_t DeepSleepController::Activate(uint32_t timeOut, bool nwStandbyMode)
 {
     LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
 
-    _jobLock->Lock();
+    return submitActivation(timeOut, nwStandbyMode);
+}
+#endif
 
+uint32_t DeepSleepController::submitActivation(uint32_t timeOut, bool nwStandbyMode)
+{
     // Replace any previous queued Activate job so teardown can always Revoke the latest,
     // and so a stale queued activation (from a prior call) doesn't race this new one.
-    if (_activateJob.IsValid()) {
-        _workerPool.Revoke(_activateJob);
-        _activateJob.Release();
+    cancelPendingWorkerJobs();
+
+    {
+        std::lock_guard<std::mutex> lock(_inFlightEntryState->mutex);
+        if (_inFlightEntryState->active) {
+            LOGERR("Deep sleep activation is already in progress");
+            return WPEFramework::Core::ERROR_ILLEGAL_STATE;
+        }
     }
 
+    _jobLock->Lock();
     _activateJob = LambdaJob::Create([this, timeOut, nwStandbyMode]() {
+        _jobLock->Lock();
+        {
+            std::lock_guard<std::mutex> lock(_inFlightEntryState->mutex);
+            _inFlightEntryState->active = true;
+        }
+        _jobLock->Unlock();
+
         LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
         performActivate(timeOut, nwStandbyMode);
+
+        {
+            std::lock_guard<std::mutex> lock(_inFlightEntryState->mutex);
+            _inFlightEntryState->active = false;
+        }
+        _inFlightEntryState->condition.notify_all();
     });
     _workerPool.Submit(_activateJob);
 
     _jobLock->Unlock();
-
     return WPEFramework::Core::ERROR_NONE;
 }
-#endif
 
 // deactivate deep sleep mode
 uint32_t DeepSleepController::Deactivate()
@@ -436,28 +462,35 @@ uint32_t DeepSleepController::Deactivate()
 void DeepSleepController::cancelPendingWorkerJobs()
 {
     WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> activateJob;
-    WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> deepSleepDelayJob;
 
     _jobLock->Lock();
 
     if (_activateJob.IsValid()) {
-        activateJob = _activateJob;
-        _activateJob.Release();
-    }
-
-    if (_deepSleepDelayJob.IsValid()) {
-        deepSleepDelayJob = _deepSleepDelayJob;
-        _deepSleepDelayJob.Release();
+        std::lock_guard<std::mutex> lock(_inFlightEntryState->mutex);
+        // Deep-sleep wakeup calls Deactivate() synchronously from the activation
+        // worker. Revoking that same in-flight dispatch would wait on itself.
+        if (!_inFlightEntryState->active) {
+            activateJob = _activateJob;
+            _activateJob.Release();
+        }
     }
 
     _jobLock->Unlock();
 
-    // Revoke outside _jobLock: an already-dispatched delayed job takes this lock
-    // while marking itself in-flight, and Revoke may wait for that dispatch.
+    // Revoke outside _jobLock because Revoke may wait for the dispatch. Wait for
+    // activation first; it can create a delayed-entry job while it is in flight.
     if (activateJob.IsValid()) {
         _workerPool.Revoke(activateJob);
         LOGINFO("Deepsleep activate job cancelled");
     }
+
+    WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> deepSleepDelayJob;
+    _jobLock->Lock();
+    if (_deepSleepDelayJob.IsValid()) {
+        deepSleepDelayJob = _deepSleepDelayJob;
+        _deepSleepDelayJob.Release();
+    }
+    _jobLock->Unlock();
 
     if (deepSleepDelayJob.IsValid()) {
         _workerPool.Revoke(deepSleepDelayJob);

@@ -430,11 +430,32 @@ class WakeupScheduleRegister
             return status;
         }
 
-        fseek(file, 0, SEEK_END);
-        long fileSize = ftell(file);
-        fseek(file, 0, SEEK_SET);
+        if (fseek(file, 0, SEEK_END) != 0)
+        {
+            ERROR_LOG("%s(): failed to seek schedule file, path = '%s', error = %d (%s)",
+                __FUNCTION__, path, errno, std::strerror(errno));
+            fclose(file);
+            return status;
+        }
 
-        if (fileSize <= 0)
+        const long fileSize = ftell(file);
+        if (fileSize < 0)
+        {
+            ERROR_LOG("%s(): failed to determine schedule file size, path = '%s', error = %d (%s)",
+                __FUNCTION__, path, errno, std::strerror(errno));
+            fclose(file);
+            return status;
+        }
+
+        if (fseek(file, 0, SEEK_SET) != 0)
+        {
+            ERROR_LOG("%s(): failed to rewind schedule file, path = '%s', error = %d (%s)",
+                __FUNCTION__, path, errno, std::strerror(errno));
+            fclose(file);
+            return status;
+        }
+
+        if (fileSize == 0)
         {
             clearSchedules(wakeupSchedules);
             clearSchedules(pastWakeupSchedules);
