@@ -208,7 +208,7 @@ public:
     {
         uint32_t result = Core::ERROR_ALREADY_CONNECTED;
 
-        LOGINFO(">>>");
+        LOGINFO("Srinibas>>>");
 
         auto it = std::find_if(this->begin(), this->end(), [&callback](const CallbackType& cb) {
             return cb.callback == callback;
