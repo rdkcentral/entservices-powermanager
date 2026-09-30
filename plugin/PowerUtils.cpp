@@ -61,6 +61,8 @@ const char* PowerUtils::str(const WakeupReason reason)
         return "PRESENCE";
     case WakeupReason::WAKEUP_REASON_VOICE:
         return "VOICE";
+    case WakeupReason::WAKEUP_REASON_MAINTENANCE:
+        return "MAINTENANCE";
     default:
         LOGERR("Unknown wakeup reason: %d", reason);
         return "UNKNOWN";

@@ -41,6 +41,8 @@ int WPEFramework::Plugin::PowerManagerImplementation::PreModeChangeController::_
 uint32_t WPEFramework::Plugin::PowerManagerImplementation::_nextClientId                          = 0;
 uint32_t WPEFramework::Plugin::PowerManagerImplementation::_nextAckClientId                       = 0;
 
+
+
 #ifndef POWER_MODE_PRECHANGE_TIMEOUT_SEC
 #define POWER_MODE_PRECHANGE_TIMEOUT_SEC 1
 #endif
@@ -450,7 +452,6 @@ namespace Plugin {
                 LOGINFO("Device wakeup from DEEP_SLEEP to %s", util::str(newState));
                 _deepSleepController.Deactivate();
             }
-
             _apiLock.Lock();
 
             // If we're already in the acknowledgement negotiation, reject this request
@@ -1241,12 +1242,17 @@ namespace Plugin {
 
     void PowerManagerImplementation::onDeepSleepTimerWakeup(const int wakeupTimeout)
     {
-        LOGINFO(">> DeepSleep timedout: %d", wakeupTimeout);
+        LOGINFO(">> DeepSleep timedout: %d, ", wakeupTimeout);
+
         dispatchDeepSleepTimeoutEvent(wakeupTimeout);
 
 #ifdef CUSTOM_LGI
-        LOGINFO("Set Device to standby on Deep Sleep timer expiry");
-        SetPowerState(0, PowerState::POWER_STATE_STANDBY, "DeepSleep timedout");
+        LOGINFO("Set Device to active standby on Deep Sleep timer expiry");
+        uint32_t errorCode = SetPowerState(0, PowerState::POWER_STATE_STANDBY, "DeepSleep timedout");
+        if( errorCode != Core::ERROR_NONE )
+        {
+            LOGERR("Fail to set power state to active standby,errorCode:%u", errorCode);
+        }
 #else
         LOGINFO("Set Device to light sleep on Deep Sleep timer expiry");
         SetPowerState(0, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "DeepSleep timedout");
@@ -1273,6 +1279,10 @@ namespace Plugin {
 
 #ifdef PLATCO_BOOTTO_STANDBY
         newState = PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP;
+#endif
+
+#ifdef CUSTOM_LGI
+        newState = PowerState::POWER_STATE_STANDBY;
 #endif
         LOGINFO(">> Failed to enter DeepSleep, moving to powerState: %s", util::str(newState));
         t2_event_d((char*)"SYST_ERR_DSModeFail", 1);
@@ -1303,7 +1313,7 @@ namespace Plugin {
 
     void PowerManagerImplementation::onDeepSleepForThermalChange()
     {
-        /*Scheduled maintanace reboot is disabled. Instead state will change to LIGHT_SLEEP*/
+        /*Scheduled maintenance reboot is disabled. Instead state will change to LIGHT_SLEEP*/
         LOGINFO(">> Set device to deepsleep on ThermalChange");
         SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "DeepSleep on Thermal change");
         LOGINFO("<<");
