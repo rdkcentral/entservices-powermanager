@@ -69,7 +69,7 @@ cmake -G Ninja -S "$GITHUB_WORKSPACE" -B build/entservices-powermanager \
 -include ${GITHUB_WORKSPACE}/entservices-testframework/Tests/mocks/wpa_ctrl_mock.h \
 -include ${GITHUB_WORKSPACE}/entservices-testframework/Tests/mocks/secure_wrappermock.h \
 -include ${GITHUB_WORKSPACE}/entservices-testframework/Tests/mocks/readprocMockInterface.h \
--Wall -Werror -Wno-error=format \
+-Wall -Werror -Wno-error=format -Wno-error=unused-function \
 -Wl,-wrap,system -Wl,-wrap,popen -Wl,-wrap,syslog \
 -DENABLE_TELEMETRY_LOGGING -DUSE_IARMBUS \
 -DENABLE_DEEP_SLEEP \
