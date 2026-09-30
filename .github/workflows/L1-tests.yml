@@ -475,6 +475,7 @@ jobs:
           -DUSE_THUNDER_R4=ON
           -DHIDE_NON_EXTERNAL_SYMBOLS=OFF
           -DPLUGIN_POWERMANAGER=ON
+          -DPLUGIN_POWERMANAGER_SCHEDULES_FILE="/mnt/secure_storage/pwrmgr/schedules.stg"
           &&
           cmake --build build/entservices-powermanager
           &&
@@ -550,6 +551,7 @@ jobs:
           -DUSE_DEVICESETTINGS=ON
           -DBUILD_RPI=ON
           -DPLUGIN_POWERMANAGER=ON
+          -DPLUGIN_POWERMANAGER_SCHEDULES_FILE="/mnt/secure_storage/pwrmgr/schedules.stg"
           -DRDK_SERVICES_L1_TEST=ON
           -DUSE_THUNDER_R4=ON
           -DHIDE_NON_EXTERNAL_SYMBOLS=OFF

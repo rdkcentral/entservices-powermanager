@@ -18,6 +18,8 @@
  */
 
 #include <chrono>
+#include <cstdint>
+#include <ctime>
 #include <memory>
 
 #include "PowerManagerImplementation.h"
@@ -31,7 +33,6 @@
 #include <telemetry_busmessage_sender.h>
 
 #define STANDBY_REASON_FILE "/opt/standbyReason.txt"
-
 using util                           = PowerUtils;
 using WakeupSourceConfig             = WPEFramework::Exchange::IPowerManager::WakeupSourceConfig;
 using IWakeupSourceConfigIterator    = WPEFramework::Exchange::IPowerManager::IWakeupSourceConfigIterator;
@@ -72,18 +73,37 @@ namespace Plugin {
         , _controller(nullptr)
         , _modeChangeController(nullptr)
         , _modeChangeAckController(nullptr)
+        , _wakeupScheduleRegister(createWakeupScheduleRegister())
         , _deepSleepController(DeepSleepController::Create(*this))
-        , _powerController(PowerController::Create(_deepSleepController))
+        , _powerController(PowerController::Create(_deepSleepController, _wakeupScheduleRegister.get()))
         , _thermalController(ThermalController::Create(*this))
     {
         // Coverity Fix: ID 581 - Uninitialized pointer field
         PowerManagerImplementation::_instance = this;
         Utils::IARM::init();
+        if (_wakeupScheduleRegister) {
+            _wakeupScheduleRegister->loadWakeupSchedulesFromFile(POWERMANAGER_SCHEDULES_FILE);
+        }
         LOGINFO(">> CTOR <<");
+    }
+
+    std::unique_ptr<WakeupScheduleRegister> PowerManagerImplementation::createWakeupScheduleRegister()
+    {
+        // Empty path means the wakeup-schedule feature is not configured/available on
+        // this build; keep the register absent so ScheduleDeepSleepWakeup() and the
+        // deep-sleep-timeout handling can treat it as an optional feature.
+        if (POWERMANAGER_SCHEDULES_FILE == nullptr || POWERMANAGER_SCHEDULES_FILE[0] == '\0') {
+            LOGINFO("Wakeup schedule persistence file not configured; wakeup-schedule feature disabled");
+            return nullptr;
+        }
+        return std::unique_ptr<WakeupScheduleRegister>(new WakeupScheduleRegister());
     }
 
     PowerManagerImplementation::~PowerManagerImplementation()
     {
+        // Drain callbacks while _powerController and the other callback targets
+        // are still alive; members are destroyed only after this body returns.
+        _deepSleepController.Shutdown();
         LOGINFO(">> DTOR <<");
     }
 
@@ -93,6 +113,10 @@ namespace Plugin {
         _callbackLock.Lock();
         for (auto& notification : _modeChangedNotifications) {
             auto start = std::chrono::steady_clock::now();
+            // TODO: after ONEM-42980 is implemented, update the invocation like:
+            /* const string requestors = _pendingRequestors;
+               _pendingRequestors.clear();
+               notification->OnPowerModeChanged(prevState, newState, reason, requestors); */
             notification->OnPowerModeChanged(prevState, newState);
             auto elapsed = std::chrono::steady_clock::now() - start;
             LOGINFO("client %p took %" PRId64 "ms to process IModeChanged event", notification, std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
@@ -473,7 +497,7 @@ namespace Plugin {
             if (_modeChangeAckController && _modeChangeAckController->IsRunning()) {
                 LOGWARN("Rejecting SetPowerState(%s) - acknowledgement negotiation already in progress for %s state.",
                     util::str(newState), util::str(_modeChangeAckController->powerState()));
-                
+
                 _apiLock.Unlock();
                 selfLock.Unlock();
                 return Core::ERROR_ILLEGAL_STATE;
@@ -697,6 +721,88 @@ namespace Plugin {
 
         LOGINFO("<< timeOutVal: %d, errorCode: %u", timeOutVal, errorCode);
 
+        return errorCode;
+    }
+
+    Core::hresult PowerManagerImplementation::ScheduleDeepSleepWakeup(const uint64_t unixTime, const string& requestorId)
+    {
+        LOGINFO(">> unixTime: %" PRIu64 ", requestorId: '%s'", unixTime, requestorId.c_str());
+
+        _apiLock.Lock();
+
+        uint32_t errorCode = Core::ERROR_INVALID_PARAMETER;
+
+        if (!_wakeupScheduleRegister) {
+            LOGERR("Wakeup-schedule feature not available (POWERMANAGER_SCHEDULES_FILE not configured)");
+            _apiLock.Unlock();
+            LOGINFO("<< errorCode: %u", Core::ERROR_UNAVAILABLE);
+            return Core::ERROR_UNAVAILABLE;
+        }
+
+        if (!requestorId.empty())
+        {
+            if (!_wakeupScheduleRegister->isAlphaNumeric(requestorId.c_str())) {
+                LOGERR("requestorId contains invalid characters: '%s'", requestorId.c_str());
+                _apiLock.Unlock();
+                LOGINFO("<< errorCode: %u", errorCode);
+                return errorCode;
+            }
+
+            /*  Validate unixTime is non-zero, fits in WakeupScheduleRegister::UnixTime
+                (32-bit unsigned) and is in the future.
+
+                unixTime is unsigned (uint64_t), so it can never be negative; the
+                "in future" comparison is done in a signed 64-bit type since `time_t`
+                may be 32 bits on some targets, and requestedTime is always well within
+                int64_t range here because it's already bounded by kMaxUnixTime (UINT32_MAX).
+            */
+            static const uint64_t kMaxUnixTime = static_cast<uint64_t>(UINT32_MAX);
+            const uint64_t requestedTime = unixTime;
+            const time_t nowTime = time(nullptr);
+            if (nowTime == static_cast<time_t>(-1)) {
+                LOGERR("time() failed while validating unixTime");
+                _apiLock.Unlock();
+                LOGINFO("<< errorCode: %u", Core::ERROR_GENERAL);
+                return Core::ERROR_GENERAL;
+            }
+            const int64_t now = static_cast<int64_t>(nowTime);
+
+            if (requestedTime == 0 || requestedTime > kMaxUnixTime || static_cast<int64_t>(requestedTime) <= now) {
+                LOGERR("unixTime %" PRIu64 " is invalid or not in future (now: %lld)", requestedTime, static_cast<long long>(now));
+                _apiLock.Unlock();
+                LOGINFO("<< errorCode: %u", errorCode);
+                return errorCode;
+            }
+
+            WakeupScheduleRegister::OperationStatus status = _wakeupScheduleRegister->addWakeupSchedule(
+                static_cast<WakeupScheduleRegister::UnixTime>(requestedTime),
+                WakeupScheduleRegister::ActiveStandby,
+                requestorId.c_str()
+            );
+
+            if (status == WakeupScheduleRegister::Successful)
+            {
+                status = _wakeupScheduleRegister->storeWakeupSchedulesToFile(POWERMANAGER_SCHEDULES_FILE);
+                if (status == WakeupScheduleRegister::Successful)
+                {
+                    errorCode = Core::ERROR_NONE;
+                }
+                else
+                {
+                    _wakeupScheduleRegister->removeWakeupSchedule(
+                        static_cast<WakeupScheduleRegister::UnixTime>(requestedTime),
+                        WakeupScheduleRegister::ActiveStandby,
+                        requestorId.c_str()
+                    );
+                    LOGERR("Failed to persist wakeup schedules to '%s', rolled back in-memory schedule", POWERMANAGER_SCHEDULES_FILE);
+                    errorCode = Core::ERROR_GENERAL;
+                }
+            }
+        }
+
+        _apiLock.Unlock();
+
+        LOGINFO("<< errorCode: %u", errorCode);
         return errorCode;
     }
 
@@ -992,7 +1098,7 @@ namespace Plugin {
 
         // Preserve the same sync-state-change carve-out as the pre-change round (see `isSyncStateChange`),
         // so `SetPowerState`'s `selfLock` ordering guarantee is not affected by this additional round.
-        
+
         const uint32_t timeOut =  POWER_MODE_CHANGE_ACK_TIMEOUT_SEC;
 
         // Like in `Job` class we avoid impl destruction before handler is invoked
@@ -1255,23 +1361,62 @@ namespace Plugin {
         return errorCode;
     }
 
-    void PowerManagerImplementation::onDeepSleepTimerWakeup(const int wakeupTimeout)
+    void PowerManagerImplementation::onDeepSleepTimerWakeup(const int wakeupTimeout, WakeupReason wakeupReason)
     {
-        LOGINFO(">> DeepSleep timedout: %d, ", wakeupTimeout);
-
+        LOGINFO(">> DeepSleep timed out: %d", wakeupTimeout);
         dispatchDeepSleepTimeoutEvent(wakeupTimeout);
 
-#ifdef CUSTOM_LGI
-        LOGINFO("Set Device to active standby on Deep Sleep timer expiry");
-        uint32_t errorCode = SetPowerState(0, PowerState::POWER_STATE_STANDBY, "DeepSleep timedout");
-        if( errorCode != Core::ERROR_NONE )
+        // DeepSleepController::deepSleepTimerWakeup() fires this callback for every non-user wake
+        // (including LAN/WiFi/etc.), not only genuine timer expiry. Only consume a wakeup schedule
+        // when the platform actually reported a TIMER wakeup, otherwise an unrelated wake occurring
+        // after the scheduled time could wrongly consume it and force STANDBY.
+        const bool timerWakeup = (wakeupReason == WakeupReason::WAKEUP_REASON_TIMER);
+
+        bool scheduleConsumed = false;
+        string requestors;
+
+        // Wakeup-schedule feature is optional; nothing to consume/persist when it's disabled.
+        if (_wakeupScheduleRegister)
         {
-            LOGERR("Fail to set power state to active standby,errorCode:%u", errorCode);
+            auto schedule = timerWakeup ? _wakeupScheduleRegister->getMostRecentlyExpiredWakeupSchedule() : nullptr;
+            scheduleConsumed = (schedule != nullptr);
+
+            if (schedule != nullptr)
+            {
+                for (const auto& requestor : schedule->requestorIds)
+                {
+                    requestors += requestors.empty() ? requestor : " " + requestor;
+                }
+            }
+
+            if (scheduleConsumed &&
+                _wakeupScheduleRegister->storeWakeupSchedulesToFile(POWERMANAGER_SCHEDULES_FILE) != WakeupScheduleRegister::Successful) {
+                LOGERR("Failed to persist wakeup schedules to '%s' after consuming schedule", POWERMANAGER_SCHEDULES_FILE);
+            }
         }
+
+        _apiLock.Lock();
+        _pendingRequestors = requestors;
+        _apiLock.Unlock();
+
+        if (scheduleConsumed)
+        {
+            LOGINFO("Set Device to STANDBY on Deep Sleep timer expiry (scheduled wakeup), requestors: '%s'", requestors.c_str());
+            SetPowerState(0, PowerState::POWER_STATE_STANDBY, "DeepSleep timed out");
+        }
+        else
+        {
+#ifdef CUSTOM_LGI
+            LOGINFO("Set Device to standby on Deep Sleep timer expiry (no scheduled wakeup)");
+            uint32_t errorCode = SetPowerState(0, PowerState::POWER_STATE_STANDBY, "DeepSleep timedout");
+            if (errorCode != Core::ERROR_NONE) {
+                LOGERR("Failed to set power state to standby, errorCode: %u", errorCode);
+            }
 #else
-        LOGINFO("Set Device to light sleep on Deep Sleep timer expiry");
-        SetPowerState(0, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "DeepSleep timedout");
+            LOGINFO("Set Device to LIGHT_SLEEP on Deep Sleep timer expiry (no scheduled wakeup), requestors: '%s'", requestors.c_str());
+            SetPowerState(0, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "DeepSleep timed out");
 #endif
+        }
         LOGINFO("<<");
     }
 

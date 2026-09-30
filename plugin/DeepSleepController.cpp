@@ -37,6 +37,9 @@
 #include <core/WorkerPool.h>  // for IWorkerPool, WorkerPool
 
 #include "DeepSleepController.h"
+
+#include <condition_variable>
+#include <mutex>
 #include "LambdaJob.h"      // for LambdaJob
 #include "PowerUtils.h"     // for WakeupReason string
 #include "UtilsLogging.h"   // for LOGINFO, LOGERR
@@ -329,6 +332,12 @@ uint32_t DeepSleepWakeupSettings::getCustomMaintenanceWakeupTime() const
 }
 #endif
 
+struct DeepSleepController::InFlightEntryState {
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool active { false };
+};
+
 DeepSleepController::DeepSleepController(INotification& parent, std::shared_ptr<IPlatform> platform)
     : _parent(parent)
     , _workerPool(WPEFramework::Core::WorkerPool::Instance())
@@ -336,6 +345,8 @@ DeepSleepController::DeepSleepController(INotification& parent, std::shared_ptr<
     , _deepSleepState(DeepSleepState::NotStarted)
     , _deepSleepDelaySec(0)
     , _deepSleepWakeupTimeoutSec(0)
+    , _jobLock(std::make_shared<WPEFramework::Core::CriticalSection>())
+    , _inFlightEntryState(std::make_shared<InFlightEntryState>())
     , _nwStandbyMode(false)
     , _abortState(std::make_shared<AbortState>())
     , _timingMutex(std::make_shared<std::mutex>())
@@ -346,13 +357,21 @@ DeepSleepController::DeepSleepController(INotification& parent, std::shared_ptr<
 DeepSleepController::~DeepSleepController()
 {
     LOGINFO(">> DTOR");
-    if (_deepSleepDelayJob.IsValid()) {
-        // Cancel the delay timer if it is still active
-        _workerPool.Revoke(_deepSleepDelayJob);
-        _deepSleepDelayJob.Release();
-        LOGINFO("Deepsleep delayed job cancelled");
-    }
+    Shutdown();
     LOGINFO("<< DTOR");
+}
+
+void DeepSleepController::Shutdown()
+{
+    // Revoke queued jobs and wait for any in-flight dispatch to finish before
+    // dependent owner members are destroyed, since both jobs capture `this`
+    // and can callback through _parent.
+    cancelPendingWorkerJobs();
+    waitForInFlightEntry();
+    // An activation can schedule delayed entry before completing. Re-check after
+    // the in-flight activation has finished so that job cannot outlive teardown.
+    cancelPendingWorkerJobs();
+    waitForInFlightEntry();
 }
 
 uint32_t DeepSleepController::GetLastWakeupReason(WakeupReason& wakeupReason) const
@@ -379,37 +398,61 @@ uint32_t DeepSleepController::Activate(uint32_t timeOut, bool nwStandbyMode, boo
             timeOut,(nwStandbyMode ? "Enabled" : "Disabled"),
                 (isMaintenanceWakeupScheduled ? "true" : "false"));
     _maintenanceWakeupScheduled->store(isMaintenanceWakeupScheduled);
-    _workerPool.Submit(LambdaJob::Create([this, timeOut, nwStandbyMode]() {
-        LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
-        performActivate(timeOut, nwStandbyMode);
-    }));
-
-    return WPEFramework::Core::ERROR_NONE;
+    return submitActivation(timeOut, nwStandbyMode);
 }
 #else
 uint32_t DeepSleepController::Activate(uint32_t timeOut, bool nwStandbyMode)
 {
     LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
-    _workerPool.Submit(LambdaJob::Create([this, timeOut, nwStandbyMode]() {
-        LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
-        performActivate(timeOut, nwStandbyMode);
-    }));
 
-    return WPEFramework::Core::ERROR_NONE;
+    return submitActivation(timeOut, nwStandbyMode);
 }
 #endif
+
+uint32_t DeepSleepController::submitActivation(uint32_t timeOut, bool nwStandbyMode)
+{
+    // Replace any previous queued Activate job so teardown can always Revoke the latest,
+    // and so a stale queued activation (from a prior call) doesn't race this new one.
+    cancelPendingWorkerJobs();
+
+    {
+        std::lock_guard<std::mutex> lock(_inFlightEntryState->mutex);
+        if (_inFlightEntryState->active) {
+            LOGERR("Deep sleep activation is already in progress");
+            return WPEFramework::Core::ERROR_ILLEGAL_STATE;
+        }
+    }
+
+    _jobLock->Lock();
+    _activateJob = LambdaJob::Create([this, timeOut, nwStandbyMode]() {
+        _jobLock->Lock();
+        {
+            std::lock_guard<std::mutex> lock(_inFlightEntryState->mutex);
+            _inFlightEntryState->active = true;
+        }
+        _jobLock->Unlock();
+
+        LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
+        performActivate(timeOut, nwStandbyMode);
+
+        {
+            std::lock_guard<std::mutex> lock(_inFlightEntryState->mutex);
+            _inFlightEntryState->active = false;
+        }
+        _inFlightEntryState->condition.notify_all();
+    });
+    _workerPool.Submit(_activateJob);
+
+    _jobLock->Unlock();
+    return WPEFramework::Core::ERROR_NONE;
+}
 
 // deactivate deep sleep mode
 uint32_t DeepSleepController::Deactivate()
 {
     requestAbortDeepSleep();
 
-    if (_deepSleepDelayJob.IsValid()) {
-        // Cancel the delay timer if it is still active
-        _workerPool.Revoke(_deepSleepDelayJob);
-        _deepSleepDelayJob.Release();
-        LOGINFO("Deepsleep delayed job cancelled");
-    }
+    cancelPendingWorkerJobs();
 
     uint32_t errorCode = platform().DeepSleepWakeup();
 
@@ -418,6 +461,45 @@ uint32_t DeepSleepController::Deactivate()
     LOGINFO("Deepsleep wakeup completed, errorCode: %u", errorCode);
 
     return errorCode;
+}
+
+void DeepSleepController::cancelPendingWorkerJobs()
+{
+    WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> activateJob;
+
+    _jobLock->Lock();
+
+    if (_activateJob.IsValid()) {
+        std::lock_guard<std::mutex> lock(_inFlightEntryState->mutex);
+        // Deep-sleep wakeup calls Deactivate() synchronously from the activation
+        // worker. Revoking that same in-flight dispatch would wait on itself.
+        if (!_inFlightEntryState->active) {
+            activateJob = _activateJob;
+            _activateJob.Release();
+        }
+    }
+
+    _jobLock->Unlock();
+
+    // Revoke outside _jobLock because Revoke may wait for the dispatch. Wait for
+    // activation first; it can create a delayed-entry job while it is in flight.
+    if (activateJob.IsValid()) {
+        _workerPool.Revoke(activateJob);
+        LOGINFO("Deepsleep activate job cancelled");
+    }
+
+    WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> deepSleepDelayJob;
+    _jobLock->Lock();
+    if (_deepSleepDelayJob.IsValid()) {
+        deepSleepDelayJob = _deepSleepDelayJob;
+        _deepSleepDelayJob.Release();
+    }
+    _jobLock->Unlock();
+
+    if (deepSleepDelayJob.IsValid()) {
+        _workerPool.Revoke(deepSleepDelayJob);
+        LOGINFO("Deepsleep delayed job cancelled");
+    }
 }
 
 bool DeepSleepController::read_integer_conf(const char* file_name, uint32_t& val)
@@ -447,10 +529,22 @@ bool DeepSleepController::read_integer_conf(const char* file_name, uint32_t& val
 
 void DeepSleepController::enterDeepSleepDelayed()
 {
+    _jobLock->Lock();
+    {
+        std::lock_guard<std::mutex> lock(_inFlightEntryState->mutex);
+        _inFlightEntryState->active = true;
+    }
     _deepSleepDelayJob.Release();
+    _jobLock->Unlock();
 
     LOGINFO("Deep Sleep timer expired: entering deep sleep mode");
     enterDeepSleepNow();
+
+    {
+        std::lock_guard<std::mutex> lock(_inFlightEntryState->mutex);
+        _inFlightEntryState->active = false;
+    }
+    _inFlightEntryState->condition.notify_all();
 }
 
 void DeepSleepController::enterDeepSleepNow()
@@ -528,20 +622,36 @@ void DeepSleepController::enterDeepSleepNow()
 
 void DeepSleepController::deepSleepTimerWakeup()
 {
+    const auto elapsed = Elapsed();
+    const auto timeout = std::chrono::seconds(_deepSleepWakeupTimeoutSec);
     WakeupReason wakeupReason = WakeupReason::WAKEUP_REASON_UNKNOWN;
+    const uint32_t errorCode = GetLastWakeupReason(wakeupReason);
 
-    uint32_t errorCode = GetLastWakeupReason(wakeupReason);
-    std::string wakeupReasonStr = WPEFramework::Core::ERROR_NONE == errorCode ? util::str(wakeupReason) : "UNKOWN";
-
-    if (Elapsed() >= std::chrono::seconds(_deepSleepWakeupTimeoutSec)) {
-        LOGINFO("DeepSleep wakeupReason: %s, timeout: %d", wakeupReasonStr.c_str(), _deepSleepWakeupTimeoutSec);
-    } else {
-        auto pending       = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::seconds(_deepSleepWakeupTimeoutSec) - Elapsed()).count();
-        LOGERR("DeepSleep wakeupReason: %s, timeout: %ds, elapsed: %llds, pending: %lldms", wakeupReasonStr.c_str(),
-            _deepSleepWakeupTimeoutSec, std::chrono::duration_cast<std::chrono::seconds>(Elapsed()).count(), pending);
+    if (WPEFramework::Core::ERROR_NONE != errorCode) {
+        // If the platform cannot identify the source, elapsed time is the only safe
+        // fallback for deciding whether the configured timer expired.
+        wakeupReason = elapsed >= timeout
+            ? WakeupReason::WAKEUP_REASON_TIMER
+            : WakeupReason::WAKEUP_REASON_UNKNOWN;
     }
+
+    const auto pending = elapsed < timeout
+        ? std::chrono::duration_cast<std::chrono::milliseconds>(timeout - elapsed).count()
+        : 0;
+    LOGINFO("DeepSleep wakeupReason: %s, timeout: %ds, elapsed: %llds, pending: %lldms, status: %u",
+        util::str(wakeupReason), _deepSleepWakeupTimeoutSec,
+        std::chrono::duration_cast<std::chrono::seconds>(elapsed).count(), pending, errorCode);
+
     // irrespective of wakeup reason / status / elapsed duration always notify deepsleep wakeup
-    _parent.onDeepSleepTimerWakeup(_deepSleepWakeupTimeoutSec);
+    _parent.onDeepSleepTimerWakeup(_deepSleepWakeupTimeoutSec, wakeupReason);
+}
+
+void DeepSleepController::waitForInFlightEntry()
+{
+    std::unique_lock<std::mutex> lock(_inFlightEntryState->mutex);
+    _inFlightEntryState->condition.wait(lock, [this]() {
+        return !_inFlightEntryState->active;
+    });
 }
 
 void DeepSleepController::performActivate(uint32_t timeOut, bool nwStandbyMode)
@@ -576,6 +686,7 @@ void DeepSleepController::performActivate(uint32_t timeOut, bool nwStandbyMode)
         }
 
         if (_deepSleepDelaySec) {
+            _jobLock->Lock();
             _deepSleepDelayJob = LambdaJob::Create([this]() {
                 enterDeepSleepDelayed();
             });
@@ -584,6 +695,7 @@ void DeepSleepController::performActivate(uint32_t timeOut, bool nwStandbyMode)
                 WPEFramework::Core::Time(
                     WPEFramework::Core::Time::Now().Add(_deepSleepDelaySec * 1000)),
                 _deepSleepDelayJob);
+            _jobLock->Unlock();
         } else {
             enterDeepSleepNow();
         }
@@ -630,16 +742,16 @@ bool DeepSleepWakeupSettings::fetchMaintenanceWakeupRFCValueInt(const char *key,
 
     if (WDMP_SUCCESS == getRFCParameter((char*)"MaintenanceWakeup_Config", key, &param))
     {
-        len = strlen(param.value);        	
+        len = strlen(param.value);
         const char* raw = param.value;
 
-        if (len >= 2 && raw[0] == '"' && raw[len - 1] == '"') 
+        if (len >= 2 && raw[0] == '"' && raw[len - 1] == '"')
         {
             raw++;
             len -= 2;
         }
 
-        if (len > MAX_MAINTENANCE_RFC) 
+        if (len > MAX_MAINTENANCE_RFC)
         {
             LOGERR("RFC value for %s too long (%u > %u): '%s'", key, len, MAX_MAINTENANCE_RFC, param.value);
             return false ;
@@ -651,7 +763,7 @@ bool DeepSleepWakeupSettings::fetchMaintenanceWakeupRFCValueInt(const char *key,
         errno = 0;
         long parsed = strtol(rfcVal, &end, 10);
 
-        if (errno != 0 || end == rfcVal || *end != '\0' || parsed < 0 || static_cast<unsigned long>(parsed) > UINT32_MAX) 
+        if (errno != 0 || end == rfcVal || *end != '\0' || parsed < 0 || static_cast<unsigned long>(parsed) > UINT32_MAX)
         {
             LOGERR("Invalid integer RFC value for %s: '%s'", key, rfcVal);
             return false;
