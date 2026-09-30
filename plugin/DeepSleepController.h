@@ -187,6 +187,8 @@ class DeepSleepController {
         Completed,       /*!< Deepsleep operation completed */
     } DeepSleepState;
 
+    struct InFlightEntryState;
+
 public:
     ~DeepSleepController();
     class INotification {
@@ -254,6 +256,7 @@ private:
     void deepSleepTimerWakeup();
     void performActivate(uint32_t timeOut, bool nwStandbyMode);
     void cancelPendingWorkerJobs();
+    void waitForInFlightEntry();
 
 private:
     INotification& _parent;
@@ -276,6 +279,7 @@ private:
     // Held via shared_ptr so DeepSleepController (constructed once via Create()
     // and move/copy-elided into its owner) remains movable.
     std::shared_ptr<WPEFramework::Core::CriticalSection> _jobLock;
+    std::shared_ptr<InFlightEntryState> _inFlightEntryState;
 
     bool _nwStandbyMode; // Flag to indicate if network standby mode is enabled
 };

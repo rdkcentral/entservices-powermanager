@@ -320,6 +320,11 @@ PowerManager_L2Test::PowerManager_L2Test()
 {
         uint32_t status = Core::ERROR_GENERAL;
 
+         EXPECT_EQ(0, system("mkdir -p /mnt/secure_storage/pwrmgr")) << "Failed to create wakeup schedule storage directory";
+         std::ofstream schedulesFile("/mnt/secure_storage/pwrmgr/schedules.stg", std::ios::trunc);
+         EXPECT_TRUE(schedulesFile.is_open()) << "Failed to reset wakeup schedule storage before plugin activation";
+         schedulesFile.close();
+
          EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_INIT())
          .WillOnce(::testing::Return(DEEPSLEEPMGR_SUCCESS));
 
@@ -2173,12 +2178,6 @@ TEST_F(PowerManager_L2Test, ScheduleDeepSleepWakeupValid)
     Core::ProxyType<RPC::CommunicatorClient> mClient_PowerManager;
     PluginHost::IShell *mController_PowerManager;
 
-    {
-        ASSERT_EQ(0, system("mkdir -p /mnt/secure_storage/pwrmgr")) << "Failed to create wakeup schedule storage directory";
-        std::ofstream ofs("/mnt/secure_storage/pwrmgr/schedules.stg", std::ios::trunc);
-        ASSERT_TRUE(ofs.is_open()) << "Failed to reset wakeup schedule storage";
-    }
-
     TEST_LOG("Creating mEngine_PowerManager");
     mEngine_PowerManager = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
     mClient_PowerManager = Core::ProxyType<RPC::CommunicatorClient>::Create(Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(mEngine_PowerManager));
@@ -2206,13 +2205,13 @@ TEST_F(PowerManager_L2Test, ScheduleDeepSleepWakeupValid)
             }
             else
             {
-                TEST_LOG("PowerManagerPlugin is NULL");
+                ADD_FAILURE() << "PowerManagerPlugin is NULL";
             }
             mController_PowerManager->Release();
         }
         else
         {
-            TEST_LOG("mController_PowerManager is NULL");
+            ADD_FAILURE() << "mController_PowerManager is NULL";
         }
     }
 }
@@ -2226,12 +2225,6 @@ TEST_F(PowerManager_L2Test, ScheduleDeepSleepWakeupInvalidRequestor)
     Core::ProxyType<RPC::InvokeServerType<1, 0, 4>> mEngine_PowerManager;
     Core::ProxyType<RPC::CommunicatorClient> mClient_PowerManager;
     PluginHost::IShell *mController_PowerManager;
-
-    {
-        ASSERT_EQ(0, system("mkdir -p /mnt/secure_storage/pwrmgr")) << "Failed to create wakeup schedule storage directory";
-        std::ofstream ofs("/mnt/secure_storage/pwrmgr/schedules.stg", std::ios::trunc);
-        ASSERT_TRUE(ofs.is_open()) << "Failed to reset wakeup schedule storage";
-    }
 
     TEST_LOG("Creating mEngine_PowerManager");
     mEngine_PowerManager = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
@@ -2260,13 +2253,13 @@ TEST_F(PowerManager_L2Test, ScheduleDeepSleepWakeupInvalidRequestor)
             }
             else
             {
-                TEST_LOG("PowerManagerPlugin is NULL");
+                ADD_FAILURE() << "PowerManagerPlugin is NULL";
             }
             mController_PowerManager->Release();
         }
         else
         {
-            TEST_LOG("mController_PowerManager is NULL");
+            ADD_FAILURE() << "mController_PowerManager is NULL";
         }
     }
 }
@@ -2280,12 +2273,6 @@ TEST_F(PowerManager_L2Test, ScheduleDeepSleepWakeupMultiple)
     Core::ProxyType<RPC::InvokeServerType<1, 0, 4>> mEngine_PowerManager;
     Core::ProxyType<RPC::CommunicatorClient> mClient_PowerManager;
     PluginHost::IShell *mController_PowerManager;
-
-    {
-        ASSERT_EQ(0, system("mkdir -p /mnt/secure_storage/pwrmgr")) << "Failed to create wakeup schedule storage directory";
-        std::ofstream ofs("/mnt/secure_storage/pwrmgr/schedules.stg", std::ios::trunc);
-        ASSERT_TRUE(ofs.is_open()) << "Failed to reset wakeup schedule storage";
-    }
 
     TEST_LOG("Creating mEngine_PowerManager");
     mEngine_PowerManager = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
@@ -2319,13 +2306,13 @@ TEST_F(PowerManager_L2Test, ScheduleDeepSleepWakeupMultiple)
             }
             else
             {
-                TEST_LOG("PowerManagerPlugin is NULL");
+                ADD_FAILURE() << "PowerManagerPlugin is NULL";
             }
             mController_PowerManager->Release();
         }
         else
         {
-            TEST_LOG("mController_PowerManager is NULL");
+            ADD_FAILURE() << "mController_PowerManager is NULL";
         }
     }
 }
