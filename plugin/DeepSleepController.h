@@ -27,10 +27,12 @@
 #include <vector>      // for vector
 
 #include <core/Proxy.h>               // for ProxyType
+#include <core/Sync.h>                // for CriticalSection
 #include <core/Trace.h>               // for ASSERT
 #include <interfaces/IPowerManager.h> // for IPowerManager
 
 #include "Settings.h"          // for Settings
+#include "WakeupScheduleRegister.h" // for WakeupScheduleRegister
 #include "hal/DeepSleep.h"     // for IPlatform
 #include "hal/DeepSleepImpl.h" // for DeepSleepImpl
 
@@ -60,8 +62,9 @@ class DeepSleepWakeupSettings {
     } tzValue;
 
 public:
-    DeepSleepWakeupSettings(Settings& settings)
+    DeepSleepWakeupSettings(Settings& settings, WakeupScheduleRegister* wakeupScheduleRegister = nullptr)
         : _settings(settings)
+        , _wakeupScheduleRegister(wakeupScheduleRegister)
         , _isDeepSleepTimeoutSet(false)
     {
         updateMaintenanceWakeupConfig();
@@ -81,9 +84,21 @@ public:
 #ifdef CUSTOM_LGI
         _maintenanceWakeupSet = false ;
 #endif
-        /* TODO: Earliest set timer needs to be considered,
-           i.e, earliest among either user set timer or maintenance timeout
-        */
+        if (_wakeupScheduleRegister != nullptr) {
+            auto nearest = _wakeupScheduleRegister->getNearestWakeupSchedule();
+            if (nearest != nullptr) {
+                const time_t nowTime = time(nullptr);
+                if (nowTime == static_cast<time_t>(-1)) {
+                    return _settings.deepSleepTimeout();
+                }
+                const auto now = static_cast<WakeupScheduleRegister::UnixTime>(nowTime);
+                const uint32_t secondsUntilWakeup = (nearest->unixTime > now)
+                    ? static_cast<uint32_t>(nearest->unixTime - now)
+                    : 1U;
+                return secondsUntilWakeup;
+            }
+        }
+
         if (_isDeepSleepTimeoutSet) {
             LOGINFO("Deep Sleep timer user set timer returned");
             return _settings.deepSleepTimeout();
@@ -135,6 +150,7 @@ private:
 
 private:
     Settings& _settings;
+    WakeupScheduleRegister* _wakeupScheduleRegister;
     bool _isDeepSleepTimeoutSet;
     static std::map<std::string, tzValue> _maptzValues;
 
@@ -171,13 +187,15 @@ class DeepSleepController {
         Completed,       /*!< Deepsleep operation completed */
     } DeepSleepState;
 
+    struct InFlightEntryState;
+
 public:
     ~DeepSleepController();
     class INotification {
     public:
         virtual ~INotification() = default;
 
-        virtual void onDeepSleepTimerWakeup(const int wakeupTimeout) = 0;
+        virtual void onDeepSleepTimerWakeup(const int wakeupTimeout, WakeupReason wakeupReason) = 0;
         virtual void onDeepSleepUserWakeup(const bool userWakeup)    = 0;
         virtual void onDeepSleepFailed()                             = 0;
     };
@@ -215,6 +233,9 @@ public:
     // deactivate deep sleep mode
     uint32_t Deactivate();
 
+    // stop worker callbacks before dependent owner members are destroyed
+    void Shutdown();
+
     // perform maintenance reboot
     void MaintenanceReboot();
 
@@ -236,7 +257,10 @@ private:
     void enterDeepSleepDelayed();
     void enterDeepSleepNow();
     void deepSleepTimerWakeup();
+    uint32_t submitActivation(uint32_t timeOut, bool nwStandbyMode);
     void performActivate(uint32_t timeOut, bool nwStandbyMode);
+    void cancelPendingWorkerJobs();
+    void waitForInFlightEntry();
 
 private:
     INotification& _parent;
@@ -249,7 +273,17 @@ private:
 #ifdef CUSTOM_LGI
     std::shared_ptr<std::atomic<bool>> _maintenanceWakeupScheduled{std::make_shared<std::atomic<bool>>(false)};
 #endif
+
+    WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> _activateJob;       // Queued Activate() -> performActivate() job
     WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> _deepSleepDelayJob; // Job to handle delay before entering deepsleep
+
+    // Guards _activateJob/_deepSleepDelayJob against concurrent access from
+    // Activate()/Deactivate()/cancelPendingWorkerJobs()/the destructor, which can
+    // otherwise race (e.g. teardown vs. an in-flight SetPowerState-driven call).
+    // Held via shared_ptr so DeepSleepController (constructed once via Create()
+    // and move/copy-elided into its owner) remains movable.
+    std::shared_ptr<WPEFramework::Core::CriticalSection> _jobLock;
+    std::shared_ptr<InFlightEntryState> _inFlightEntryState;
 
     bool _nwStandbyMode; // Flag to indicate if network standby mode is enabled
 };
