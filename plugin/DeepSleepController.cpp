@@ -46,7 +46,6 @@
 #include "sysMgr.h"         // for IARM_BUS_SYSMGR_API_GetSystemStates
 #include "rfcapi.h"
 
-#define WAKEUPDURATION "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.MaintenanceWakeup.WakeupDuration"
 #define FIXEDSTARTS "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.MaintenanceWakeup.FixedStarts"
 #define RANDOMDELAY "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.MaintenanceWakeup.RandomDelay"
 #define INACTIVITYTIMEOUT "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.MaintenanceWakeup.InactivityTimeout"
@@ -74,6 +73,13 @@ static bool parseFixedStarts(const std::string& extractedParam, std::vector<int>
         try {
             size_t pos = 0;
             int value = std::stoi(token, &pos);
+            if ((value < 0) || value >= (24 * 60))
+            {
+                /* Reject this RFC values which could be negative or greater than 24 hours */
+                LOGERR("Invalid fixedStarts entry '%s' in RFC value '%s' - rejecting whole list",
+                       token.c_str(), extractedParam.c_str());
+                return false;
+            }
 
             /* Validate the value is integer */
             if (pos != token.size()) {
@@ -216,7 +222,6 @@ uint32_t DeepSleepWakeupSettings::getWakeupTime() const
         wakeupTimeInSec = wakeupTimeInSec + getTZDiffTime;
 
         LOGINFO("Calculated Deep Sleep Wakeup Time After TZ setting is %" PRIu32 "Sec", wakeupTimeInSec);
-
         return wakeupTimeInSec;
     }
 
@@ -224,6 +229,105 @@ uint32_t DeepSleepWakeupSettings::getWakeupTime() const
 
     return 0;
 }
+
+#ifdef CUSTOM_LGI
+/*  Get Wakeup timeout.
+    Wakeup the box to do Maintenance related activities.
+*/
+uint32_t DeepSleepWakeupSettings::getCustomMaintenanceWakeupTime() const
+{
+    time_t now = 0, wakeup = 0;
+    time_t wakeupTime     = 0;
+    uint32_t wakeupTimeInSec = 0;
+    uint32_t minWakeupTime = 5 * 60 ;
+
+    /* curr time */
+    time(&now);
+
+    bool hasFixedStartAfterWakeup = false;
+    LOGINFO("Current time: %ld, Inactivity timeout: %d minutes", (long)now, _inactivityTimeout);
+    wakeup = now + ( _inactivityTimeout * 60 ) ;
+    auto* res = localtime(&wakeup); /*current time plus inactivity timeout */
+    if (nullptr != res)
+    {
+        wakeupTime = wakeup ;
+        struct tm localTime = *res;
+        LOGINFO("Wakeup time: %ld", (long)wakeupTime);
+        localTime.tm_hour = 0;
+        localTime.tm_min  = 0;
+        localTime.tm_sec  = 0;
+        LOGINFO("localTime: %04d-%02d-%02d %02d:%02d:%02d gmtoff=%ld isdst=%d",
+                    localTime.tm_year + 1900,localTime.tm_mon + 1,localTime.tm_mday,
+                        localTime.tm_hour,localTime.tm_min,localTime.tm_sec,
+                            (long)localTime.tm_gmtoff,localTime.tm_isdst);
+
+        if(!_fixedStarts.empty())
+        {
+            time_t midnightBeforeWakeup = mktime(&localTime);
+            for (const auto& fixedStart : _fixedStarts)
+            {
+                time_t candidateWakeupTime = midnightBeforeWakeup + (fixedStart * 60);
+                LOGINFO("Midnight timestamp: %ld", (long)midnightBeforeWakeup);
+                LOGINFO("fixedStart: %d", fixedStart);
+                LOGINFO("Candidate wakeup time: %ld", (long)candidateWakeupTime);
+                if(candidateWakeupTime > wakeupTime)
+                {
+                    wakeupTime = candidateWakeupTime ;
+                    LOGINFO("Got fixed start after wakeupTime: %ld", (long)wakeupTime);
+                    hasFixedStartAfterWakeup = true ;
+                    break ;
+                }
+            }
+        }
+        if( !_fixedStarts.empty() && !hasFixedStartAfterWakeup)
+        {
+            LOGINFO("No fixed start after wakeupTime, so move to tomorrow.");
+            /* Adding a day to the current time to ensure we are scheduling for the next day */
+            localTime.tm_mday += 1;
+            localTime.tm_hour = 0;
+            localTime.tm_min = 0;
+            localTime.tm_sec = 0;
+            localTime.tm_isdst = -1 ;
+
+            time_t midnightAfterWakeup = mktime(&localTime);
+            LOGINFO("Midnight after wakeup timestamp: %ld", (long)midnightAfterWakeup);
+
+            struct tm *check = localtime(&midnightAfterWakeup);
+
+            LOGINFO("AFTER mktime/localtime: %04d-%02d-%02d %02d:%02d:%02d",
+                check->tm_year + 1900,
+                check->tm_mon + 1,
+                check->tm_mday,
+                check->tm_hour,
+                check->tm_min,
+                check->tm_sec);
+
+
+            LOGINFO("fixedStart: %d", _fixedStarts[0]);
+            wakeupTime = midnightAfterWakeup + (_fixedStarts[0] * 60 );
+            LOGINFO("Wakeup time after midnight calculation: %ld", (long)wakeupTime);
+        }
+
+        if(_randomDelay)
+        {
+            double randomFactor = static_cast<double>(secure_random()) /
+                                    (static_cast<double>(UINT32_MAX) + 1.0);
+            wakeupTime += static_cast<time_t>(randomFactor * _randomDelay * 60);
+            LOGINFO("Random factor: %f", randomFactor);
+            LOGINFO("After adding random delay of %d seconds to wakeup time:%ld", _randomDelay,(long)wakeupTime);
+        }
+
+        const time_t minimumWakeup = now + static_cast<time_t>(minWakeupTime);
+        wakeupTimeInSec = static_cast<uint32_t>(difftime(std::max(wakeupTime, minimumWakeup), now));
+        LOGINFO("wakeupTime in sec :%d, now:%ld, minimumWakeup:%ld", wakeupTimeInSec, (long)now, (long)minimumWakeup);
+        return wakeupTimeInSec;
+    }
+
+    LOGERR("Failed to get local time");
+
+    return 0;
+}
+#endif
 
 DeepSleepController::DeepSleepController(INotification& parent, std::shared_ptr<IPlatform> platform)
     : _parent(parent)
@@ -253,6 +357,12 @@ DeepSleepController::~DeepSleepController()
 
 uint32_t DeepSleepController::GetLastWakeupReason(WakeupReason& wakeupReason) const
 {
+#ifdef CUSTOM_LGI
+    if (_maintenanceWakeupScheduled->load()) {
+        wakeupReason = WakeupReason::WAKEUP_REASON_MAINTENANCE;
+        return WPEFramework::Core::ERROR_NONE;
+    }
+#endif
     return platform().GetLastWakeupReason(wakeupReason);
 }
 
@@ -262,6 +372,21 @@ uint32_t DeepSleepController::GetLastWakeupKeyCode(int& keyCode) const
 }
 
 // activate deep sleep mode
+#ifdef CUSTOM_LGI
+uint32_t DeepSleepController::Activate(uint32_t timeOut, bool nwStandbyMode, bool isMaintenanceWakeupScheduled)
+{
+    LOGINFO("timeOut: %u, nwStandbyMode: %s, isMaintenanceWakeupScheduled: %s",
+            timeOut,(nwStandbyMode ? "Enabled" : "Disabled"),
+                (isMaintenanceWakeupScheduled ? "true" : "false"));
+    _maintenanceWakeupScheduled->store(isMaintenanceWakeupScheduled);
+    _workerPool.Submit(LambdaJob::Create([this, timeOut, nwStandbyMode]() {
+        LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
+        performActivate(timeOut, nwStandbyMode);
+    }));
+
+    return WPEFramework::Core::ERROR_NONE;
+}
+#else
 uint32_t DeepSleepController::Activate(uint32_t timeOut, bool nwStandbyMode)
 {
     LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
@@ -272,6 +397,7 @@ uint32_t DeepSleepController::Activate(uint32_t timeOut, bool nwStandbyMode)
 
     return WPEFramework::Core::ERROR_NONE;
 }
+#endif
 
 // deactivate deep sleep mode
 uint32_t DeepSleepController::Deactivate()
@@ -380,12 +506,19 @@ void DeepSleepController::enterDeepSleepNow()
     }
 
     if (failed) {
+#ifdef CUSTOM_LGI
+        _maintenanceWakeupScheduled->store(false);
+#endif
         LOGERR("Failed to enter deep sleep mode error code: %u", errorCode);
         _parent.onDeepSleepFailed();
         return;
     }
     LOGINFO("DeepSleep success; performing wakeup action");
+
     if (userWakeup) {
+#ifdef CUSTOM_LGI
+        _maintenanceWakeupScheduled->store(false);
+#endif
         LOGINFO("DeeSleep wakeupReason: user action");
         _parent.onDeepSleepUserWakeup(userWakeup);
     } else {
@@ -397,14 +530,13 @@ void DeepSleepController::deepSleepTimerWakeup()
 {
     WakeupReason wakeupReason = WakeupReason::WAKEUP_REASON_UNKNOWN;
 
+    uint32_t errorCode = GetLastWakeupReason(wakeupReason);
+    std::string wakeupReasonStr = WPEFramework::Core::ERROR_NONE == errorCode ? util::str(wakeupReason) : "UNKOWN";
+
     if (Elapsed() >= std::chrono::seconds(_deepSleepWakeupTimeoutSec)) {
-        LOGINFO("DeepSleep wakeupReason: TIMER, timeout: %d", _deepSleepWakeupTimeoutSec);
+        LOGINFO("DeepSleep wakeupReason: %s, timeout: %d", wakeupReasonStr.c_str(), _deepSleepWakeupTimeoutSec);
     } else {
         auto pending       = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::seconds(_deepSleepWakeupTimeoutSec) - Elapsed()).count();
-        uint32_t errorCode = platform().GetLastWakeupReason(wakeupReason);
-
-        std::string wakeupReasonStr = WPEFramework::Core::ERROR_NONE == errorCode ? util::str(wakeupReason) : "UNKOWN";
-
         LOGERR("DeepSleep wakeupReason: %s, timeout: %ds, elapsed: %llds, pending: %lldms", wakeupReasonStr.c_str(),
             _deepSleepWakeupTimeoutSec, std::chrono::duration_cast<std::chrono::seconds>(Elapsed()).count(), pending);
     }
@@ -585,50 +717,64 @@ bool DeepSleepWakeupSettings::retrieveConfigFixedStarts()
 
 void DeepSleepWakeupSettings::updateMaintenanceWakeupConfig()
 {
-    if (_maintenanceConfigUpdated) return ;
-
-    /* Wakeup Duration */
-    if (!( _maintenanceRfcUpdated = retrieveConfigValueInt(WAKEUPDURATION, _wakeupDurationSec))) 
-    {
-        LOGINFO("RFC wakeupduration not available");
+    bool configRetrieved = false;
+    /* Configuration has already been successfully retrieved. */
+    if (_maintenanceConfigUpdated)
         return;
-    }
-    LOGINFO("DeepSleep wakeupDurationSec = %u",_wakeupDurationSec);
 
     /* Fixed Starts */
-    if (!( _maintenanceRfcUpdated = retrieveConfigFixedStarts()))    
+    if (retrieveConfigFixedStarts())
     {
-        LOGINFO("RFC fixedstarts not available");
-        return;
+        configRetrieved = true;
+        /* Log the fixedStarts values */
+        std::string fixedStartsLog;
+        for (size_t index = 0; index < _fixedStarts.size(); ++index)
+        {
+            if (index > 0)
+            {
+                fixedStartsLog += ",";
+            }
+            fixedStartsLog += std::to_string(_fixedStarts[index]);
+        }
+        LOGINFO("DeepSleep fixedStarts retrieved successfully: [%s]", fixedStartsLog.c_str());
+    }
+    else
+    {
+        LOGINFO("RFC fixedStarts not available");
     }
 
-    /* Log the fixedStarts values */
-    std::string fixedStartsLog;
-    for (size_t index = 0; index < _fixedStarts.size(); ++index)
+    /* Random Delay */
+    if (retrieveConfigValueInt(RANDOMDELAY, _randomDelay))
     {
-        if (index > 0)
-        {
-            fixedStartsLog += ",";
-        }
-        fixedStartsLog += std::to_string(_fixedStarts[index]);
+        configRetrieved = true;
+        LOGINFO("DeepSleep randomDelaySec = %u", _randomDelay);
     }
-    LOGINFO("DeepSleep fixedStarts = [%s]",fixedStartsLog.c_str());
-    
-    /* Random Delay */    
-    if (!( _maintenanceRfcUpdated = retrieveConfigValueInt(RANDOMDELAY, _randomDelay)))     
+    else
     {
         LOGINFO("RFC randomdelay not available");
-        return;
     }
-    LOGINFO("DeepSleep randomDelaySec = %u",_randomDelay);
-        
+
     /* Inactivity Timeout */
-    if (!( _maintenanceRfcUpdated = retrieveConfigValueInt(INACTIVITYTIMEOUT, _inactivityTimeout)))     
+    if (retrieveConfigValueInt(INACTIVITYTIMEOUT, _inactivityTimeout))
+    {
+        configRetrieved = true;
+        LOGINFO("DeepSleep inactivityTimeoutSec = %u", _inactivityTimeout);
+    }
+    else
     {
         LOGINFO("RFC inactivitytimeout not available");
-        return;
     }
-    LOGINFO("DeepSleep inactivityTimeoutSec = %u",_inactivityTimeout);
-    
-    _maintenanceConfigUpdated = true;
+    /*
+     * Mark configuration as updated only when at least one parameter
+     * has been successfully retrieved.
+     */
+    if (configRetrieved)
+    {
+        _maintenanceConfigUpdated = true;
+        LOGINFO("DeepSleep maintenance wakeup configuration updated successfully");
+    }
+    else
+    {
+        LOGINFO("DeepSleep maintenance wakeup configuration retrieval failed");
+    }
 }
