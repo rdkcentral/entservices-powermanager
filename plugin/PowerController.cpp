@@ -143,7 +143,14 @@ uint32_t PowerController::SetPowerState(const int keyCode, const PowerState powe
 
 uint32_t PowerController::ActivateDeepSleep()
 {
-    return _deepSleep.Activate(_deepSleepWakeupSettings.timeout(), _settings.nwStandbyMode());
+    const uint32_t timeout = _deepSleepWakeupSettings.timeout();
+#ifdef CUSTOM_LGI
+    return _deepSleep.Activate(timeout,
+                               _settings.nwStandbyMode(),
+                               _deepSleepWakeupSettings.isMaintenanceWakeupScheduled());
+#else
+    return _deepSleep.Activate(timeout, _settings.nwStandbyMode());
+#endif
 }
 
 uint32_t PowerController::SetNetworkStandbyMode(const bool standbyMode)
