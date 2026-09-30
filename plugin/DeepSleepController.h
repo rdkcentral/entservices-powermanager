@@ -18,6 +18,7 @@
  */
 #pragma once
 
+#include <atomic>
 #include <map>         // for map
 #include <memory>      // for unique_ptr, operator!=
 #include <stdint.h>    // for uint32_t
@@ -179,6 +180,17 @@ public:
     // deactivate deep sleep mode
     uint32_t Deactivate();
 
+    // Set/get the network standby mode flag used when entering deep sleep.
+    inline void SetNetworkStandbyMode(bool nwStandbyMode)
+    {
+        _nwStandbyMode->store(nwStandbyMode);
+    }
+
+    inline bool NetworkStandbyMode() const
+    {
+        return _nwStandbyMode->load();
+    }
+
     // perform maintenance reboot
     void MaintenanceReboot();
 
@@ -213,5 +225,5 @@ private:
 
     WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> _deepSleepDelayJob; // Job to handle delay before entering deepsleep
 
-    bool _nwStandbyMode; // Flag to indicate if network standby mode is enabled
+    std::shared_ptr<std::atomic<bool>> _nwStandbyMode; // Flag to indicate if network standby mode is enabled
 };
