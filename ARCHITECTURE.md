@@ -105,12 +105,36 @@ The plugin employs a specialized controller pattern with four distinct controlle
 - **Event Notifications**: Asynchronous notifications for state changes
 - **Client Registration**: Support for multiple client subscriptions
 
+## Client Library Component
+
+### PowerController Client Library
+The PowerController client library (`libWPEFrameworkPowerController.so`) provides a C language interface for client applications to interact with the PowerManager plugin over COM-RPC. This component is built separately from the main plugin and is conditionally enabled via the `POWERCONTROLLER` CMake option.
+
+#### Architecture
+- **Module Initialization** (`Module.cpp` / `Module.h`): Handles Thunder framework module initialization and defines the module name for client library operations
+- **Client Interface** (`power_controller.cpp` / `power_controller.h`): Implements a C API wrapper around the Thunder COM-RPC interface to the PowerManager plugin
+
+#### Key Features
+- **COM-RPC Communication**: Establishes and maintains COM-RPC connections to the PowerManager plugin
+- **API Translation**: Translates C API calls into Thunder COM-RPC method invocations on the `IPowerManager` interface
+- **Event Notifications**: Provides callback registration mechanisms for receiving power state, thermal, deep sleep, and reboot events from the plugin
+- **Connection Management**: Handles plugin activation detection, connection establishment, and automatic reconnection on plugin restart
+
+#### Relationship to Internal Components
+The PowerController client library is distinct from the internal `PowerController` component mentioned in the Controller Layer. While the internal PowerController manages power state transitions within the plugin itself, the client library PowerController provides external applications with a communication channel to request operations and receive notifications from the plugin.
+
 ## Dependencies and Interfaces
 
 ### Internal Dependencies
 - WPEFramework/Thunder core libraries
 - Plugin framework infrastructure
 - JSON-RPC communication layer
+
+### Client Library Dependencies
+- WPEFramework Core (`${NAMESPACE}Core`)
+- WPEFramework COM-RPC (`${NAMESPACE}COM`)
+- WPEFramework Plugins (`${NAMESPACE}Plugins`)
+- WPEFramework Definitions (`${NAMESPACE}Definitions`)
 
 ### External System Integration
 - **IARM Bus**: System-wide inter-process communication
