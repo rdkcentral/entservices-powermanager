@@ -25,6 +25,8 @@
 #include <type_traits> // for is_base_of
 #include <utility>     // for forward, move
 #include <vector>      // for vector
+#include <condition_variable>
+#include <mutex>
 
 #include <core/Proxy.h>               // for ProxyType
 #include <core/Sync.h>                // for CriticalSection
@@ -188,6 +190,16 @@ class DeepSleepController {
     } DeepSleepState;
 
     struct InFlightEntryState;
+    struct AbortState {
+        std::mutex mutex;
+        std::condition_variable cv;
+        bool requested;
+
+        AbortState()
+            : requested(false)
+        {
+        }
+    };
 
 public:
     ~DeepSleepController();
@@ -246,10 +258,18 @@ public:
 
     inline std::chrono::steady_clock::duration Elapsed()
     {
-        if (_deepsleepStartTime.time_since_epoch() == std::chrono::steady_clock::duration::zero()) {
+        Timestamp deepsleepStartTime;
+
+        {
+            std::lock_guard<std::mutex> lock(*_timingMutex);
+            deepsleepStartTime = _deepsleepStartTime;
+        }
+
+        if (deepsleepStartTime.time_since_epoch() == std::chrono::steady_clock::duration::zero()) {
             return std::chrono::steady_clock::duration::zero();
         }
-        return MonotonicClock::now() - _deepsleepStartTime;
+
+        return MonotonicClock::now() - deepsleepStartTime;
     }
 
 private:
@@ -261,6 +281,10 @@ private:
     void performActivate(uint32_t timeOut, bool nwStandbyMode);
     void cancelPendingWorkerJobs();
     void waitForInFlightEntry();
+    bool waitForAbortableDelay(const std::chrono::seconds& delay);
+    void requestAbortDeepSleep();
+    void clearAbortDeepSleep();
+    bool isAbortDeepSleepRequested();
 
 private:
     INotification& _parent;
@@ -286,4 +310,7 @@ private:
     std::shared_ptr<InFlightEntryState> _inFlightEntryState;
 
     bool _nwStandbyMode; // Flag to indicate if network standby mode is enabled
+
+    std::shared_ptr<AbortState> _abortState;
+    std::shared_ptr<std::mutex> _timingMutex;
 };
