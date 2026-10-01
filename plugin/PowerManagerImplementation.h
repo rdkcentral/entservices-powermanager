@@ -143,6 +143,7 @@ namespace Plugin {
         Core::hresult SetWakeupSourceConfig(IWakeupSourceConfigIterator* wakeupSources) override;
         Core::hresult GetWakeupSourceConfig(IWakeupSourceConfigIterator*& wakeupSources) const override;
         Core::hresult GetPowerStateBeforeReboot(PowerState& powerStateBeforeReboot) override;
+        Core::hresult GetRebootReason(string& reason) override;
         Core::hresult PowerModePreChangeComplete(const uint32_t clientId, const int transactionId) override;
         Core::hresult DelayPowerModeChangeBy(const uint32_t clientId, const int transactionId, const int delayPeriod) override;
         Core::hresult AddPowerModePreChangeClient(const string& clientName, uint32_t& clientId) override;

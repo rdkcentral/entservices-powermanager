@@ -1041,6 +1041,21 @@ namespace Plugin {
         return errorCode;
     }
 
+    Core::hresult PowerManagerImplementation::GetRebootReason(string& reason)
+    {
+        LOGINFO(">>");
+
+        _apiLock.Lock();
+
+        uint32_t errorCode = _powerController.GetRebootReason(reason);
+
+        _apiLock.Unlock();
+
+        LOGINFO("<< reason: %s, errorCode: %d", reason.c_str(), errorCode);
+
+        return errorCode;
+    }
+
     void PowerManagerImplementation::powerModePreChangeCompletionHandler(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason)
     {
         LOGINFO(">> keyCode: %d, powerState: %s", keyCode, util::str(newState));
