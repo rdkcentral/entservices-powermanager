@@ -791,6 +791,79 @@ namespace Plugin {
         return errorCode;
     }
 
+    Core::hresult PowerManagerImplementation::CancelScheduledDeepSleepWakeups(const uint64_t unixTime, const string& requestorId)
+    {
+        LOGINFO(">> unixTime: %" PRIu64 ", requestorId: '%s'", unixTime, requestorId.c_str());
+
+        _apiLock.Lock();
+
+        uint32_t errorCode = Core::ERROR_INVALID_PARAMETER;
+
+        if (!_wakeupScheduleRegister) {
+            LOGERR("Wakeup-schedule feature not available (POWERMANAGER_SCHEDULES_FILE not configured)");
+            _apiLock.Unlock();
+            LOGINFO("<< errorCode: %u", Core::ERROR_UNAVAILABLE);
+            return Core::ERROR_UNAVAILABLE;
+        }
+
+        if (!requestorId.empty() && !_wakeupScheduleRegister->isAlphaNumeric(requestorId.c_str()))
+        {
+            LOGERR("requestorId contains invalid characters: '%s'", requestorId.c_str());
+            _apiLock.Unlock();
+            LOGINFO("<< errorCode: %u", errorCode);
+            return errorCode;
+        }
+
+        /*  unixTime is unsigned (uint64_t) so it can never be negative; bound-check against
+            WakeupScheduleRegister::UnixTime's 32-bit range before narrowing, so a value beyond
+            UINT32_MAX can't silently wrap into matching an unrelated schedule. */
+        static const uint64_t kMaxUnixTime = static_cast<uint64_t>(UINT32_MAX);
+
+        if (unixTime > kMaxUnixTime)
+        {
+            LOGERR("unixTime %" PRIu64 " is out of range (max: %" PRIu64 ")", unixTime, kMaxUnixTime);
+            _apiLock.Unlock();
+            LOGINFO("<< errorCode: %u", errorCode);
+            return errorCode;
+        }
+
+        const WakeupScheduleRegister::UnixTime targetUnixTime = static_cast<WakeupScheduleRegister::UnixTime>(unixTime);
+        const WakeupScheduleRegister::CancellationStatus status =
+            _wakeupScheduleRegister->cancelWakeupSchedules(
+                targetUnixTime,
+                requestorId.empty() ? NULL : requestorId.c_str(),
+                POWERMANAGER_SCHEDULES_FILE);
+
+        if (status == WakeupScheduleRegister::CancellationSuccessful)
+        {
+            errorCode = Core::ERROR_NONE;
+        }
+        else if (status == WakeupScheduleRegister::CancellationNoMatch)
+        {
+            if (_wakeupScheduleRegister->anyPastScheduleMatches(targetUnixTime, requestorId.empty() ? NULL : requestorId.c_str()))
+            {
+                LOGERR("no matching FUTURE schedule for unixTime: %u, requestorId: '%s' (already expired or already fired)",
+                    targetUnixTime, requestorId.c_str());
+            }
+            else
+            {
+                LOGERR("no matching schedule for unixTime: %u, requestorId: '%s'",
+                    targetUnixTime, requestorId.c_str());
+            }
+            errorCode = Core::ERROR_INVALID_PARAMETER;
+        }
+        else
+        {
+            LOGERR("Failed to cancel wakeup schedules transactionally, status: %d", status);
+            errorCode = Core::ERROR_GENERAL;
+        }
+
+        _apiLock.Unlock();
+
+        LOGINFO("<< errorCode: %u", errorCode);
+        return errorCode;
+    }
+
     Core::hresult PowerManagerImplementation::GetLastWakeupReason(WakeupReason& wakeupReason) const
     {
         LOGINFO(">>");
