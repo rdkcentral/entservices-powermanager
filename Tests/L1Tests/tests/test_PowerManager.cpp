@@ -3120,6 +3120,35 @@ TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsExpiredSchedule)
     TEST_LOG("<< Test passed");
 }
 
+TEST_F(TestPowerManager, RemoveAllWakeupSchedulesEmptyRegister)
+{
+    WakeupScheduleRegister schedules;
+    EXPECT_EQ(schedules.removeAllWakeupSchedules(), WakeupScheduleRegister::Successful);
+    EXPECT_EQ(schedules.removeAllWakeupSchedules(), WakeupScheduleRegister::Successful);
+}
+
+TEST_F(TestPowerManager, RemoveAllWakeupSchedulesClearsFutureAndPastSchedules)
+{
+    const WakeupScheduleRegister::UnixTime expiredTime =
+        static_cast<WakeupScheduleRegister::UnixTime>(time(nullptr) - 1);
+    const WakeupScheduleRegister::UnixTime futureTime =
+        static_cast<WakeupScheduleRegister::UnixTime>(time(nullptr) + 300);
+
+    WakeupScheduleRegister schedules;
+    ASSERT_EQ(schedules.addWakeupSchedule(expiredTime, WakeupScheduleRegister::ActiveStandby, "expired"),
+        WakeupScheduleRegister::Successful);
+    ASSERT_EQ(schedules.addWakeupSchedule(futureTime, WakeupScheduleRegister::ActiveStandby, "future"),
+        WakeupScheduleRegister::Successful);
+    ASSERT_TRUE(schedules.getMostRecentlyExpiredWakeupSchedule());
+    ASSERT_TRUE(schedules.anyPastScheduleMatches(expiredTime, "expired"));
+
+    EXPECT_EQ(schedules.removeAllWakeupSchedules(), WakeupScheduleRegister::Successful);
+    EXPECT_FALSE(schedules.anyPastScheduleMatches(expiredTime, "expired"));
+    EXPECT_EQ(schedules.removeWakeupSchedule(futureTime, WakeupScheduleRegister::ActiveStandby, "future"),
+        WakeupScheduleRegister::Failed);
+    EXPECT_EQ(schedules.removeAllWakeupSchedules(), WakeupScheduleRegister::Successful);
+}
+
 TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsPersistsAcrossReload)
 {
     const std::string path = "/tmp/powermanager-cancel-persistence.stg";

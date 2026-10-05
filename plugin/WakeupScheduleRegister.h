@@ -402,24 +402,22 @@ class WakeupScheduleRegister
         return status;
     }
 
-    /* Reports Successful only if at least one future schedule existed and was removed. */
     OperationStatus removeAllWakeupSchedules()
     {
         std::lock_guard<std::mutex> lock(_mutex);
-        OperationStatus status = Failed;
-        if (!removeExpiredSchedules())
-        {
-            return status;
-        }
-
         if (!wakeupSchedules.empty())
         {
             clearSchedules(wakeupSchedules);
             DEBUG_LOG("%s(): all future schedules removed\n", __FUNCTION__);
-            status = Successful;
         }
 
-        return status;
+        if (!pastWakeupSchedules.empty())
+        {
+            clearSchedules(pastWakeupSchedules);
+            DEBUG_LOG("%s(): all past schedules removed\n", __FUNCTION__);
+        }
+
+        return Successful;
     }
 
     /* Removes every FUTURE schedule entry for the given requestorId, regardless of unixTime.
