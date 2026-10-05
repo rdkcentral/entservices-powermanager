@@ -24,6 +24,8 @@
 #include <mutex>
 #include <condition_variable>
 #include <fstream>
+#include <cerrno>
+#include <sys/stat.h>
 #include <interfaces/IPowerManager.h>
 #include "deepSleepMgr.h"
 #include "PowerManagerMock.h"
@@ -320,7 +322,13 @@ PowerManager_L2Test::PowerManager_L2Test()
 {
         uint32_t status = Core::ERROR_GENERAL;
 
-         EXPECT_EQ(0, system("mkdir -p /mnt/secure_storage/pwrmgr")) << "Failed to create wakeup schedule storage directory";
+         // Create directories directly (not via system("mkdir -p ...")) so the directory is guaranteed
+         // visible to the ofstream open() below; using a separate child process for mkdir can race with it.
+         auto mkdirIfMissing = [](const char* path) {
+             return (mkdir(path, 0755) == 0 || errno == EEXIST);
+         };
+         EXPECT_TRUE(mkdirIfMissing("/mnt/secure_storage")) << "Failed to create /mnt/secure_storage directory";
+         EXPECT_TRUE(mkdirIfMissing("/mnt/secure_storage/pwrmgr")) << "Failed to create wakeup schedule storage directory";
          std::ofstream schedulesFile("/mnt/secure_storage/pwrmgr/schedules.stg", std::ios::trunc);
          EXPECT_TRUE(schedulesFile.is_open()) << "Failed to reset wakeup schedule storage before plugin activation";
          schedulesFile.close();
