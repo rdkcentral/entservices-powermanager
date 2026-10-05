@@ -322,8 +322,7 @@ PowerManager_L2Test::PowerManager_L2Test()
 {
         uint32_t status = Core::ERROR_GENERAL;
 
-         // Create directories directly (not via system("mkdir -p ...")) so the directory is guaranteed
-         // visible to the ofstream open() below; using a separate child process for mkdir can race with it.
+         // Create directories directly to avoid invoking a shell before opening the schedules file.
          auto mkdirIfMissing = [](const char* path) {
              return (mkdir(path, 0755) == 0 || errno == EEXIST);
          };
