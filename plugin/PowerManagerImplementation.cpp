@@ -101,6 +101,8 @@ namespace Plugin {
 
     PowerManagerImplementation::~PowerManagerImplementation()
     {
+        cancelPendingRenegotiation();
+
         // Drain callbacks while _powerController and the other callback targets
         // are still alive; members are destroyed only after this body returns.
         _deepSleepController.Shutdown();
@@ -450,6 +452,7 @@ namespace Plugin {
                 LOGWARN("reason is 'TPS' - bypassing negotiation phases, switching to %s immediately to protect hardware", util::str(newState));
 
                 _apiLock.Lock();
+                cancelPendingRenegotiationLocked();
                 // Cancel any negotiation round(s) already in progress. Call revoke() explicitly so any scheduled
                 // timer job is cancelled and the controller's completion handler is notified (isRevoked=true) to
                 // release resources, even if other owners keep the controller alive (e.g. handler captures).
@@ -512,12 +515,19 @@ namespace Plugin {
                     return Core::ERROR_NONE;
                 } else {
                     LOGWARN("Power state change is already in progress, cancel old request");
+                    cancelPendingRenegotiationLocked();
+                    _modeChangeController->revoke();
                     _modeChangeController.reset();
                 }
             }
 
             _modeChangeController   = std::shared_ptr<PreModeChangeController>(new PreModeChangeController(newState));
             const int transactionId = _modeChangeController->TransactionId(); // transactionId is unique per request
+            _modeChangeKeyCode = keyCode;
+            _modeChangeTransactionId = transactionId;
+            _modeChangeCurrentState = currState;
+            _modeChangeReason = reason;
+            _modeChangeIsSync = isSync;
 
             // Add all clients to ack await list (who we expect `PreChangeComplete` ack from)
             for (const auto& client : _modeChangeClients) {
@@ -547,12 +557,14 @@ namespace Plugin {
             //  3. ACK TIMER thread if `Schedule` timed-out
             //     - To avoid race conditions in this usecase, take `_apiLock` to run completion handler
             //  4. Caller thread of last acknowledging client
+            const std::weak_ptr<PreModeChangeController> weakController(modeChangeController);
+            _apiLock.Lock();
             modeChangeController->Schedule(timeOut * 1000,
-                [this, keyCode, currState, newState, reason, isSync](bool isTimedout, bool isAborted) mutable {
+                [this, keyCode, currState, newState, reason, isSync, weakController](bool isTimedout, bool isAborted) mutable {
                     LOGINFO(">> CompletionHandler isTimedout: %d, isAborted: %d", isTimedout, isAborted);
 
                     if (!isAborted) {
-                        powerModePreChangeCompletionHandler(keyCode, currState, newState, reason);
+                        powerModePreChangeCompletionHandler(keyCode, currState, newState, reason, weakController);
                     } else {
                         LOGWARN("modeChangeController was already deleted, do not process CompletionHandler");
                     }
@@ -568,6 +580,7 @@ namespace Plugin {
 
                     LOGINFO("<< CompletionHandler");
                 });
+            _apiLock.Unlock();
         } else {
             LOGINFO("Requested power state is same as current power state, no action required");
         }
@@ -1144,11 +1157,23 @@ namespace Plugin {
         return errorCode;
     }
 
-    void PowerManagerImplementation::powerModePreChangeCompletionHandler(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason)
+    void PowerManagerImplementation::powerModePreChangeCompletionHandler(
+        const int keyCode,
+        PowerState currentState,
+        PowerState newState,
+        const std::string& reason,
+        const std::weak_ptr<PreModeChangeController>& weakController)
     {
         LOGINFO(">> keyCode: %d, powerState: %s", keyCode, util::str(newState));
 
+        const auto controller = weakController.lock();
         _apiLock.Lock();
+
+        if (!controller || _modeChangeController != controller || _renegotiationPending) {
+            _apiLock.Unlock();
+            LOGINFO("Ignoring completion from an inactive or deferred pre-change round");
+            return;
+        }
 
         // If there are no clients engaged in the acknowledgement negotiation stage, skip the
         // whole new ack-phase mechanism entirely and apply the power state change directly.
@@ -1167,6 +1192,89 @@ namespace Plugin {
         startPowerModeChangeAcknowledgement(keyCode, currentState, newState, reason);
 
         LOGINFO("<<");
+    }
+
+    void PowerManagerImplementation::cancelPendingRenegotiationLocked()
+    {
+        _renegotiationPending = false;
+        ++_renegotiationGeneration;
+
+        if (_renegotiationJob.IsValid()) {
+            Core::IWorkerPool::Instance().Revoke(_renegotiationJob);
+            _renegotiationJob.Release();
+        }
+    }
+
+    void PowerManagerImplementation::cancelPendingRenegotiation()
+    {
+        _apiLock.Lock();
+        cancelPendingRenegotiationLocked();
+        _apiLock.Unlock();
+    }
+
+    void PowerManagerImplementation::schedulePendingRenegotiationLocked()
+    {
+        if (_renegotiationJob.IsValid()) {
+            Core::IWorkerPool::Instance().Revoke(_renegotiationJob);
+            _renegotiationJob.Release();
+        }
+
+        const uint64_t generation = ++_renegotiationGeneration;
+        _renegotiationJob = PowerManagerImplementation::LambdaJob::Create(this, [this, generation]() {
+            restartPowerModeChange(generation);
+        });
+        Core::IWorkerPool::Instance().Schedule(_renegotiationDeadline, _renegotiationJob);
+    }
+
+    void PowerManagerImplementation::restartPowerModeChange(const uint64_t generation)
+    {
+        _apiLock.Lock();
+
+        if (!_renegotiationPending || generation != _renegotiationGeneration || !_modeChangeController) {
+            _apiLock.Unlock();
+            return;
+        }
+
+        _renegotiationPending = false;
+        ++_renegotiationGeneration;
+        if (_renegotiationJob.IsValid()) {
+            _renegotiationJob.Release();
+        }
+
+        const PowerState newState = _modeChangeController->powerState();
+        auto controller = std::shared_ptr<PreModeChangeController>(
+            new PreModeChangeController(newState, _modeChangeTransactionId));
+        for (const auto& client : _modeChangeClients) {
+            controller->AckAwait(client.first);
+        }
+        _modeChangeController = controller;
+
+        const int keyCode = _modeChangeKeyCode;
+        const int transactionId = _modeChangeTransactionId;
+        const PowerState currentState = _modeChangeCurrentState;
+        const std::string reason = _modeChangeReason;
+        const uint32_t timeOut = _modeChangeIsSync ? 0 : POWER_MODE_PRECHANGE_TIMEOUT_SEC;
+        this->AddRef();
+
+        _apiLock.Unlock();
+
+        submitPowerModePreChangeEvent(currentState, newState, transactionId, timeOut);
+
+        const std::weak_ptr<PreModeChangeController> weakController(controller);
+        _apiLock.Lock();
+        controller->Schedule(timeOut * 1000,
+            [this, keyCode, currentState, newState, reason, weakController](bool isTimedout, bool isAborted) mutable {
+                LOGINFO(">> Restarted pre-change completion isTimedout: %d, isAborted: %d", isTimedout, isAborted);
+
+                if (!isAborted) {
+                    powerModePreChangeCompletionHandler(keyCode, currentState, newState, reason, weakController);
+                } else {
+                    LOGWARN("Restarted modeChangeController was revoked; do not process completion");
+                }
+
+                this->Release();
+            });
+        _apiLock.Unlock();
     }
 
     // Starts the acknowledgement negotiation round: creates a fresh ack controller,
@@ -1304,15 +1412,48 @@ namespace Plugin {
         return errorCode;
     }
 
-    Core::hresult PowerManagerImplementation::DelayPowerModeChangeBy(const uint32_t clientId, const int transactionId, const int delayPeriod)
+    Core::hresult PowerManagerImplementation::DelayPowerModeChangeBy(
+        const uint32_t clientId,
+        const int transactionId,
+        const int delayPeriod,
+        const bool renegotiateAfterwards)
     {
         uint32_t errorCode = Core::ERROR_INVALID_PARAMETER;
 
-        LOGINFO(">> clientId: %u, transactionId: %d, delayPeriod: %d", clientId, transactionId, delayPeriod);
+        LOGINFO(">> clientId: %u, transactionId: %d, delayPeriod: %d, renegotiateAfterwards: %d",
+            clientId, transactionId, delayPeriod, renegotiateAfterwards);
         _apiLock.Lock();
 
-        if (_modeChangeController) {
-            errorCode = _modeChangeController->Reschedule(clientId, transactionId, delayPeriod * 1000);
+        if (!renegotiateAfterwards) {
+            if (_renegotiationPending) {
+                errorCode = Core::ERROR_ILLEGAL_STATE;
+            } else if (_modeChangeController) {
+                errorCode = _modeChangeController->Reschedule(clientId, transactionId, delayPeriod * 1000);
+            }
+        } else if (delayPeriod < 0) {
+            errorCode = Core::ERROR_INVALID_PARAMETER;
+        } else if (_renegotiationPending) {
+            if (transactionId != _modeChangeTransactionId ||
+                _modeChangeClients.find(clientId) == _modeChangeClients.end()) {
+                errorCode = Core::ERROR_INVALID_PARAMETER;
+            } else {
+                const Core::Time requestedDeadline =
+                    Core::Time::Now().Add(static_cast<uint64_t>(delayPeriod) * 1000);
+                if (requestedDeadline > _renegotiationDeadline) {
+                    _renegotiationDeadline = requestedDeadline;
+                    schedulePendingRenegotiationLocked();
+                }
+                errorCode = Core::ERROR_NONE;
+            }
+        } else if (_modeChangeController) {
+            errorCode = _modeChangeController->CanRenegotiate(clientId, transactionId);
+            if (errorCode == Core::ERROR_NONE) {
+                _renegotiationPending = true;
+                _modeChangeController->CancelForRenegotiation();
+                _renegotiationDeadline =
+                    Core::Time::Now().Add(static_cast<uint64_t>(delayPeriod) * 1000);
+                schedulePendingRenegotiationLocked();
+            }
         }
 
         _apiLock.Unlock();

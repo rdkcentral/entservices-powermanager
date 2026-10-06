@@ -51,12 +51,19 @@ public:
      *        The TransactionId is unique for each instance.
      */
     AckController(PowerState powerState)
+        : AckController(powerState, ++_nextTransactionId)
+    {
+    }
+
+    AckController(PowerState powerState, const int transactionId)
         : _workerPool(WPEFramework::Core::WorkerPool::Instance())
         , _powerState(powerState)
-        , _transactionId(++_nextTransactionId)
+        , _transactionId(transactionId)
         , _timeout(WPEFramework::Core::Time::Now())
         , _handler(nullptr)
         , _running(false)
+        , _scheduled(false)
+        , _cancelled(false)
     {
     }
 
@@ -171,6 +178,28 @@ public:
         return _pending;
     }
 
+    uint32_t CanRenegotiate(const uint32_t clientId, const int transactionId) const
+    {
+        if (transactionId != _transactionId || _pending.find(clientId) == _pending.end()) {
+            return WPEFramework::Core::ERROR_INVALID_PARAMETER;
+        }
+        return (!_scheduled || IsRunning()) ? WPEFramework::Core::ERROR_NONE : WPEFramework::Core::ERROR_ILLEGAL_STATE;
+    }
+
+    void CancelForRenegotiation()
+    {
+        if (!_scheduled) {
+            _cancelled = true;
+        } else if (_running.exchange(false)) {
+            _workerPool.Revoke(_timerJob);
+            if (_handler != nullptr) {
+                _handler(false, true);
+            }
+            _timerJob.Release();
+        }
+        _pending.clear();
+    }
+
     /**
      * @brief Schedules a completion handler trigger with a timeout.
      *
@@ -191,15 +220,24 @@ public:
         ASSERT(false == _running);
         ASSERT(nullptr == _handler);
 
+        _scheduled = true;
+        _handler = std::move(handler);
+        if (_cancelled) {
+            _cancelled = false;
+            auto cancelledHandler = std::move(_handler);
+            cancelledHandler(false, true);
+            return;
+        }
+
         LOGINFO("time offset: %" PRIu64 "ms, pending: %d", offsetInMilliseconds, int(_pending.size()));
 
         if (_pending.empty() || 0 == offsetInMilliseconds) {
             // no clients acks to wait for, trigger completion handler immediately
-            handler(false, false);
+            auto completedHandler = std::move(_handler);
+            completedHandler(false, false);
         } else {
             std::weak_ptr<AckController> wPtr = shared_from_this();
             _running                          = true;
-            _handler                          = std::move(handler);
 
             // If timeout is already set (via Reschedule), use max of offset or timeout
             auto newTimeout = WPEFramework::Core::Time::Now().Add(offsetInMilliseconds);
@@ -214,8 +252,7 @@ public:
                 LOGINFO("AckTimer handler isTimedout: 1, isRevoked: %d", isRevoked);
 
                 if (!isRevoked) {
-                    if (self->_running) {
-                        self->_running = false;
+                    if (self->_running.exchange(false)) {
                         self->_handler(isTimedout, isRevoked);
                     } else {
                         LOGERR("FATAL not expected to reach timeout, without timer running");
@@ -292,8 +329,10 @@ public:
      */
     void revoke()
     {
-        if (_running) {
-            _running = false;
+        if (!_scheduled) {
+            _cancelled = true;
+        }
+        if (_running.exchange(false)) {
             if (_timerJob.IsValid()) {
                 _workerPool.Revoke(_timerJob);
                 bool isTimedout = false;
@@ -332,6 +371,8 @@ private:
     TimerJob _timerJob;                           // job scheduler to timeout
     std::function<void(bool, bool)> _handler;     // Completion handler to be called on timeout or all acknowledgements.
     std::atomic<bool> _running;                   // Flag to synchronize timer timeout callback and Ack* APIs.
+    bool _scheduled;                              // Whether the completion handler has been armed for this round.
+    bool _cancelled;                              // A renegotiation was requested before the timer was armed.
 
     static int _nextTransactionId; // static counter for unique transaction ID generation.
 };

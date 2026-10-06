@@ -22,6 +22,8 @@
 #include "Module.h"
 
 #include <memory>
+#include <string>
+#include <cstdint>
 #include <unordered_map>
 
 #include <com/com.h>
@@ -146,7 +148,7 @@ namespace Plugin {
         Core::hresult GetPowerStateBeforeReboot(PowerState& powerStateBeforeReboot) override;
         Core::hresult GetRebootReason(string& reason) override;
         Core::hresult PowerModePreChangeComplete(const uint32_t clientId, const int transactionId) override;
-        Core::hresult DelayPowerModeChangeBy(const uint32_t clientId, const int transactionId, const int delayPeriod) override;
+        Core::hresult DelayPowerModeChangeBy(const uint32_t clientId, const int transactionId, const int delayPeriod, const bool renegotiateAfterwards = false) override;
         Core::hresult AddPowerModePreChangeClient(const string& clientName, uint32_t& clientId) override;
         Core::hresult RemovePowerModePreChangeClient(const uint32_t clientId) override;
         Core::hresult PowerModeChangeAcknowledgement(const uint32_t acknowledgeClientId, const int transactionId) override;
@@ -178,6 +180,15 @@ namespace Plugin {
         std::list<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested*> _modeChangeAckNotifications;
         std::shared_ptr<PreModeChangeController> _modeChangeController;
         std::unordered_map<uint32_t, std::string> _modeChangeClients;
+        Core::ProxyType<Core::IDispatch> _renegotiationJob;
+        bool _renegotiationPending = false;
+        uint64_t _renegotiationGeneration = 0;
+        Core::Time _renegotiationDeadline;
+        int _modeChangeKeyCode = 0;
+        int _modeChangeTransactionId = 0;
+        PowerState _modeChangeCurrentState = POWER_STATE_UNKNOWN;
+        std::string _modeChangeReason;
+        bool _modeChangeIsSync = false;
         std::shared_ptr<PreModeChangeController> _modeChangeAckController;
         std::unordered_map<uint32_t, std::string> _modeChangeAckClients;
         // Optional: only created when POWERMANAGER_SCHEDULES_FILE is configured (non-empty).
@@ -194,7 +205,11 @@ namespace Plugin {
         void dispatchNetworkStandbyModeChangedEvent(const bool& enabled);
 
         void submitPowerModePreChangeEvent(const PowerState currentState, const PowerState newState, const int transactionId, const int timeOut);
-        void powerModePreChangeCompletionHandler(const int keyCode, PowerState currentState, PowerState powerState, const std::string& reason);
+        void powerModePreChangeCompletionHandler(const int keyCode, PowerState currentState, PowerState powerState, const std::string& reason, const std::weak_ptr<PreModeChangeController>& controller);
+        void cancelPendingRenegotiation();
+        void cancelPendingRenegotiationLocked();
+        void schedulePendingRenegotiationLocked();
+        void restartPowerModeChange(const uint64_t generation);
         void startPowerModeChangeAcknowledgement(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason);
         void submitPowerModeChangeAcknowledgementRequestedEvent(const PowerState currentState, const PowerState newState, const int transactionId, const string& reason);
         void powerModeChangeAcknowledgementCompletionHandler(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason);
