@@ -2334,7 +2334,7 @@ TEST_F(PowerManager_L2Test, ScheduleDeepSleepWakeupMultiple)
     }
 }
 
-TEST_F(PowerManager_L2Test, DelayPowerModeChangeByRenegotiatesWithSameTransactionAndReason)
+TEST_F(PowerManager_L2Test, DelayPowerModeChangeByRenegotiatesWithNewTransactionAndOriginalReason)
 {
     Core::ProxyType<RPC::InvokeServerType<1, 0, 4>> engine;
     Core::ProxyType<RPC::CommunicatorClient> client;
@@ -2356,8 +2356,10 @@ TEST_F(PowerManager_L2Test, DelayPowerModeChangeByRenegotiatesWithSameTransactio
         Core::ERROR_NONE);
 
     uint32_t preChangeClientId = 0;
+    uint32_t secondPreChangeClientId = 0;
     uint32_t ackClientId = 0;
     ASSERT_EQ(powerManager->AddPowerModePreChangeClient("l2-renegotiate-prechange", preChangeClientId), Core::ERROR_NONE);
+    ASSERT_EQ(powerManager->AddPowerModePreChangeClient("l2-renegotiate-second", secondPreChangeClientId), Core::ERROR_NONE);
     ASSERT_EQ(powerManager->AddPowerModeChangeAcknowledgementClient("l2-renegotiate-ack", ackClientId), Core::ERROR_NONE);
 
     EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
@@ -2372,17 +2374,27 @@ TEST_F(PowerManager_L2Test, DelayPowerModeChangeByRenegotiatesWithSameTransactio
     uint32_t signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
     ASSERT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
     const int firstTransactionId = mNotification.GetPreChangeTransactionId();
+    ASSERT_EQ(powerManager->PowerModePreChangeComplete(secondPreChangeClientId, firstTransactionId), Core::ERROR_NONE);
     ASSERT_EQ(powerManager->DelayPowerModeChangeBy(preChangeClientId, firstTransactionId, 1, true), Core::ERROR_NONE);
+    EXPECT_EQ(powerManager->PowerModePreChangeComplete(preChangeClientId, firstTransactionId), Core::ERROR_INVALID_PARAMETER);
+    EXPECT_EQ(powerManager->DelayPowerModeChangeBy(preChangeClientId, firstTransactionId, 30, false), Core::ERROR_INVALID_PARAMETER);
+    EXPECT_EQ(powerManager->DelayPowerModeChangeBy(preChangeClientId, firstTransactionId, 30, true), Core::ERROR_INVALID_PARAMETER);
 
     signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
     ASSERT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
     const int restartedTransactionId = mNotification.GetPreChangeTransactionId();
-    EXPECT_EQ(restartedTransactionId, firstTransactionId);
+    EXPECT_NE(restartedTransactionId, firstTransactionId);
+    EXPECT_EQ(powerManager->PowerModePreChangeComplete(preChangeClientId, firstTransactionId), Core::ERROR_INVALID_PARAMETER);
+    EXPECT_EQ(powerManager->DelayPowerModeChangeBy(preChangeClientId, firstTransactionId, 30, false), Core::ERROR_INVALID_PARAMETER);
+    EXPECT_EQ(powerManager->DelayPowerModeChangeBy(preChangeClientId, firstTransactionId, 30, true), Core::ERROR_INVALID_PARAMETER);
 
     signalled = mNotification.WaitForRequestStatus(100, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
     EXPECT_FALSE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
 
     ASSERT_EQ(powerManager->PowerModePreChangeComplete(preChangeClientId, restartedTransactionId), Core::ERROR_NONE);
+    signalled = mNotification.WaitForRequestStatus(100, POWERMANAGERL2TEST_MODE_CHANGE_ACK_REQUESTED);
+    EXPECT_FALSE(signalled & POWERMANAGERL2TEST_MODE_CHANGE_ACK_REQUESTED);
+    ASSERT_EQ(powerManager->PowerModePreChangeComplete(secondPreChangeClientId, restartedTransactionId), Core::ERROR_NONE);
     signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_MODE_CHANGE_ACK_REQUESTED);
     ASSERT_TRUE(signalled & POWERMANAGERL2TEST_MODE_CHANGE_ACK_REQUESTED);
     EXPECT_EQ(mNotification.GetAckReason(), originalReason);
@@ -2393,6 +2405,7 @@ TEST_F(PowerManager_L2Test, DelayPowerModeChangeByRenegotiatesWithSameTransactio
     EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
 
     EXPECT_EQ(powerManager->RemovePowerModePreChangeClient(preChangeClientId), Core::ERROR_NONE);
+    EXPECT_EQ(powerManager->RemovePowerModePreChangeClient(secondPreChangeClientId), Core::ERROR_NONE);
     EXPECT_EQ(powerManager->RemovePowerModeChangeAcknowledgementClient(ackClientId), Core::ERROR_NONE);
     EXPECT_EQ(powerManager->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>()),
         Core::ERROR_NONE);

@@ -659,7 +659,7 @@ TEST_F(TestPowerManager, PowerModePreChangeAck)
     EXPECT_EQ(status, Core::ERROR_NONE);
 }
 
-TEST_F(TestPowerManager, DelayPowerModeChangeByRenegotiatesUnlimitedWithSameTransaction)
+TEST_F(TestPowerManager, DelayPowerModeChangeByRenegotiatesUnlimitedWithNewTransactions)
 {
     std::atomic<uint32_t> halCalls(0);
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
@@ -703,12 +703,25 @@ TEST_F(TestPowerManager, DelayPowerModeChangeByRenegotiatesUnlimitedWithSameTran
                     transactionId = notifiedTransactionId;
                     EXPECT_EQ(powerManagerImpl->PowerModePreChangeComplete(clientId2, notifiedTransactionId), Core::ERROR_NONE);
                     EXPECT_EQ(powerManagerImpl->DelayPowerModeChangeBy(clientId1, notifiedTransactionId, 1, true), Core::ERROR_NONE);
+                    const auto deadline = powerManagerImpl->_renegotiationDeadline;
+                    const auto generation = powerManagerImpl->_renegotiationGeneration;
+                    EXPECT_EQ(powerManagerImpl->PowerModePreChangeComplete(clientId2, notifiedTransactionId), Core::ERROR_INVALID_PARAMETER);
+                    EXPECT_EQ(powerManagerImpl->DelayPowerModeChangeBy(clientId2, notifiedTransactionId, 30, false), Core::ERROR_INVALID_PARAMETER);
+                    EXPECT_EQ(powerManagerImpl->DelayPowerModeChangeBy(clientId2, notifiedTransactionId, 30, true), Core::ERROR_INVALID_PARAMETER);
+                    EXPECT_TRUE(powerManagerImpl->_renegotiationDeadline == deadline);
+                    EXPECT_EQ(powerManagerImpl->_renegotiationGeneration, generation);
                     firstDelay.Done();
                 } else if (round == 2) {
-                    EXPECT_EQ(notifiedTransactionId, transactionId);
+                    EXPECT_NE(notifiedTransactionId, transactionId);
+                    EXPECT_EQ(powerManagerImpl->PowerModePreChangeComplete(clientId2, transactionId), Core::ERROR_INVALID_PARAMETER);
+                    EXPECT_EQ(powerManagerImpl->DelayPowerModeChangeBy(clientId2, transactionId, 30, false), Core::ERROR_INVALID_PARAMETER);
+                    EXPECT_EQ(powerManagerImpl->DelayPowerModeChangeBy(clientId2, transactionId, 30, true), Core::ERROR_INVALID_PARAMETER);
+                    transactionId = notifiedTransactionId;
                     EXPECT_EQ(powerManagerImpl->DelayPowerModeChangeBy(clientId1, notifiedTransactionId, 1, true), Core::ERROR_NONE);
                 } else {
-                    EXPECT_EQ(notifiedTransactionId, transactionId);
+                    EXPECT_NE(notifiedTransactionId, transactionId);
+                    EXPECT_EQ(powerManagerImpl->PowerModePreChangeComplete(clientId2, transactionId), Core::ERROR_INVALID_PARAMETER);
+                    transactionId = notifiedTransactionId;
                     EXPECT_EQ(powerManagerImpl->PowerModePreChangeComplete(clientId1, notifiedTransactionId), Core::ERROR_NONE);
                 }
                 rounds.Done();
@@ -825,7 +838,7 @@ TEST_F(TestPowerManager, RenegotiationRejectsInvalidRequestsAndSupportsZeroDelay
             EXPECT_EQ(powerManagerImpl->DelayPowerModeChangeBy(clientId, transactionId, 0, true), Core::ERROR_NONE);
         }))
         .WillOnce(::testing::Invoke([&](const PowerState, const PowerState, const int transactionId, const int) {
-            EXPECT_EQ(transactionId, originalTransactionId);
+            EXPECT_NE(transactionId, originalTransactionId);
             EXPECT_EQ(powerManagerImpl->PowerModePreChangeComplete(clientId, transactionId), Core::ERROR_NONE);
         }));
     EXPECT_CALL(*changedEvent, OnPowerModeChanged(::testing::_, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP))
@@ -862,7 +875,7 @@ TEST_F(TestPowerManager, RenegotiationUsesCurrentClientsAfterRemoval)
             deferred.Done();
         }))
         .WillOnce(::testing::Invoke([&](const PowerState, const PowerState, const int transactionId, const int) {
-            EXPECT_EQ(transactionId, originalTransactionId);
+            EXPECT_NE(transactionId, originalTransactionId);
         }));
     EXPECT_CALL(*changedEvent, OnPowerModeChanged(::testing::_, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP))
         .WillOnce(::testing::Invoke([&](const PowerState, const PowerState) { changed.Done(); }));

@@ -51,14 +51,9 @@ public:
      *        The TransactionId is unique for each instance.
      */
     AckController(PowerState powerState)
-        : AckController(powerState, ++_nextTransactionId)
-    {
-    }
-
-    AckController(PowerState powerState, const int transactionId)
         : _workerPool(WPEFramework::Core::WorkerPool::Instance())
         , _powerState(powerState)
-        , _transactionId(transactionId)
+        , _transactionId(++_nextTransactionId)
         , _timeout(WPEFramework::Core::Time::Now())
         , _handler(nullptr)
         , _running(false)

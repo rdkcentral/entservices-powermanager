@@ -524,7 +524,6 @@ namespace Plugin {
             _modeChangeController   = std::shared_ptr<PreModeChangeController>(new PreModeChangeController(newState));
             const int transactionId = _modeChangeController->TransactionId(); // transactionId is unique per request
             _modeChangeKeyCode = keyCode;
-            _modeChangeTransactionId = transactionId;
             _modeChangeCurrentState = currState;
             _modeChangeReason = reason;
             _modeChangeIsSync = isSync;
@@ -1243,14 +1242,14 @@ namespace Plugin {
 
         const PowerState newState = _modeChangeController->powerState();
         auto controller = std::shared_ptr<PreModeChangeController>(
-            new PreModeChangeController(newState, _modeChangeTransactionId));
+            new PreModeChangeController(newState));
         for (const auto& client : _modeChangeClients) {
             controller->AckAwait(client.first);
         }
         _modeChangeController = controller;
 
         const int keyCode = _modeChangeKeyCode;
-        const int transactionId = _modeChangeTransactionId;
+        const int transactionId = controller->TransactionId();
         const PowerState currentState = _modeChangeCurrentState;
         const std::string reason = _modeChangeReason;
         const uint32_t timeOut = _modeChangeIsSync ? 0 : POWER_MODE_PRECHANGE_TIMEOUT_SEC;
@@ -1424,27 +1423,14 @@ namespace Plugin {
             clientId, transactionId, delayPeriod, renegotiateAfterwards);
         _apiLock.Lock();
 
-        if (!renegotiateAfterwards) {
-            if (_renegotiationPending) {
-                errorCode = Core::ERROR_ILLEGAL_STATE;
-            } else if (_modeChangeController) {
+        if (_renegotiationPending) {
+            LOGWARN("Rejecting delay request for cancelled pre-change round, transactionId: %d", transactionId);
+        } else if (!renegotiateAfterwards) {
+            if (_modeChangeController) {
                 errorCode = _modeChangeController->Reschedule(clientId, transactionId, delayPeriod * 1000);
             }
         } else if (delayPeriod < 0) {
             errorCode = Core::ERROR_INVALID_PARAMETER;
-        } else if (_renegotiationPending) {
-            if (transactionId != _modeChangeTransactionId ||
-                _modeChangeClients.find(clientId) == _modeChangeClients.end()) {
-                errorCode = Core::ERROR_INVALID_PARAMETER;
-            } else {
-                const Core::Time requestedDeadline =
-                    Core::Time::Now().Add(static_cast<uint64_t>(delayPeriod) * 1000);
-                if (requestedDeadline > _renegotiationDeadline) {
-                    _renegotiationDeadline = requestedDeadline;
-                    schedulePendingRenegotiationLocked();
-                }
-                errorCode = Core::ERROR_NONE;
-            }
         } else if (_modeChangeController) {
             errorCode = _modeChangeController->CanRenegotiate(clientId, transactionId);
             if (errorCode == Core::ERROR_NONE) {

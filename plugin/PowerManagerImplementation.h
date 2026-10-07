@@ -185,7 +185,6 @@ namespace Plugin {
         uint64_t _renegotiationGeneration = 0;
         Core::Time _renegotiationDeadline;
         int _modeChangeKeyCode = 0;
-        int _modeChangeTransactionId = 0;
         PowerState _modeChangeCurrentState = POWER_STATE_UNKNOWN;
         std::string _modeChangeReason;
         bool _modeChangeIsSync = false;
