@@ -32,6 +32,9 @@
 #include <memory>     // for unique_ptr, default_delete
 #include <utility>    // for move, forward
 #include <mutex>
+#include <condition_variable>
+#include <thread>
+#include <chrono>
 
 #include <core/IAction.h>             // for IDispatch
 #include <core/Portability.h>         // for ErrorCodes, EXTERNAL
@@ -206,6 +209,10 @@ private:
 
     INotification& _parent;
     volatile bool _stopThread;
+    // Guards _stopThread and lets the poll thread's sleep be interrupted immediately on shutdown.
+    // shared_ptr (not a plain member) keeps ThermalController copyable, matching _therm_mutex/_grace_interval_mutex.
+    std::shared_ptr<std::mutex> _stopMutex;
+    std::shared_ptr<std::condition_variable> _stopCondition;
 
     void initializeThermalProtection();
     bool isThermalProtectionEnabled();
