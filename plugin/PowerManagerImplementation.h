@@ -22,6 +22,8 @@
 #include "Module.h"
 
 #include <memory>
+#include <condition_variable>
+#include <mutex>
 #include <string>
 #include <cstdint>
 #include <unordered_map>
@@ -31,6 +33,7 @@
 #include <plugins/plugins.h>
 
 #include <interfaces/IPowerManager.h>
+#include <interfaces/IPowerManagerRenegotiation.h>
 
 #include "AckController.h"
 #include "WakeupScheduleRegister.h"
@@ -47,7 +50,7 @@ using TimeSinceWakeup    = WPEFramework::Exchange::IPowerManager::TimeSinceWakeu
 
 namespace WPEFramework {
 namespace Plugin {
-    class PowerManagerImplementation : public Exchange::IPowerManager, public DeepSleepController::INotification, public ThermalController::INotification {
+    class PowerManagerImplementation : public Exchange::IPowerManager, public Exchange::IPowerManagerRenegotiation, public DeepSleepController::INotification, public ThermalController::INotification {
     public:
         using PreModeChangeController = AckController;
 
@@ -63,6 +66,7 @@ namespace Plugin {
 
         BEGIN_INTERFACE_MAP(PowerManagerImplementation)
         INTERFACE_ENTRY(Exchange::IPowerManager)
+        INTERFACE_ENTRY(Exchange::IPowerManagerRenegotiation)
         END_INTERFACE_MAP
 
     public:
@@ -148,7 +152,8 @@ namespace Plugin {
         Core::hresult GetPowerStateBeforeReboot(PowerState& powerStateBeforeReboot) override;
         Core::hresult GetRebootReason(string& reason) override;
         Core::hresult PowerModePreChangeComplete(const uint32_t clientId, const int transactionId) override;
-        Core::hresult DelayPowerModeChangeBy(const uint32_t clientId, const int transactionId, const int delayPeriod, const bool renegotiateAfterwards = false) override;
+        Core::hresult DelayPowerModeChangeBy(const uint32_t clientId, const int transactionId, const int delayPeriod) override;
+        Core::hresult DelayPowerModeChangeBy(const uint32_t clientId, const int transactionId, const int delayPeriod, const bool renegotiateAfterwards) override;
         Core::hresult AddPowerModePreChangeClient(const string& clientName, uint32_t& clientId) override;
         Core::hresult RemovePowerModePreChangeClient(const uint32_t clientId) override;
         Core::hresult PowerModeChangeAcknowledgement(const uint32_t acknowledgeClientId, const int transactionId) override;
@@ -172,6 +177,7 @@ namespace Plugin {
         Core::ProxyType<RPC::CommunicatorClient> _communicatorClient;
         PluginHost::IShell* _controller;
         std::list<Exchange::IPowerManager::IRebootNotification*> _rebootNotifications;
+        Exchange::IPowerManager::IRebootNotification* _lifecycleOwner = nullptr;
         std::list<Exchange::IPowerManager::IModePreChangeNotification*> _preModeChangeNotifications;
         std::list<Exchange::IPowerManager::IModeChangedNotification*> _modeChangedNotifications;
         std::list<Exchange::IPowerManager::IDeepSleepTimeoutNotification*> _deepSleepTimeoutNotifications;
@@ -182,6 +188,33 @@ namespace Plugin {
         std::unordered_map<uint32_t, std::string> _modeChangeClients;
         Core::ProxyType<Core::IDispatch> _renegotiationJob;
         bool _renegotiationPending = false;
+        bool _shuttingDown = false;
+        struct NegotiationCompletionState {
+            std::mutex mutex;
+            std::condition_variable completed;
+            uint32_t pending = 0;
+
+            void Begin()
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                ++pending;
+            }
+
+            void Complete()
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                --pending;
+                completed.notify_all();
+            }
+
+            void Wait()
+            {
+                std::unique_lock<std::mutex> lock(mutex);
+                completed.wait(lock, [this]() { return pending == 0; });
+            }
+        };
+        std::shared_ptr<NegotiationCompletionState> _negotiationCompletions =
+            std::make_shared<NegotiationCompletionState>();
         uint64_t _renegotiationGeneration = 0;
         Core::Time _renegotiationDeadline;
         int _modeChangeKeyCode = 0;
@@ -206,6 +239,7 @@ namespace Plugin {
         void submitPowerModePreChangeEvent(const PowerState currentState, const PowerState newState, const int transactionId, const int timeOut);
         void powerModePreChangeCompletionHandler(const int keyCode, PowerState currentState, PowerState powerState, const std::string& reason, const std::weak_ptr<PreModeChangeController>& controller);
         void cancelPendingRenegotiation();
+        Core::hresult Shutdown();
         void cancelPendingRenegotiationLocked();
         void schedulePendingRenegotiationLocked();
         void restartPowerModeChange(const uint64_t generation);

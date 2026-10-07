@@ -212,6 +212,16 @@ public:
      */
     void Schedule(const uint64_t offsetInMilliseconds, std::function<void(bool, bool)> handler)
     {
+        auto completion = Arm(offsetInMilliseconds, std::move(handler));
+        if (completion) {
+            completion();
+        }
+    }
+
+    // Arm under the caller's lock, then invoke any returned completion after
+    // unlocking. Timer completion continues to run on the worker pool.
+    std::function<void()> Arm(const uint64_t offsetInMilliseconds, std::function<void(bool, bool)> handler)
+    {
         ASSERT(false == _running);
         ASSERT(nullptr == _handler);
 
@@ -220,8 +230,7 @@ public:
         if (_cancelled) {
             _cancelled = false;
             auto cancelledHandler = std::move(_handler);
-            cancelledHandler(false, true);
-            return;
+            return [cancelledHandler]() { cancelledHandler(false, true); };
         }
 
         LOGINFO("time offset: %" PRIu64 "ms, pending: %d", offsetInMilliseconds, int(_pending.size()));
@@ -229,7 +238,7 @@ public:
         if (_pending.empty() || 0 == offsetInMilliseconds) {
             // no clients acks to wait for, trigger completion handler immediately
             auto completedHandler = std::move(_handler);
-            completedHandler(false, false);
+            return [completedHandler]() { completedHandler(false, false); };
         } else {
             std::weak_ptr<AckController> wPtr = shared_from_this();
             _running                          = true;
@@ -258,6 +267,7 @@ public:
             });
             _workerPool.Schedule(_timeout, _timerJob);
         }
+        return {};
     }
 
     /**
@@ -314,6 +324,11 @@ public:
         return status;
     }
 
+    WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> PendingTimerJob() const
+    {
+        return _timerJob;
+    }
+
     /**
      * @brief Stops or revokes the AckController if it is already running.
      *        After revoke, if a timer job was scheduled, the completion handler is invoked with
@@ -322,14 +337,14 @@ public:
      *        Public (not just called from the destructor) so callers can cancel a round explicitly,
      *        since other owners may keep the shared_ptr alive even after this owner drops its reference.
      */
-    void revoke()
+    void revoke(const uint32_t waitTime = WPEFramework::Core::infinite)
     {
         if (!_scheduled) {
             _cancelled = true;
         }
         if (_running.exchange(false)) {
             if (_timerJob.IsValid()) {
-                _workerPool.Revoke(_timerJob);
+                _workerPool.Revoke(_timerJob, waitTime);
                 bool isTimedout = false;
                 bool isRevoked  = true;
                 _handler(isTimedout, isRevoked);

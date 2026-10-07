@@ -27,6 +27,7 @@
 #include <cerrno>
 #include <sys/stat.h>
 #include <interfaces/IPowerManager.h>
+#include <interfaces/IPowerManagerRenegotiation.h>
 #include "deepSleepMgr.h"
 #include "PowerManagerMock.h"
 #include "PowerManagerHalMock.h"
@@ -2347,6 +2348,8 @@ TEST_F(PowerManager_L2Test, DelayPowerModeChangeByRenegotiatesWithNewTransaction
     ASSERT_NE(controller, nullptr);
     auto powerManager = controller->QueryInterface<Exchange::IPowerManager>();
     ASSERT_NE(powerManager, nullptr);
+    auto renegotiation = controller->QueryInterface<Exchange::IPowerManagerRenegotiation>();
+    ASSERT_NE(renegotiation, nullptr);
 
     ASSERT_EQ(powerManager->Register(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>()),
         Core::ERROR_NONE);
@@ -2375,18 +2378,18 @@ TEST_F(PowerManager_L2Test, DelayPowerModeChangeByRenegotiatesWithNewTransaction
     ASSERT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
     const int firstTransactionId = mNotification.GetPreChangeTransactionId();
     ASSERT_EQ(powerManager->PowerModePreChangeComplete(secondPreChangeClientId, firstTransactionId), Core::ERROR_NONE);
-    ASSERT_EQ(powerManager->DelayPowerModeChangeBy(preChangeClientId, firstTransactionId, 1, true), Core::ERROR_NONE);
+    ASSERT_EQ(renegotiation->DelayPowerModeChangeBy(preChangeClientId, firstTransactionId, 1, true), Core::ERROR_NONE);
     EXPECT_EQ(powerManager->PowerModePreChangeComplete(preChangeClientId, firstTransactionId), Core::ERROR_INVALID_PARAMETER);
-    EXPECT_EQ(powerManager->DelayPowerModeChangeBy(preChangeClientId, firstTransactionId, 30, false), Core::ERROR_INVALID_PARAMETER);
-    EXPECT_EQ(powerManager->DelayPowerModeChangeBy(preChangeClientId, firstTransactionId, 30, true), Core::ERROR_INVALID_PARAMETER);
+    EXPECT_EQ(powerManager->DelayPowerModeChangeBy(preChangeClientId, firstTransactionId, 30), Core::ERROR_INVALID_PARAMETER);
+    EXPECT_EQ(renegotiation->DelayPowerModeChangeBy(preChangeClientId, firstTransactionId, 30, true), Core::ERROR_INVALID_PARAMETER);
 
     signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
     ASSERT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
     const int restartedTransactionId = mNotification.GetPreChangeTransactionId();
     EXPECT_NE(restartedTransactionId, firstTransactionId);
     EXPECT_EQ(powerManager->PowerModePreChangeComplete(preChangeClientId, firstTransactionId), Core::ERROR_INVALID_PARAMETER);
-    EXPECT_EQ(powerManager->DelayPowerModeChangeBy(preChangeClientId, firstTransactionId, 30, false), Core::ERROR_INVALID_PARAMETER);
-    EXPECT_EQ(powerManager->DelayPowerModeChangeBy(preChangeClientId, firstTransactionId, 30, true), Core::ERROR_INVALID_PARAMETER);
+    EXPECT_EQ(powerManager->DelayPowerModeChangeBy(preChangeClientId, firstTransactionId, 30), Core::ERROR_INVALID_PARAMETER);
+    EXPECT_EQ(renegotiation->DelayPowerModeChangeBy(preChangeClientId, firstTransactionId, 30, true), Core::ERROR_INVALID_PARAMETER);
 
     signalled = mNotification.WaitForRequestStatus(100, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
     EXPECT_FALSE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
@@ -2413,6 +2416,7 @@ TEST_F(PowerManager_L2Test, DelayPowerModeChangeByRenegotiatesWithNewTransaction
         Core::ERROR_NONE);
     EXPECT_EQ(powerManager->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested>()),
         Core::ERROR_NONE);
+    renegotiation->Release();
     powerManager->Release();
     controller->Release();
 }
