@@ -618,7 +618,7 @@ void DeepSleepController::enterDeepSleepNow()
 #ifdef CUSTOM_LGI
         _maintenanceWakeupScheduled->store(false);
 #endif
-        LOGINFO("DeeSleep wakeupReason: user action");
+        LOGINFO("DeepSleep wakeupReason: user action");
         _parent.onDeepSleepUserWakeup(userWakeup);
     } else {
         deepSleepTimerWakeup();

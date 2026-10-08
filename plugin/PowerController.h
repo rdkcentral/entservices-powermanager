@@ -89,6 +89,11 @@ public:
         return WPEFramework::Core::ERROR_NONE;
     }
 
+#ifdef CUSTOM_LGI
+    void HandleRebootOnMaintenance();
+    void ClearMaintenanceReboot();
+#endif
+
     uint32_t SetNetworkStandbyMode(const bool standbyMode);
     uint32_t GetNetworkStandbyMode(bool& standbyMode) const;
     uint32_t SetWakeupSourceConfig(const std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig>& configs);
@@ -126,6 +131,6 @@ private:
     // keep this last
     DeepSleepController& _deepSleep;
 #ifdef OFFLINE_MAINT_REBOOT
-    RebootController _rebootController;
+    std::unique_ptr<RebootController> _rebootController;
 #endif
 };

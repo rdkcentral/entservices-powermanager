@@ -356,6 +356,13 @@ namespace Plugin {
             return errorCode;
         }
 
+#ifdef CUSTOM_LGI
+        if (newState == PowerState::POWER_STATE_ON && prevState != PowerState::POWER_STATE_ON) {
+            LOGINFO("Clear the maintenance-reboot callback,when PowerState:ON while waiting for maintenance reboot");
+            _powerController.ClearMaintenanceReboot();
+        }
+#endif
+
         // We don't do a thread switching here, as it may move device to deep sleep mode
         // even before client receiving the event
         dispatchPowerModeChangedEvent(prevState, newState);
@@ -1454,6 +1461,15 @@ namespace Plugin {
         LOGINFO(">> DeepSleep timed out: %d", wakeupTimeout);
         dispatchDeepSleepTimeoutEvent(wakeupTimeout);
 
+        LOGINFO(">> Woken up from deep sleep with reason: %d", wakeupReason);
+
+#ifdef CUSTOM_LGI
+        const bool isMaintenanceWakeup = ( wakeupReason == WakeupReason::WAKEUP_REASON_MAINTENANCE );
+        if(isMaintenanceWakeup)
+        {
+            _powerController.HandleRebootOnMaintenance();
+        }
+#endif
         // DeepSleepController::deepSleepTimerWakeup() fires this callback for every non-user wake
         // (including LAN/WiFi/etc.), not only genuine timer expiry. Only consume a wakeup schedule
         // when the platform actually reported a TIMER wakeup, otherwise an unrelated wake occurring
@@ -1510,6 +1526,12 @@ namespace Plugin {
 
     void PowerManagerImplementation::onDeepSleepUserWakeup(const bool userWakeup)
     {
+#ifdef CUSTOM_LGI
+        if (userWakeup) {
+            LOGINFO("Clear the maintenance reboot callback as defensive action on user wakeup");
+            _powerController.ClearMaintenanceReboot();
+        }
+#endif
         PowerState newState = PowerState::POWER_STATE_ON;
 
 #ifdef PLATCO_BOOTTO_STANDBY

@@ -21,6 +21,8 @@
 #include "UtilsLogging.h"
 #include <core/WorkerPool.h>
 #include <ctime>
+#include <functional>
+#include <mutex>
 
 #include "Settings.h"
 
@@ -75,6 +77,7 @@ class RebootController {
 
         bool IsThresholdExceeded(int uptime = now<std::chrono::seconds>()) const
         {
+            LOGINFO("IsThresholdExceeded,_threshold = %d ,uptime:%d\n",_threshold, uptime);
             return (uptime >= _threshold);
         }
 
@@ -91,11 +94,16 @@ class RebootController {
 public:
     RebootController(const Settings& settings);
     ~RebootController();
+#ifdef CUSTOM_LGI
+    void rebootOnMaintenance(const std::function<void()>& reboot);
+    void clearMaintenanceReboot();
+#endif
 
 private:
     void scheduleHeartbeat();
     void heartbeatMsg();
     int fetchRFCValueInt(const char* key);
+    bool fetchRFCValueBool(const char* key);
 
 private:
     WPEFramework::Core::IWorkerPool& _workerPool;
@@ -103,4 +111,7 @@ private:
     Threshold _forcedRebootThreshold;
     WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> _heartbeatJob;
     bool _rfcUpdated;
+    bool _rebootOnlyInMaintenanceWindow;
+    std::function<void()> _maintenanceReboot;
+    std::mutex _maintenanceMutex;
 };
