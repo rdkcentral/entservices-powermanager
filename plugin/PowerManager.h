@@ -23,6 +23,8 @@
 
 #include <interfaces/IPowerManager.h>
 #include <interfaces/json/JPowerManager.h>
+#include <interfaces/IPowerManagerRenegotiation.h>
+#include <interfaces/json/JPowerManagerRenegotiation.h>
 
 #include "UtilsLogging.h"
 
@@ -156,6 +158,7 @@ namespace Plugin {
         INTERFACE_ENTRY(PluginHost::IPlugin)
         INTERFACE_ENTRY(PluginHost::IDispatcher)
         INTERFACE_AGGREGATE(Exchange::IPowerManager, _powerManager)
+        INTERFACE_AGGREGATE(Exchange::IPowerManagerRenegotiation, _renegotiation)
         END_INTERFACE_MAP
 
         //  IPlugin methods
@@ -172,6 +175,7 @@ namespace Plugin {
         PluginHost::IShell* _service {};
         uint32_t _connectionId {};
         Exchange::IPowerManager* _powerManager {};
+        Exchange::IPowerManagerRenegotiation* _renegotiation {};
         Core::Sink<Notification> _powermanagersNotification;
     };
 

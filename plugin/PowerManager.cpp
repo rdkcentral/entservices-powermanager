@@ -78,19 +78,36 @@ namespace Plugin {
         _service->AddRef();
         _service->Register(_powermanagersNotification.baseInterface<RPC::IRemoteConnection::INotification>());
         _service->Register(_powermanagersNotification.baseInterface<PluginHost::IShell::ICOMLink::INotification>());
-        _powerManager = _service->Root<Exchange::IPowerManager>(_connectionId, 5000, _T("PowerManagerImplementation"));
+        auto* implementation = _service->Root<Exchange::IPowerManager>(_connectionId, 5000, _T("PowerManagerImplementation"));
 
-        if (nullptr != _powerManager) {
+        if (nullptr != implementation) {
             // Register for notifications
-            _powerManager->Register(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IRebootNotification>());
+            const uint32_t ownerResult = implementation->Register(
+                _powermanagersNotification.baseInterface<Exchange::IPowerManager::IRebootNotification>());
+            // Keep the aggregate unavailable until ownership is established.
+            _powerManager = implementation;
+            if (ownerResult != Core::ERROR_NONE) {
+                message = _T("PowerManager lifecycle owner registration failed");
+                LOGERR("%s, errorCode: %u", message.c_str(), ownerResult);
+                Deinitialize(service);
+                return message;
+            }
             _powerManager->Register(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
             _powerManager->Register(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
             _powerManager->Register(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IDeepSleepTimeoutNotification>());
             _powerManager->Register(_powermanagersNotification.baseInterface<Exchange::IPowerManager::INetworkStandbyModeChangedNotification>());
             _powerManager->Register(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IThermalModeChangedNotification>());
             _powerManager->Register(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested>());
+            _renegotiation = _powerManager->QueryInterface<Exchange::IPowerManagerRenegotiation>();
+            if (_renegotiation == nullptr) {
+                message = _T("PowerManager renegotiation interface unavailable");
+                LOGERR("%s", message.c_str());
+                Deinitialize(service);
+                return message;
+            }
             // Invoking Plugin API register to wpeframework
             Exchange::JPowerManager::Register(*this, _powerManager);
+            Exchange::JPowerManagerRenegotiation::Register(*this, _renegotiation);
         } else {
             SYSLOG(Logging::Startup, (_T("PowerManager::Initialize: Failed to initialise PowerManager plugin")));
             message = _T("PowerManager plugin could not be initialised");
@@ -114,7 +131,12 @@ namespace Plugin {
         _service->Unregister(_powermanagersNotification.baseInterface<PluginHost::IShell::ICOMLink::INotification>());
 
         if (nullptr != _powerManager) {
-            _powerManager->Unregister(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IRebootNotification>());
+            // Only this private callback reference can trigger lifecycle shutdown.
+            const uint32_t shutdownResult = _powerManager->Unregister(
+                _powermanagersNotification.baseInterface<Exchange::IPowerManager::IRebootNotification>());
+            if (shutdownResult != Core::ERROR_NONE) {
+                LOGERR("Failed to detach PowerManager lifecycle owner, errorCode: %u", shutdownResult);
+            }
             _powerManager->Unregister(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
             _powerManager->Unregister(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
             _powerManager->Unregister(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IDeepSleepTimeoutNotification>());
@@ -122,7 +144,12 @@ namespace Plugin {
             _powerManager->Unregister(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IThermalModeChangedNotification>());
             _powerManager->Unregister(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested>());
 
-            Exchange::JPowerManager::Unregister(*this);
+            if (_renegotiation != nullptr) {
+                Exchange::JPowerManagerRenegotiation::Unregister(*this);
+                Exchange::JPowerManager::Unregister(*this);
+                _renegotiation->Release();
+                _renegotiation = nullptr;
+            }
 
             // Stop processing:
             RPC::IRemoteConnection* connection   = service->RemoteConnection(_connectionId);
