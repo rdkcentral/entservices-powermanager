@@ -153,7 +153,6 @@ echo " Empty mocks creation to avoid compilation errors"
 echo "======================================================================================"
 mkdir -p headers
 mkdir -p headers/audiocapturemgr
-mkdir -p headers/rdk/ds
 mkdir -p headers/rdk/iarmbus
 mkdir -p headers/rdk/iarmmgrs-hal
 mkdir -p headers/rdk/halif/
