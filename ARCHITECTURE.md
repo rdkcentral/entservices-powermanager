@@ -37,6 +37,7 @@ The plugin employs a specialized controller pattern with four distinct controlle
 4. **RebootController**: System reboot and maintenance operations
    - Graceful system restart functionality
    - Maintenance reboot scheduling
+     - CUSTOM_LGI builds (OFFLINE_MAINT_REBOOT): after a maintenance wakeup, PowerManager can reboot the box for maintenance when the maintenance-window reboot RFC setting is enabled and the uptime threshold is exceeded; any pending maintenance reboot is cleared if the user powers the device on
    - Integration with system services for coordinated shutdowns
 
 #### Support Layer
