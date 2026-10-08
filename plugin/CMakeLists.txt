@@ -99,7 +99,8 @@ endif()
 if(CUSTOM_LGI)
     target_compile_definitions(${PLUGIN_IMPLEMENTATION}
                                PRIVATE
-                                 CUSTOM_LGI)
+                                 CUSTOM_LGI
+                                 OFFLINE_MAINT_REBOOT)
 endif()
 
 target_compile_definitions(${PLUGIN_IMPLEMENTATION}

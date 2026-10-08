@@ -48,7 +48,7 @@ PowerController::PowerController(DeepSleepController& deepSleep, WakeupScheduleR
     , _wakeupTimestamp{}
     , _deepSleep(deepSleep)
 #ifdef OFFLINE_MAINT_REBOOT
-    , _rebootController(_settings)
+    , _rebootController(new RebootController(_settings))
 #endif
 {
     ASSERT(nullptr != _platform);
@@ -256,9 +256,25 @@ uint32_t PowerController::Reboot(const string& requestor, const string& reasonCu
     _workerPool.Submit(LambdaJob::Create([this, requestor, reasonCustom, reasonOther]() {
         platform().Reboot(requestor, reasonCustom, reasonOther);
     }));
-
+    LOGINFO("Reboot called from rebootcontroller class done!!");
     return WPEFramework::Core::ERROR_NONE;
 }
+
+#ifdef CUSTOM_LGI
+uint32_t PowerController::RebootForMaintenance(const string& requestor, const string& reasonCustom,
+    const string& reasonOther, const std::shared_ptr<RebootController::MaintenanceRebootGuard>& maintenanceGuard)
+{
+    _workerPool.Submit(LambdaJob::Create([this, requestor, reasonCustom, reasonOther, maintenanceGuard]() {
+        maintenanceGuard->RunIfActive([this, &requestor, &reasonCustom, &reasonOther]() {
+            _settings.SetRebootReason(reasonCustom.empty() ? "Unknown" : reasonCustom);
+            _settings.Save(m_settingsFile);
+            platform().Reboot(requestor, reasonCustom, reasonOther);
+        });
+    }));
+    LOGINFO("Maintenance reboot queued");
+    return WPEFramework::Core::ERROR_NONE;
+}
+#endif
 
 uint32_t PowerController::SetDeepSleepTimer(const int timeOut)
 {
@@ -289,3 +305,24 @@ uint32_t PowerController::GetTimeSinceWakeup(uint32_t& secondsSinceWakeup)
 
     return WPEFramework::Core::ERROR_NONE;
 }
+
+#ifdef CUSTOM_LGI
+void PowerController::HandleRebootOnMaintenance(
+    const std::function<void(const std::shared_ptr<RebootController::MaintenanceRebootGuard>&)>& reboot)
+{
+    LOGINFO("HandleRebootOnMaintenance Entry\n");
+#ifdef OFFLINE_MAINT_REBOOT
+    LOGINFO("Calling the rebootcontroller for maintenance reboot");
+    _rebootController->rebootOnMaintenance(reboot);
+#else
+    (void)reboot;
+#endif
+}
+
+void PowerController::ClearMaintenanceReboot()
+{
+#ifdef OFFLINE_MAINT_REBOOT
+    _rebootController->clearMaintenanceReboot();
+#endif
+}
+#endif
