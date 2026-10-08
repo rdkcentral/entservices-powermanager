@@ -101,6 +101,9 @@ namespace Plugin {
 
     PowerManagerImplementation::~PowerManagerImplementation()
     {
+#ifdef CUSTOM_LGI
+        _powerController.ShutdownMaintenanceJobs();
+#endif
         // Drain callbacks while _powerController and the other callback targets
         // are still alive; members are destroyed only after this body returns.
         _deepSleepController.Shutdown();
@@ -349,6 +352,16 @@ namespace Plugin {
 
     Core::hresult PowerManagerImplementation::setDevicePowerState(const int& keyCode, PowerState prevState, PowerState newState, const std::string& reason)
     {
+#ifdef CUSTOM_LGI
+        /* Clearing the pending maintenance reboot callback if transitioned to ON or DEEP SLEEP states
+           whilst waiting for pending maintenance reboot to be invoked   */
+         if (prevState != newState &&
+             (newState == PowerState::POWER_STATE_ON ||
+              newState == PowerState::POWER_STATE_STANDBY_DEEP_SLEEP)) {
+            LOGINFO("Cancel pending maintenance reboot before powering ON");
+            _powerController.ClearMaintenanceReboot();
+        }
+#endif
         uint32_t errorCode = _powerController.SetPowerState(keyCode, newState, reason);
 
         if (Core::ERROR_NONE != errorCode) {
@@ -946,6 +959,29 @@ namespace Plugin {
         return errorCode;
     }
 
+#ifdef CUSTOM_LGI
+    Core::hresult PowerManagerImplementation::rebootForMaintenance(
+        const std::shared_ptr<RebootController::MaintenanceRebootGuard>& maintenanceGuard)
+    {
+        const string requestor = "PwrMgr";
+        const string customReason = "MAINTENANCE_REBOOT";
+        const string otherReason = "Maintenance reboot";
+
+        LOGINFO(">> Maintenance reboot requested");
+
+        _powerController.RebootForMaintenance(requestor, customReason, otherReason, maintenanceGuard,
+                            [this, requestor, customReason, otherReason]() {
+            _apiLock.Lock();
+            _powerController.SetRebootReason(customReason);
+            _apiLock.Unlock();
+
+            dispatchRebootBeginEvent(requestor, customReason, otherReason);
+        });
+
+        return Core::ERROR_NONE;
+    }
+#endif
+
     Core::hresult PowerManagerImplementation::SetNetworkStandbyMode(const bool standbyMode)
     {
         LOGINFO(">> nwStandbyMode: %s", (standbyMode ? "enabled" : "disabled"));
@@ -1454,6 +1490,22 @@ namespace Plugin {
         LOGINFO(">> DeepSleep timed out: %d", wakeupTimeout);
         dispatchDeepSleepTimeoutEvent(wakeupTimeout);
 
+        LOGINFO(">> Woken up from deep sleep with reason: %d", wakeupReason);
+
+#ifdef CUSTOM_LGI
+        const bool isMaintenanceWakeup = ( wakeupReason == WakeupReason::WAKEUP_REASON_MAINTENANCE );
+        if(isMaintenanceWakeup)
+        {
+            _powerController.HandleRebootOnMaintenance([this](
+                const std::shared_ptr<RebootController::MaintenanceRebootGuard>& maintenanceGuard) {
+                rebootForMaintenance(maintenanceGuard);
+            });
+        } else {
+            /* Clearing for any pending maintenance reboot callback,
+               when the box wakeup is not due to maintenance */
+            _powerController.ClearMaintenanceReboot();
+        }
+#endif
         // DeepSleepController::deepSleepTimerWakeup() fires this callback for every non-user wake
         // (including LAN/WiFi/etc.), not only genuine timer expiry. Only consume a wakeup schedule
         // when the platform actually reported a TIMER wakeup, otherwise an unrelated wake occurring
@@ -1510,6 +1562,12 @@ namespace Plugin {
 
     void PowerManagerImplementation::onDeepSleepUserWakeup(const bool userWakeup)
     {
+#ifdef CUSTOM_LGI
+        if (userWakeup) {
+            LOGINFO("Clear the maintenance reboot callback as defensive action on user wakeup");
+            _powerController.ClearMaintenanceReboot();
+        }
+#endif
         PowerState newState = PowerState::POWER_STATE_ON;
 
 #ifdef PLATCO_BOOTTO_STANDBY
