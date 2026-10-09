@@ -20,6 +20,9 @@
 
 #include <chrono>      // for steady_clock, time_point
 #include <cstdint>     // for uint32_t
+#ifdef CUSTOM_LGI
+#include <functional>  // for function
+#endif
 #include <memory>      // for unique_ptr, default_delete
 #include <string>      // for basic_string, string
 #include <type_traits> // for is_base_of
@@ -89,6 +92,12 @@ public:
         return WPEFramework::Core::ERROR_NONE;
     }
 
+#ifdef CUSTOM_LGI
+    void HandleRebootOnMaintenance(
+        const std::function<void(const std::shared_ptr<RebootController::MaintenanceRebootGuard>&)>& reboot);
+    void ClearMaintenanceReboot();
+#endif
+
     uint32_t SetNetworkStandbyMode(const bool standbyMode);
     uint32_t GetNetworkStandbyMode(bool& standbyMode) const;
     uint32_t SetWakeupSourceConfig(const std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig>& configs);
@@ -96,6 +105,10 @@ public:
     uint32_t GetWakeupSourceConfig(int& powerMode, int& srcType, int& config) const;
     uint32_t GetTimeSinceWakeup(uint32_t& secondsSinceWakeup);
     uint32_t Reboot(const string& requestor, const string& reasonCustom, const string& reasonOther);
+#ifdef CUSTOM_LGI
+    uint32_t RebootForMaintenance(const string& requestor, const string& reasonCustom, const string& reasonOther,
+        const std::shared_ptr<RebootController::MaintenanceRebootGuard>& maintenanceGuard);
+#endif
     uint32_t SetDeepSleepTimer(const int timeOut);
 
     template <typename IMPL = DefaultImpl, typename... Args>
@@ -126,6 +139,6 @@ private:
     // keep this last
     DeepSleepController& _deepSleep;
 #ifdef OFFLINE_MAINT_REBOOT
-    RebootController _rebootController;
+    std::unique_ptr<RebootController> _rebootController;
 #endif
 };

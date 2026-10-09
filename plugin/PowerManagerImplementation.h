@@ -198,6 +198,9 @@ namespace Plugin {
         void startPowerModeChangeAcknowledgement(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason);
         void submitPowerModeChangeAcknowledgementRequestedEvent(const PowerState currentState, const PowerState newState, const int transactionId, const string& reason);
         void powerModeChangeAcknowledgementCompletionHandler(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason);
+#ifdef CUSTOM_LGI
+        Core::hresult rebootForMaintenance(const std::shared_ptr<RebootController::MaintenanceRebootGuard>& maintenanceGuard);
+#endif
         void logUnresponsiveAckClients(const std::shared_ptr<PreModeChangeController>& ackController);
         Core::hresult setDevicePowerState(const int& keyCode, PowerState currentState, PowerState powerState, const std::string& reason);
         inline bool isSyncStateChange(PowerState currState, PowerState newState) const;

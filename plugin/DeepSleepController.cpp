@@ -376,13 +376,17 @@ void DeepSleepController::Shutdown()
 
 uint32_t DeepSleepController::GetLastWakeupReason(WakeupReason& wakeupReason) const
 {
+    const uint32_t errorCode = platform().GetLastWakeupReason(wakeupReason);
 #ifdef CUSTOM_LGI
-    if (_maintenanceWakeupScheduled->load()) {
+    /* When maintenance schedule is set and platform reports a timer wakeup,
+       override to maintenance wakeup reason*/
+    if (WPEFramework::Core::ERROR_NONE == errorCode
+        && _maintenanceWakeupScheduled->load()
+        && wakeupReason == WakeupReason::WAKEUP_REASON_TIMER) {
         wakeupReason = WakeupReason::WAKEUP_REASON_MAINTENANCE;
-        return WPEFramework::Core::ERROR_NONE;
     }
 #endif
-    return platform().GetLastWakeupReason(wakeupReason);
+    return errorCode;
 }
 
 uint32_t DeepSleepController::GetLastWakeupKeyCode(int& keyCode) const
@@ -618,7 +622,7 @@ void DeepSleepController::enterDeepSleepNow()
 #ifdef CUSTOM_LGI
         _maintenanceWakeupScheduled->store(false);
 #endif
-        LOGINFO("DeeSleep wakeupReason: user action");
+        LOGINFO("DeepSleep wakeupReason: user action");
         _parent.onDeepSleepUserWakeup(userWakeup);
     } else {
         deepSleepTimerWakeup();
@@ -634,7 +638,8 @@ void DeepSleepController::deepSleepTimerWakeup()
 
     if (WPEFramework::Core::ERROR_NONE != errorCode) {
         // If the platform cannot identify the source, elapsed time is the only safe
-        // fallback for deciding whether the configured timer expired.
+        // fallback for identifying a generic timer wake. It cannot confirm that
+        // a maintenance timer caused the wake.
         wakeupReason = elapsed >= timeout
             ? WakeupReason::WAKEUP_REASON_TIMER
             : WakeupReason::WAKEUP_REASON_UNKNOWN;

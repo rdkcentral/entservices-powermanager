@@ -17,6 +17,7 @@
  * limitations under the License.
  */
 #include <chrono>
+#include <utility>
 
 #include <core/Time.h>
 #include <core/WorkerPool.h>
@@ -30,6 +31,7 @@
 
 #define MAX_RFC_LEN 15
 #define FORCE_REBOOT "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.StandbyReboot.ForceAutoReboot"
+#define REBOOT_ONLY_IN_MAINTENANCE_WINDOW "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.StandbyReboot.rebootOnlyInMaintenanceWindow"
 
 using Timestamp = std::chrono::steady_clock::time_point;
 using TimestampSec = std::chrono::time_point<std::chrono::steady_clock, std::chrono::seconds>;
@@ -40,6 +42,7 @@ RebootController::RebootController(const Settings& settings)
     , _settings(settings)
     , _forcedRebootThreshold(172800 * 3)
     , _rfcUpdated(false)
+    , _rebootOnlyInMaintenanceWindow(false)
 {
 
     _heartbeatJob = LambdaJob::Create([this]() {
@@ -76,17 +79,49 @@ void RebootController::heartbeatMsg()
         }
 
         LOGINFO("Reboot thresholds updated: ForcedReboot = %d\n", _forcedRebootThreshold.threshold());
+
+        _rebootOnlyInMaintenanceWindow = fetchRFCValueBool(REBOOT_ONLY_IN_MAINTENANCE_WINDOW);
+
+        LOGINFO("RebootOnlyInMaintenanceWindow = %d\n",_rebootOnlyInMaintenanceWindow ? 1 : 0);
+
         _rfcUpdated = true;
     }
 
     auto uptime = now<std::chrono::seconds>();
     LOGINFO("PowerManager plugin: HeartBeat at %s uptime:%lld  ForcedReboot = %d ", ctime(&curr),uptime,  _forcedRebootThreshold.threshold());
 
-    if (_forcedRebootThreshold.IsThresholdExceeded(uptime)) {
-         LOGINFO("Going to force reboot after %lld\n", uptime);
-         v_secure_system("sh /rebootNow.sh -s PwrMgr -r 'MAINTENANCE_REBOOT' -o 'Forced Maintenance reboot'");
-    }
+#ifdef CUSTOM_LGI
+    MaintenanceReboot reboot;
+    std::shared_ptr<MaintenanceRebootGuard> rebootGuard;
+    LOGINFO("PowerManager plugin: HeartBeat at %s uptime:%lld  ForcedReboot = %d ", ctime(&curr),uptime, _forcedRebootThreshold.threshold());
+    if(_rebootOnlyInMaintenanceWindow && _forcedRebootThreshold.IsThresholdExceeded(uptime))
+    {
+        LOGINFO("Going to force reboot after %lld\n", uptime);
+        {
+            std::lock_guard<std::mutex> lock(_maintenanceMutex);
+            if (_maintenanceReboot) {
+                reboot = std::move(_maintenanceReboot);
+                rebootGuard = _maintenanceRebootGuard;
+            }
+        }
 
+        if (reboot)
+        {
+            LOGINFO("Maintenance wakeup and reboot conditions met; requesting reboot");
+            reboot(rebootGuard);
+        }
+    }
+    else
+    {
+        LOGINFO("Skipping forced reboot,as conditions are not met");
+    }
+#else
+    if (_forcedRebootThreshold.IsThresholdExceeded(uptime))
+    {
+        LOGINFO("Going to force reboot after %lld\n", uptime);
+        v_secure_system("sh /rebootNow.sh -s PwrMgr -r 'MAINTENANCE_REBOOT' -o 'Forced Maintenance reboot'");
+    }
+#endif
     scheduleHeartbeat();
 }
 
@@ -116,3 +151,53 @@ int RebootController::fetchRFCValueInt(const char* key)
 
     return -1;
 }
+
+bool RebootController::fetchRFCValueBool(const char* key)
+{
+    RFC_ParamData_t param = {0};
+
+    if (WDMP_SUCCESS == getRFCParameter((char*)"PwrMgr", key, &param))
+    {
+        if (param.value == nullptr)
+        {
+            LOGERR("RFC parameter %s has null value", key);
+            return false;
+        }
+
+        return (strcmp(param.value, "true") == 0 ||
+                strcmp(param.value, "\"true\"") == 0);
+    }
+
+    LOGERR("Failed to get RFC parameter %s", key);
+    return false;
+}
+
+#ifdef CUSTOM_LGI
+void RebootController::rebootOnMaintenance(const MaintenanceReboot& reboot)
+{
+    LOGINFO("rebootOnMaintenance Entry");
+
+    if (!reboot) {
+        LOGERR("Maintenance reboot callback is empty");
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(_maintenanceMutex);
+    if (_maintenanceRebootGuard) {
+        _maintenanceRebootGuard->Cancel();
+    }
+    _maintenanceRebootGuard = std::make_shared<MaintenanceRebootGuard>();
+    _maintenanceReboot = reboot;
+    LOGINFO("rebootOnMaintenance function is assigned");
+}
+
+void RebootController::clearMaintenanceReboot()
+{
+    std::lock_guard<std::mutex> lock(_maintenanceMutex);
+    _maintenanceReboot = {};
+    if (_maintenanceRebootGuard) {
+        _maintenanceRebootGuard->Cancel();
+        _maintenanceRebootGuard.reset();
+    }
+}
+#endif
