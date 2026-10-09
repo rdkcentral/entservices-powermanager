@@ -1681,7 +1681,7 @@ TEST_F(TestPowerManager, DeepSleepTimerWakeup_CustomLgi_StaysInStandby)
     Core::ProxyType<PowerModeChangedEvent> modeChanged = Core::ProxyType<PowerModeChangedEvent>::Create();
     EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
-            [](const PowerState, const PowerState newState) {
+            [](const PowerState, const PowerState newState, const string &, const string &) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
         .WillOnce(::testing::Invoke(
