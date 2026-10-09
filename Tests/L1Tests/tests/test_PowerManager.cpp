@@ -159,7 +159,7 @@ public:
     };
 
     struct PowerModeChangedEvent : public WPEFramework::Exchange::IPowerManager::IModeChangedNotification {
-        MOCK_METHOD(void, OnPowerModeChanged, (const PowerState, const PowerState), (override));
+        MOCK_METHOD(void, OnPowerModeChanged, (const PowerState, const PowerState, const string &, const string &), (override));
 
         BEGIN_INTERFACE_MAP(PowerModeChangedEvent)
         INTERFACE_ENTRY(Exchange::IPowerManager::IModeChangedNotification)
@@ -688,9 +688,9 @@ TEST_F(TestPowerManager, PowerModePreChangeAckTimeout)
 
     WaitGroup wg;
     wg.Add(1);
-    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
-            [&](const PowerState currState, const PowerState newState) {
+            [&](const PowerState currState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
                 wg.Done();
             }));
@@ -768,9 +768,9 @@ TEST_F(TestPowerManager, PowerModePreChangeUnregisterBeforeAck)
     wg.Wait();
 
     wg.Add();
-    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
-            [&](const PowerState currState, const PowerState newState) {
+            [&](const PowerState currState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
                 wg.Done();
             }));
@@ -856,9 +856,9 @@ TEST_F(TestPowerManager, PowerModeChangeAcknowledgement)
                 wg.Done();
             }));
 
-    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
-            [&](const PowerState currState, const PowerState newState) {
+            [&](const PowerState currState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
             }));
 
@@ -941,9 +941,9 @@ TEST_F(TestPowerManager, PowerModeChangeAcknowledgementTimeout)
 
     WaitGroup wg;
     wg.Add(1);
-    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
-            [&](const PowerState currState, const PowerState newState) {
+            [&](const PowerState currState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
                 wg.Done();
             }));
@@ -1028,9 +1028,9 @@ TEST_F(TestPowerManager, PowerModeChangeAcknowledgementUnregisterBeforeAck)
                 wg.Done();
             }));
 
-    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
-            [&](const PowerState currState, const PowerState newState) {
+            [&](const PowerState currState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
             }));
 
@@ -1137,9 +1137,9 @@ TEST_F(TestPowerManager, SetPowerStateRejectedDuringAcknowledgementNegotiation)
                 wg.Done();
             }));
 
-    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
-            [&](const PowerState currState, const PowerState newState) {
+            [&](const PowerState currState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
             }));
 
@@ -1212,9 +1212,9 @@ TEST_F(TestPowerManager, SetPowerStateWithTPSReasonBypassesNegotiation)
 
     WaitGroup wg;
     wg.Add(1);
-    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
-            [&](const PowerState currState, const PowerState newState) {
+            [&](const PowerState currState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
                 wg.Done();
             }));
@@ -1323,9 +1323,9 @@ TEST_F(TestPowerManager, SetPowerStateWithTPSReasonCancelsSecondStageNegotiation
                 EXPECT_EQ(tpsStatus, Core::ERROR_NONE);
             }));
 
-    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
-            [&](const PowerState currState, const PowerState newState) {
+            [&](const PowerState currState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
                 wg.Done();
             }));
@@ -1432,13 +1432,13 @@ TEST_F(TestPowerManager, DeepSleepUserWakeup)
     WaitGroup wg;
     wg.Add();
     Core::ProxyType<PowerModeChangedEvent> modeChanged = Core::ProxyType<PowerModeChangedEvent>::Create();
-    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
-            [](const PowerState prevState, const PowerState newState) {
+            [](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
         .WillOnce(::testing::Invoke(
-            [&](const PowerState prevState, const PowerState newState) {
+            [&](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
                 wg.Done();
@@ -1517,18 +1517,18 @@ TEST_F(TestPowerManager, DeepSleepUserWakeupRaceCondition)
     WaitGroup wg;
     wg.Add();
     Core::ProxyType<PowerModeChangedEvent> modeChanged = Core::ProxyType<PowerModeChangedEvent>::Create();
-    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
-            [](const PowerState prevState, const PowerState newState) {
+            [](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
         .WillOnce(::testing::Invoke(
-            [&](const PowerState prevState, const PowerState newState) {
+            [&](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
             }))
         .WillOnce(::testing::Invoke(
-            [&](const PowerState prevState, const PowerState newState) {
+            [&](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_ON);
                 wg.Done();
@@ -1679,13 +1679,13 @@ TEST_F(TestPowerManager, DeepSleepTimerWakeup_CustomLgi_StaysInStandby)
     WaitGroup wakeupComplete;
     wakeupComplete.Add();
     Core::ProxyType<PowerModeChangedEvent> modeChanged = Core::ProxyType<PowerModeChangedEvent>::Create();
-    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
             [](const PowerState, const PowerState newState) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
         .WillOnce(::testing::Invoke(
-            [&](const PowerState previousState, const PowerState newState) {
+            [&](const PowerState previousState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(previousState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY);
                 wakeupComplete.Done();
@@ -1746,13 +1746,13 @@ TEST_F(TestPowerManager, DeepSleepTimerWakeup)
     WaitGroup wg;
     wg.Add();
     Core::ProxyType<PowerModeChangedEvent> modeChanged = Core::ProxyType<PowerModeChangedEvent>::Create();
-    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
-            [](const PowerState prevState, const PowerState newState) {
+            [](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
         .WillOnce(::testing::Invoke(
-            [&](const PowerState prevState, const PowerState newState) {
+            [&](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
                 wg.Done();
@@ -1846,13 +1846,13 @@ TEST_F(TestPowerManager, DeepSleepDelayedTimerWakeup)
     WaitGroup wg;
     wg.Add();
     Core::ProxyType<PowerModeChangedEvent> modeChanged = Core::ProxyType<PowerModeChangedEvent>::Create();
-    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
-            [](const PowerState prevState, const PowerState newState) {
+            [](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
         .WillOnce(::testing::Invoke(
-            [&](const PowerState prevState, const PowerState newState) {
+            [&](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, expectedTimerWakeupState());
                 wg.Done();
@@ -1941,23 +1941,23 @@ TEST_F(TestPowerManager, DeepSleepDelayNotPersistedAfterFileRemoved)
     wg2.Add();
 
     Core::ProxyType<PowerModeChangedEvent> modeChanged = Core::ProxyType<PowerModeChangedEvent>::Create();
-    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
-            [](const PowerState prevState, const PowerState newState) {
+            [](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
         .WillOnce(::testing::Invoke(
-            [&wg1](const PowerState prevState, const PowerState newState) {
+            [&wg1](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, expectedTimerWakeupState());
                 wg1.Done();
             }))
         .WillOnce(::testing::Invoke(
-            [](const PowerState prevState, const PowerState newState) {
+            [](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
         .WillOnce(::testing::Invoke(
-            [&wg2](const PowerState prevState, const PowerState newState) {
+            [&wg2](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, expectedTimerWakeupState());
                 wg2.Done();
@@ -2064,13 +2064,13 @@ TEST_F(TestPowerManager, DeepSleepInvalidWakeup)
             }));
 
     Core::ProxyType<PowerModeChangedEvent> modeChanged = Core::ProxyType<PowerModeChangedEvent>::Create();
-    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
-            [](const PowerState prevState, const PowerState newState) {
+            [](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
         .WillOnce(::testing::Invoke(
-            [](const PowerState prevState, const PowerState newState) {
+            [](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, expectedTimerWakeupState());
             }));
@@ -2150,13 +2150,13 @@ TEST_F(TestPowerManager, DeepSleepEarlyWakeup)
     WaitGroup wg;
     wg.Add();
     Core::ProxyType<PowerModeChangedEvent> modeChanged = Core::ProxyType<PowerModeChangedEvent>::Create();
-    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
-            [](const PowerState prevState, const PowerState newState) {
+            [](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
         .WillOnce(::testing::Invoke(
-            [&](const PowerState prevState, const PowerState newState) {
+            [&](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, expectedTimerWakeupState());
                 wg.Done();
@@ -2239,13 +2239,13 @@ TEST_F(TestPowerManager, DeepSleepFailure_CustomLgi_FallsBackToStandby)
     WaitGroup wg;
     wg.Add();
     Core::ProxyType<PowerModeChangedEvent> modeChanged = Core::ProxyType<PowerModeChangedEvent>::Create();
-    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
-            [](const PowerState prevState, const PowerState newState) {
+            [](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
         .WillOnce(::testing::Invoke(
-            [&](const PowerState prevState, const PowerState newState) {
+            [&](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY);
                 wg.Done();
@@ -2305,13 +2305,13 @@ TEST_F(TestPowerManager, DeepSleepFailure)
     WaitGroup wg;
     wg.Add();
     Core::ProxyType<PowerModeChangedEvent> modeChanged = Core::ProxyType<PowerModeChangedEvent>::Create();
-    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
-            [](const PowerState prevState, const PowerState newState) {
+            [](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
         .WillOnce(::testing::Invoke(
-            [&](const PowerState prevState, const PowerState newState) {
+            [&](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
                 wg.Done();
@@ -2709,9 +2709,8 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupMultipleSchedules)
 }
 
 // Verify that when the deep sleep timer expires because of a previously registered
-// ScheduleDeepSleepWakeup() schedule, the device transitions to POWER_STATE_STANDBY
-// (ActiveStandby) as required by ONEM-42970, rather than the generic LIGHT_SLEEP
-// fallback used when no schedule was consumed.
+// ScheduleDeepSleepWakeup() schedule, the device transitions to POWER_STATE_STANDBY,
+// rather than the generic LIGHT_SLEEP fallback used when no schedule was consumed.
 TEST_F(TestPowerManager, ScheduleDeepSleepWakeupConsumedTransitionsToStandby)
 {
     TEST_LOG(">> Test: Scheduled deep sleep wakeup transitions to STANDBY on timer expiry");
@@ -2731,13 +2730,13 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupConsumedTransitionsToStandby)
     WaitGroup wg;
     wg.Add();
     Core::ProxyType<PowerModeChangedEvent> modeChanged = Core::ProxyType<PowerModeChangedEvent>::Create();
-    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
-            [](const PowerState prevState, const PowerState newState) {
+            [](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
         .WillOnce(::testing::Invoke(
-            [&](const PowerState prevState, const PowerState newState) {
+            [&](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY);
                 wg.Done();
@@ -2813,7 +2812,7 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupConsumedTransitionsToStandby)
     TEST_LOG("<< Test passed");
 }
 
-// ONEM-42970: verify that when multiple wakeup schedules are pending, the device wakes
+// Verify that when multiple wakeup schedules are pending, the device wakes
 // for each one in nearest-first order and consumes it (-> STANDBY), and once the last
 // registered schedule has *already expired* without the device sleeping through it,
 // that stale schedule is dropped (not "consumed") and the device falls back to the
@@ -2821,11 +2820,6 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupConsumedTransitionsToStandby)
 //
 // Schedules are deliberately spaced by real wall-clock seconds (20/40/60) rather than
 // mocked/faked time, per reviewer request, so this test has a real runtime of ~1 minute.
-//
-// NOTE: OnPowerModeChanged() currently only carries (prevState, newState) - it does not
-// yet identify which requestorId's schedule caused the wakeup (that is ONEM-42980 scope).
-// The requestor-specific assertions below are therefore written but commented out, so
-// they are easy to enable once ONEM-42980 lands.
 TEST_F(TestPowerManager, ScheduleDeepSleepWakeupSequentialConsumptionAcrossMultipleSchedules)
 {
     TEST_LOG(">> Test: Sequential consumption across multiple deep sleep wakeup schedules");
@@ -2864,40 +2858,39 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupSequentialConsumptionAcrossMulti
 
     WaitGroup wg;
     Core::ProxyType<PowerModeChangedEvent> modeChanged = Core::ProxyType<PowerModeChangedEvent>::Create();
-    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_))
+    EXPECT_CALL(*modeChanged, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         // Step 1: ON -> DEEP_SLEEP
         .WillOnce(::testing::Invoke(
-            [](const PowerState prevState, const PowerState newState) {
+            [](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
         // Step 1 wake: nearest schedule (schedule3, requestor3) consumed -> STANDBY
         .WillOnce(::testing::Invoke(
-            [&](const PowerState prevState, const PowerState newState) {
+            [&](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY);
-                // TODO(ONEM-42980): once OnPowerModeChanged() carries the requestorId
-                // that triggered the wakeup, assert it here:
-                // EXPECT_EQ(wakingRequestorId, "requestor3");
+                EXPECT_EQ(reason, "DeepSleep timedout");
+                EXPECT_EQ(requestors, "requestor3");
                 wg.Done();
             }))
         // Step 2: STANDBY -> DEEP_SLEEP
         .WillOnce(::testing::Invoke(
-            [](const PowerState prevState, const PowerState newState) {
+            [](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
         // Step 2 wake: next nearest schedule (schedule2, requestor2) consumed -> STANDBY
         .WillOnce(::testing::Invoke(
-            [&](const PowerState prevState, const PowerState newState) {
+            [&](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY);
-                // TODO(ONEM-42980): assert requestor here once available:
-                // EXPECT_EQ(wakingRequestorId, "requestor2");
+                EXPECT_EQ(reason, "DeepSleep timedout");
+                EXPECT_EQ(requestors, "requestor2");
                 wg.Done();
             }))
         // Step 4: STANDBY -> DEEP_SLEEP (schedule1 has already expired by this point)
         .WillOnce(::testing::Invoke(
-            [](const PowerState prevState, const PowerState newState) {
+            [](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
             }))
@@ -2906,9 +2899,10 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupSequentialConsumptionAcrossMulti
         // falls back to the default maintenance timeout -> LIGHT_SLEEP, not STANDBY.
         // No requestor is associated with this fallback wakeup.
         .WillOnce(::testing::Invoke(
-            [&](const PowerState prevState, const PowerState newState) {
+            [&](const PowerState prevState, const PowerState newState, const string &reason, const string &requestors) {
                 EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+                EXPECT_TRUE(requestors.empty());
                 wg.Done();
             }));
 

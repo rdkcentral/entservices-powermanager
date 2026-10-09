@@ -187,7 +187,7 @@ namespace Plugin {
 
         static std::unique_ptr<WakeupScheduleRegister> createWakeupScheduleRegister();
 
-        void dispatchPowerModeChangedEvent(const PowerState& currentState, const PowerState& newState);
+        void dispatchPowerModeChangedEvent(const PowerState& currentState, const PowerState& newState, const string& reason);
         void dispatchDeepSleepTimeoutEvent(const uint32_t& timeout);
         void dispatchRebootBeginEvent(const string& rebootReasonCustom, const string& rebootReasonOther, const string& rebootRequestor);
         void dispatchThermalModeChangedEvent(const ThermalTemperature& currentThermalLevel, const ThermalTemperature& newThermalLevel, const float& currentTemperature);
