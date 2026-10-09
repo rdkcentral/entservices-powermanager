@@ -124,12 +124,12 @@ PwrMgr_Notification() : m_event_signalled(POWERMANAGERL2TEST_STATE_INVALID), m_a
            return static_cast<T*>(this);
        }
 
-        void OnPowerModeChanged(const PowerState currentState, const PowerState newState) override
+        void OnPowerModeChanged(const PowerState currentState, const PowerState newState, const string &reason, const string &requestors) override
         {
             TEST_LOG("OnPowerModeChanged event triggered ***\n");
             std::unique_lock<std::mutex> lock(m_mutex);
 
-            TEST_LOG("OnPowerModeChanged currentState: %u, newState: %u\n", currentState, newState);
+            TEST_LOG("OnPowerModeChanged currentState: %u, newState: %u, reason: '%s', requestors: '%s'\n", currentState, newState, reason.c_str(), requestors.c_str());
             /* Notify the requester thread. */
             m_event_signalled |= POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED;
             m_condition_variable.notify_one();
@@ -254,7 +254,7 @@ class PowerManager_L2Test : public L2TestMocks {
          * @brief called when System state
          * changed notification received from IARM
          */
-        void OnPowerModeChanged(const PowerState currentState, const PowerState newState);
+        void OnPowerModeChanged(const PowerState currentState, const PowerState newState, const string &reason, const string &requestors);
 
         /**
          * @brief called when System state
@@ -415,12 +415,12 @@ PowerManager_L2Test::~PowerManager_L2Test()
     EXPECT_EQ(Core::ERROR_NONE, status);
 }
 
-void PowerManager_L2Test::OnPowerModeChanged(const PowerState currentState, const PowerState newState)
+void PowerManager_L2Test::OnPowerModeChanged(const PowerState currentState, const PowerState newState, const string &reason, const string &requestors)
 {
     TEST_LOG("OnPowerModeChanged event triggered ***\n");
     std::unique_lock<std::mutex> lock(m_mutex);
 
-    TEST_LOG("OnPowerModeChanged currentState: %u, newState: %u\n", currentState, newState);
+    TEST_LOG("OnPowerModeChanged currentState: %u, newState: %u, reason: '%s', requestors: '%s'\n", currentState, newState, reason.c_str(), requestors.c_str());
     /* Notify the requester thread. */
     m_event_signalled |= POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED;
     m_condition_variable.notify_one();
