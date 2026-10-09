@@ -98,10 +98,10 @@ namespace Plugin {
                 _parent.CallbackRevoked(remote, interfaceId);
             }
 
-            void OnPowerModeChanged(const PowerState currentState, const PowerState newState) override
+            void OnPowerModeChanged(const PowerState currentState, const PowerState newState, const string &reason, const string &requestors) override
             {
-                LOGINFO("currentState %u, newState %u", currentState, newState);
-                Exchange::JPowerManager::Event::OnPowerModeChanged(_parent, currentState, newState);
+                LOGINFO("currentState %u, newState %u, reason '%s', requestors '%s'", currentState, newState, reason.c_str(), requestors.c_str());
+                Exchange::JPowerManager::Event::OnPowerModeChanged(_parent, currentState, newState, reason, requestors);
             }
 
             void OnPowerModePreChange(const PowerState currentState, const PowerState newState, const int trxnId, const int stateChangeAfter) override
