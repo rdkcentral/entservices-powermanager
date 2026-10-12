@@ -28,6 +28,8 @@ ThermalController::ThermalController (INotification& parent, std::shared_ptr<IPl
     , m_cur_Thermal_Level(ThermalTemperature::THERMAL_TEMPERATURE_NORMAL)
     , _parent(parent)
     , _stopThread(false)
+    , _stopMutex(std::make_shared<std::mutex>())
+    , _stopCondition(std::make_shared<std::condition_variable>())
 {
     initializeThermalProtection();
     LOGINFO(">> CTOR <<");
@@ -36,7 +38,11 @@ ThermalController::ThermalController (INotification& parent, std::shared_ptr<IPl
 ThermalController::~ThermalController()
 {
     LOGINFO(">> DTOR");
-    _stopThread = true;
+    {
+        std::lock_guard<std::mutex> lock(*_stopMutex);
+        _stopThread = true;
+    }
+    _stopCondition->notify_all();
     if ( nullptr != thermalThreadId )
     {
         if (thermalThreadId->joinable())
@@ -402,7 +408,10 @@ void ThermalController::pollThermalLevels()
         const uint32_t powerStateResult = _parent.getPowerState(currentPowerState, prevPowerState);
         if ((WPEFramework::Core::ERROR_NONE == powerStateResult) && (PowerState::POWER_STATE_STANDBY_DEEP_SLEEP == currentPowerState)){
             LOGINFO("Ignoring Thermal polling in DEEPSLEEP state");
-			sleep(thermal_poll_interval);
+            {
+                std::unique_lock<std::mutex> lock(*_stopMutex);
+                _stopCondition->wait_for(lock, std::chrono::seconds(thermal_poll_interval), [this]{ return _stopThread; });
+            }
             continue;
         }
 
@@ -458,7 +467,10 @@ void ThermalController::pollThermalLevels()
         {
             LOGINFO("Warning - Failed to retrieve temperature from OEM");
         }
-        sleep(thermal_poll_interval);
+        {
+            std::unique_lock<std::mutex> lock(*_stopMutex);
+            _stopCondition->wait_for(lock, std::chrono::seconds(thermal_poll_interval), [this]{ return _stopThread; });
+        }
         pollCount++;
     }
     LOGINFO(">> Stop monitoring temeperature");
