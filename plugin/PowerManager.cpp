@@ -79,6 +79,7 @@ namespace Plugin {
         _service->Register(_powermanagersNotification.baseInterface<RPC::IRemoteConnection::INotification>());
         _service->Register(_powermanagersNotification.baseInterface<PluginHost::IShell::ICOMLink::INotification>());
         auto* implementation = _service->Root<Exchange::IPowerManager>(_connectionId, 5000, _T("PowerManagerImplementation"));
+        LOGINFO("PM-LIFETIME wrapper root acquired wrapper=%p interface=%p connection=%u", this, implementation, _connectionId);
 
         if (nullptr != implementation) {
             // Register for notifications
@@ -98,16 +99,8 @@ namespace Plugin {
             _powerManager->Register(_powermanagersNotification.baseInterface<Exchange::IPowerManager::INetworkStandbyModeChangedNotification>());
             _powerManager->Register(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IThermalModeChangedNotification>());
             _powerManager->Register(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested>());
-            _renegotiation = _powerManager->QueryInterface<Exchange::IPowerManagerRenegotiation>();
-            if (_renegotiation == nullptr) {
-                message = _T("PowerManager renegotiation interface unavailable");
-                LOGERR("%s", message.c_str());
-                Deinitialize(service);
-                return message;
-            }
             // Invoking Plugin API register to wpeframework
             Exchange::JPowerManager::Register(*this, _powerManager);
-            Exchange::JPowerManagerRenegotiation::Register(*this, _renegotiation);
         } else {
             SYSLOG(Logging::Startup, (_T("PowerManager::Initialize: Failed to initialise PowerManager plugin")));
             message = _T("PowerManager plugin could not be initialised");
@@ -144,16 +137,13 @@ namespace Plugin {
             _powerManager->Unregister(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IThermalModeChangedNotification>());
             _powerManager->Unregister(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested>());
 
-            if (_renegotiation != nullptr) {
-                Exchange::JPowerManagerRenegotiation::Unregister(*this);
-                Exchange::JPowerManager::Unregister(*this);
-                _renegotiation->Release();
-                _renegotiation = nullptr;
-            }
+            Exchange::JPowerManager::Unregister(*this);
 
             // Stop processing:
             RPC::IRemoteConnection* connection   = service->RemoteConnection(_connectionId);
+            LOGINFO("PM-LIFETIME wrapper root release begin wrapper=%p interface=%p", this, _powerManager);
             VARIABLE_IS_NOT_USED uint32_t result = _powerManager->Release();
+            LOGINFO("PM-LIFETIME wrapper root release end wrapper=%p result=%u", this, result);
 
             _powerManager = nullptr;
 
