@@ -79,7 +79,6 @@ namespace Plugin {
         _service->Register(_powermanagersNotification.baseInterface<RPC::IRemoteConnection::INotification>());
         _service->Register(_powermanagersNotification.baseInterface<PluginHost::IShell::ICOMLink::INotification>());
         auto* implementation = _service->Root<Exchange::IPowerManager>(_connectionId, 5000, _T("PowerManagerImplementation"));
-        LOGINFO("PM-LIFETIME wrapper root acquired wrapper=%p interface=%p connection=%u", this, implementation, _connectionId);
 
         if (nullptr != implementation) {
             // Register for notifications
@@ -141,9 +140,7 @@ namespace Plugin {
 
             // Stop processing:
             RPC::IRemoteConnection* connection   = service->RemoteConnection(_connectionId);
-            LOGINFO("PM-LIFETIME wrapper root release begin wrapper=%p interface=%p", this, _powerManager);
             VARIABLE_IS_NOT_USED uint32_t result = _powerManager->Release();
-            LOGINFO("PM-LIFETIME wrapper root release end wrapper=%p result=%u", this, result);
 
             _powerManager = nullptr;
 

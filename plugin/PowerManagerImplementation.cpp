@@ -85,7 +85,6 @@ namespace Plugin {
             _wakeupScheduleRegister->loadWakeupSchedulesFromFile(POWERMANAGER_SCHEDULES_FILE);
         }
         LOGINFO(">> CTOR <<");
-        LOGINFO("PM-LIFETIME implementation constructed impl=%p", this);
     }
 
     std::unique_ptr<WakeupScheduleRegister> PowerManagerImplementation::createWakeupScheduleRegister()
@@ -102,7 +101,6 @@ namespace Plugin {
 
     PowerManagerImplementation::~PowerManagerImplementation()
     {
-        LOGINFO("PM-LIFETIME implementation destruction begin impl=%p", this);
 
         // Drain callbacks while _powerController and the other callback targets
         // are still alive; members are destroyed only after this body returns.
@@ -111,7 +109,6 @@ namespace Plugin {
             _lifecycleOwner->Release();
         }
         LOGINFO(">> DTOR <<");
-        LOGINFO("PM-LIFETIME implementation destruction end impl=%p", this);
     }
 
     Core::hresult PowerManagerImplementation::Shutdown()
@@ -120,8 +117,6 @@ namespace Plugin {
         Core::ProxyType<Core::IDispatch> ackJob;
 
         _apiLock.Lock();
-        LOGINFO("PM-LIFETIME shutdown begin impl=%p preChange=%d ack=%d",
-            this, bool(_modeChangeController), bool(_modeChangeAckController));
         _shuttingDown = true;
         if (_modeChangeController) {
             preChangeJob = _modeChangeController->PendingTimerJob();
@@ -136,15 +131,12 @@ namespace Plugin {
         _apiLock.Unlock();
 
         if (preChangeJob.IsValid()) {
-            const uint32_t result = Core::IWorkerPool::Instance().Revoke(preChangeJob);
-            LOGINFO("PM-LIFETIME shutdown pre-change timer revoked impl=%p result=%u", this, result);
+            Core::IWorkerPool::Instance().Revoke(preChangeJob);
         }
         if (ackJob.IsValid()) {
-            const uint32_t result = Core::IWorkerPool::Instance().Revoke(ackJob);
-            LOGINFO("PM-LIFETIME shutdown ack timer revoked impl=%p result=%u", this, result);
+            Core::IWorkerPool::Instance().Revoke(ackJob);
         }
         _negotiationCompletions->Wait();
-        LOGINFO("PM-LIFETIME shutdown completions drained impl=%p", this);
         LOGINFO("PowerManager negotiation work shut down");
         return Core::ERROR_NONE;
     }
@@ -626,7 +618,7 @@ namespace Plugin {
                 PowerManagerImplementation::LambdaJob::Create(this,
                     [notification, currentState, newState, transactionId, timeOut]() {
                         notification->OnPowerModePreChange(currentState, newState, transactionId, timeOut);
-                    }, "pre-change-notification"));
+                    }));
         }
 
         LOGINFO("<< currentState : %s, newState : %s, transactionId : %d", util::str(currentState), util::str(newState), transactionId);
@@ -651,7 +643,7 @@ namespace Plugin {
                     [notification, currentState, newState, transactionId, reason]() {
                         notification->OnPowerModeChangeAcknowledgementRequested(currentState, newState, transactionId, reason);
                         notification->Release();
-                    }, "ack-notification"));
+                    }));
         }
 
         LOGINFO("<< currentState : %s, newState : %s, transactionId : %d", util::str(currentState), util::str(newState), transactionId);
@@ -1291,7 +1283,6 @@ namespace Plugin {
         const auto completions = _negotiationCompletions;
         completions->Begin();
         this->AddRef();
-        LOGINFO("PM-LIFETIME round acquire impl=%p phase=ack transaction=%d", this, transactionId);
 
         auto ackController = _modeChangeAckController;
 
@@ -1306,7 +1297,7 @@ namespace Plugin {
         // completion handler gets triggered, which will actually apply the power state change.
         _apiLock.Lock();
         auto completion = ackController->Arm(timeOut * 1000,
-            [this, keyCode, currentState, newState, reason, ackController, completions, transactionId](bool isTimedout, bool isAborted) mutable {
+            [this, keyCode, currentState, newState, reason, ackController, completions](bool isTimedout, bool isAborted) mutable {
                 LOGINFO(">> AckCompletionHandler isTimedout: %d, isAborted: %d", isTimedout, isAborted);
 
                 if (!isAborted) {
@@ -1320,9 +1311,7 @@ namespace Plugin {
                 }
 
                 // Release the refCount taken just before `_modeChangeAckController->Schedule`
-                LOGINFO("PM-LIFETIME round release begin impl=%p phase=ack transaction=%d", this, transactionId);
-                const uint32_t result = this->Release();
-                LOGINFO("PM-LIFETIME round release end phase=ack transaction=%d result=%u", transactionId, result);
+                this->Release();
                 completions->Complete();
 
                 LOGINFO("<< AckCompletionHandler");

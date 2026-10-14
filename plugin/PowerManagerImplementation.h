@@ -78,14 +78,12 @@ namespace Plugin {
 
         class EXTERNAL LambdaJob : public Core::IDispatch {
         protected:
-            LambdaJob(PowerManagerImplementation* impl, std::function<void()> lambda, const char* purpose)
+            LambdaJob(PowerManagerImplementation* impl, std::function<void()> lambda)
                 : _impl(impl)
                 , _lambda(std::move(lambda))
-                , _purpose(purpose)
             {
                 if (_impl != nullptr) {
                     _impl->AddRef();
-                    LOGINFO("PM-LIFETIME job acquire impl=%p job=%p purpose=%s", _impl, this, _purpose);
                 }
             }
 
@@ -96,28 +94,23 @@ namespace Plugin {
             ~LambdaJob()
             {
                 if (_impl != nullptr) {
-                    LOGINFO("PM-LIFETIME job release begin impl=%p job=%p purpose=%s", _impl, this, _purpose);
-                    const uint32_t result = _impl->Release();
-                    LOGINFO("PM-LIFETIME job release end impl=%p job=%p purpose=%s result=%u", _impl, this, _purpose, result);
+                    _impl->Release();
                 }
             }
 
-            static Core::ProxyType<Core::IDispatch> Create(PowerManagerImplementation* impl, std::function<void()> lambda, const char* purpose = "unspecified")
+            static Core::ProxyType<Core::IDispatch> Create(PowerManagerImplementation* impl, std::function<void()> lambda)
             {
-                return (Core::ProxyType<Core::IDispatch>(Core::ProxyType<LambdaJob>::Create(impl, std::move(lambda), purpose)));
+                return (Core::ProxyType<Core::IDispatch>(Core::ProxyType<LambdaJob>::Create(impl, std::move(lambda))));
             }
 
             virtual void Dispatch()
             {
-                LOGINFO("PM-LIFETIME job dispatch begin impl=%p job=%p purpose=%s", _impl, this, _purpose);
                 _lambda();
-                LOGINFO("PM-LIFETIME job dispatch end impl=%p job=%p purpose=%s", _impl, this, _purpose);
             }
 
         private:
             PowerManagerImplementation* _impl;
             std::function<void()> _lambda;
-            const char* _purpose;
         };
 
     public:
