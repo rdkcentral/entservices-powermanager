@@ -327,12 +327,6 @@ public:
         return status;
     }
 
-    WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> PendingTimerJob() const
-    {
-        std::lock_guard<std::mutex> lock(_timerLock);
-        return _timerJob;
-    }
-
     /**
      * @brief Stops or revokes the AckController if it is already running.
      *        After revoke, if a timer job was scheduled, the completion handler is invoked with
