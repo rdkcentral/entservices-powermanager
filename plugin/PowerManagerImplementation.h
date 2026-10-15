@@ -22,10 +22,6 @@
 #include "Module.h"
 
 #include <memory>
-#include <condition_variable>
-#include <mutex>
-#include <string>
-#include <cstdint>
 #include <unordered_map>
 
 #include <com/com.h>
@@ -175,7 +171,6 @@ namespace Plugin {
         Core::ProxyType<RPC::CommunicatorClient> _communicatorClient;
         PluginHost::IShell* _controller;
         std::list<Exchange::IPowerManager::IRebootNotification*> _rebootNotifications;
-        Exchange::IPowerManager::IRebootNotification* _lifecycleOwner = nullptr;
         std::list<Exchange::IPowerManager::IModePreChangeNotification*> _preModeChangeNotifications;
         std::list<Exchange::IPowerManager::IModeChangedNotification*> _modeChangedNotifications;
         std::list<Exchange::IPowerManager::IDeepSleepTimeoutNotification*> _deepSleepTimeoutNotifications;
@@ -184,33 +179,6 @@ namespace Plugin {
         std::list<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested*> _modeChangeAckNotifications;
         std::shared_ptr<PreModeChangeController> _modeChangeController;
         std::unordered_map<uint32_t, std::string> _modeChangeClients;
-        bool _shuttingDown = false;
-        struct NegotiationCompletionState {
-            std::mutex mutex;
-            std::condition_variable completed;
-            uint32_t pending = 0;
-
-            void Begin()
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-                ++pending;
-            }
-
-            void Complete()
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-                --pending;
-                completed.notify_all();
-            }
-
-            void Wait()
-            {
-                std::unique_lock<std::mutex> lock(mutex);
-                completed.wait(lock, [this]() { return pending == 0; });
-            }
-        };
-        std::shared_ptr<NegotiationCompletionState> _negotiationCompletions =
-            std::make_shared<NegotiationCompletionState>();
         std::shared_ptr<PreModeChangeController> _modeChangeAckController;
         std::unordered_map<uint32_t, std::string> _modeChangeAckClients;
         // Optional: only created when POWERMANAGER_SCHEDULES_FILE is configured (non-empty).
@@ -230,7 +198,6 @@ namespace Plugin {
         std::function<void()> preparePowerModePreChange(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason, const std::function<void()>& finished);
         bool powerModePreChangeCompletionHandler(const int keyCode, PowerState currentState, PowerState powerState, const std::string& reason, const std::weak_ptr<PreModeChangeController>& controller, const std::function<void()>& finished);
         Core::hresult delayPowerModeChange(const uint32_t clientId, const int transactionId, const int delayPeriod, const bool renegotiate);
-        Core::hresult Shutdown();
         void startPowerModeChangeAcknowledgement(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason);
         void submitPowerModeChangeAcknowledgementRequestedEvent(const PowerState currentState, const PowerState newState, const int transactionId, const string& reason);
         void powerModeChangeAcknowledgementCompletionHandler(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason);

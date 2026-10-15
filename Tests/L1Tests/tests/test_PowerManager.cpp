@@ -763,23 +763,6 @@ TEST_F(TestPowerManager, DelayPowerModeChangeByRenegotiatesUnlimitedWithNewTrans
     EXPECT_EQ(powerManagerImpl->Unregister(&(*modeChangedEvent)), Core::ERROR_NONE);
 }
 
-TEST_F(TestPowerManager, ShutdownCannotBeTriggeredByUnrelatedSubscriber)
-{
-    auto owner = Core::ProxyType<RebootEvent>::Create();
-    auto subscriber = Core::ProxyType<RebootEvent>::Create();
-    auto stranger = Core::ProxyType<RebootEvent>::Create();
-    ASSERT_EQ(powerManagerImpl->Register(&(*owner)), Core::ERROR_NONE);
-    ASSERT_EQ(powerManagerImpl->Register(&(*subscriber)), Core::ERROR_NONE);
-    EXPECT_NE(powerManagerImpl->Unregister(&(*stranger)), Core::ERROR_NONE);
-    EXPECT_EQ(powerManagerImpl->Unregister(&(*subscriber)), Core::ERROR_NONE);
-    EXPECT_FALSE(powerManagerImpl->_shuttingDown);
-    PowerState currentState, previousState;
-    ASSERT_EQ(powerManagerImpl->GetPowerState(currentState, previousState), Core::ERROR_NONE);
-    EXPECT_EQ(powerManagerImpl->SetPowerState(0, currentState, "ordinary-subscriber-detached"), Core::ERROR_NONE);
-    EXPECT_EQ(powerManagerImpl->Unregister(&(*owner)), Core::ERROR_NONE);
-    EXPECT_EQ(powerManagerImpl->SetPowerState(0, currentState, "owner-detached"), Core::ERROR_UNAVAILABLE);
-}
-
 TEST_F(TestPowerManager, LegacyDelayAndRenegotiationUseMainInterface)
 {
     Exchange::IPowerManager* service = &(*powerManagerImpl);
@@ -833,7 +816,7 @@ TEST_F(TestPowerManager, RenegotiationKeepsLongestDeadlineAndAcceptsSubsequentDe
     ASSERT_EQ(controller->Reschedule(2, transaction, 100, true), Core::ERROR_NONE);
     EXPECT_TRUE(controller->_timeout == extended);
     // Model an old timeout already dispatched before the deadline was extended.
-    controller->PendingTimerJob()->Dispatch();
+    controller->_timerJob->Dispatch();
     ASSERT_EQ(controller->Ack(1, transaction), Core::ERROR_NONE);
     ASSERT_EQ(controller->Ack(2, transaction), Core::ERROR_NONE);
     EXPECT_TRUE(controller->Pending().empty());
@@ -935,7 +918,7 @@ TEST_F(TestPowerManager, NegotiationArmingDefersImmediateCompletions)
         completion();
         EXPECT_TRUE(called);
         EXPECT_EQ(query.get(), Core::ERROR_NONE);
-        EXPECT_FALSE(controller->PendingTimerJob().IsValid());
+        EXPECT_FALSE(controller->_timerJob.IsValid());
     }
 }
 
@@ -970,160 +953,6 @@ TEST_F(TestPowerManager, InlinePowerModeChangedAllowsCrossThreadApiCall)
     ASSERT_TRUE(query.valid());
     EXPECT_EQ(query.get(), Core::ERROR_NONE);
     EXPECT_EQ(powerManagerImpl->Unregister(&(*event)), Core::ERROR_NONE);
-}
-
-TEST_F(TestPowerManager, ShutdownCancelsLongRenegotiationWithoutRetainingService)
-{
-    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_)).Times(0);
-    auto owner = Core::ProxyType<RebootEvent>::Create();
-    auto subscriber = Core::ProxyType<RebootEvent>::Create();
-    auto stranger = Core::ProxyType<RebootEvent>::Create();
-    ASSERT_EQ(powerManagerImpl->Register(&(*owner)), Core::ERROR_NONE);
-    ASSERT_EQ(powerManagerImpl->Register(&(*subscriber)), Core::ERROR_NONE);
-    uint32_t clientId = 0;
-    ASSERT_EQ(powerManagerImpl->AddPowerModePreChangeClient("shutdown-retry", clientId), Core::ERROR_NONE);
-    auto event = Core::ProxyType<PowerModePreChangeEvent>::Create();
-    int transactionId = -1;
-    std::promise<void> delayed;
-    auto delayedFuture = delayed.get_future();
-    EXPECT_CALL(*event, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Invoke([&](PowerState, PowerState, int id, int) {
-            transactionId = id;
-            EXPECT_EQ(powerManagerImpl->DelayPowerModeChangeAndRenegotiate(clientId, id, 3600), Core::ERROR_NONE);
-            delayed.set_value();
-        }));
-    ASSERT_EQ(powerManagerImpl->Register(&(*event)), Core::ERROR_NONE);
-    ASSERT_EQ(powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "shutdown-test"), Core::ERROR_NONE);
-    EXPECT_EQ(delayedFuture.wait_for(std::chrono::seconds(5)), std::future_status::ready);
-    ASSERT_TRUE(powerManagerImpl->_modeChangeController->PendingTimerJob().IsValid());
-    EXPECT_NE(powerManagerImpl->Unregister(&(*stranger)), Core::ERROR_NONE);
-    EXPECT_EQ(powerManagerImpl->Unregister(&(*subscriber)), Core::ERROR_NONE);
-    EXPECT_FALSE(powerManagerImpl->_shuttingDown);
-    EXPECT_TRUE(powerManagerImpl->_modeChangeController->RenegotiationRequested());
-    const auto start = std::chrono::steady_clock::now();
-    EXPECT_EQ(powerManagerImpl->Unregister(&(*owner)), Core::ERROR_NONE);
-    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(2));
-    EXPECT_FALSE(powerManagerImpl->_modeChangeController);
-    EXPECT_EQ(powerManagerImpl->Register(&(*subscriber)), Core::ERROR_NONE);
-    EXPECT_EQ(powerManagerImpl->Unregister(&(*subscriber)), Core::ERROR_NONE);
-    EXPECT_EQ(powerManagerImpl->_lifecycleOwner, &(*owner));
-    EXPECT_EQ(powerManagerImpl->Shutdown(), Core::ERROR_NONE);
-    EXPECT_EQ(powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "after-shutdown"), Core::ERROR_UNAVAILABLE);
-    EXPECT_EQ(powerManagerImpl->DelayPowerModeChangeAndRenegotiate(clientId, transactionId, 1), Core::ERROR_UNAVAILABLE);
-    EXPECT_EQ(powerManagerImpl->Unregister(&(*event)), Core::ERROR_NONE);
-    EXPECT_EQ(powerManagerImpl->RemovePowerModePreChangeClient(clientId), Core::ERROR_NONE);
-    // Fixture teardown releases the service and waits for HAL destruction.
-}
-
-TEST_F(TestPowerManager, ShutdownWaitsForUnarmedPreChangeAndAcknowledgementRounds)
-{
-    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_)).Times(0);
-    auto preChange = std::make_shared<Plugin::PowerManagerImplementation::PreModeChangeController>(
-        PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
-    auto acknowledgement = std::make_shared<Plugin::PowerManagerImplementation::PreModeChangeController>(
-        PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
-    preChange->AckAwait(1);
-    acknowledgement->AckAwait(2);
-    const auto completions = powerManagerImpl->_negotiationCompletions;
-    auto* implementation = &(*powerManagerImpl);
-
-    // Pause both rounds at the notification-to-Schedule boundary, with their
-    // service references already acquired but no timer job available to drain.
-    implementation->_apiLock.Lock();
-    implementation->_modeChangeController = preChange;
-    implementation->_modeChangeAckController = acknowledgement;
-    completions->Begin();
-    implementation->AddRef();
-    completions->Begin();
-    implementation->AddRef();
-    implementation->_apiLock.Unlock();
-
-    auto shutdown = std::async(std::launch::async, [&]() {
-        return implementation->Shutdown();
-    });
-    bool cancelled = false;
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (!cancelled && std::chrono::steady_clock::now() < deadline) {
-        implementation->_apiLock.Lock();
-        cancelled = !implementation->_modeChangeController && !implementation->_modeChangeAckController;
-        implementation->_apiLock.Unlock();
-        if (!cancelled) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-    }
-    EXPECT_TRUE(cancelled);
-    EXPECT_EQ(shutdown.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
-
-    const auto armCancelledRound = [&](const std::shared_ptr<Plugin::PowerManagerImplementation::PreModeChangeController>& controller) {
-        implementation->_apiLock.Lock();
-        auto completion = controller->Arm(1000, [implementation, completions](bool timedOut, bool aborted) {
-            EXPECT_FALSE(timedOut);
-            EXPECT_TRUE(aborted);
-            implementation->Release();
-            completions->Complete();
-        });
-        implementation->_apiLock.Unlock();
-        ASSERT_TRUE(completion);
-        completion();
-    };
-    armCancelledRound(preChange);
-    EXPECT_EQ(shutdown.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
-    armCancelledRound(acknowledgement);
-    EXPECT_EQ(shutdown.wait_for(std::chrono::seconds(5)), std::future_status::ready);
-    EXPECT_EQ(shutdown.get(), Core::ERROR_NONE);
-    EXPECT_EQ(completions->pending, 0U);
-}
-
-TEST_F(TestPowerManager, ShutdownDrainsInFlightRenegotiationOutsideApiLock)
-{
-    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_)).Times(0);
-    uint32_t clientId = 0;
-    ASSERT_EQ(powerManagerImpl->AddPowerModePreChangeClient("shutdown-in-flight", clientId), Core::ERROR_NONE);
-    auto event = Core::ProxyType<PowerModePreChangeEvent>::Create();
-    std::promise<void> entered;
-    std::promise<void> resume;
-    auto enteredFuture = entered.get_future();
-    auto resumeFuture = resume.get_future();
-    std::promise<void> delayed;
-    auto delayedFuture = delayed.get_future();
-    EXPECT_CALL(*event, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Invoke([&](PowerState, PowerState, int id, int) {
-            EXPECT_EQ(powerManagerImpl->DelayPowerModeChangeAndRenegotiate(clientId, id, 1), Core::ERROR_NONE);
-            delayed.set_value();
-        }));
-    ASSERT_EQ(powerManagerImpl->Register(&(*event)), Core::ERROR_NONE);
-    ASSERT_EQ(powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "shutdown-in-flight"), Core::ERROR_NONE);
-    EXPECT_EQ(delayedFuture.wait_for(std::chrono::seconds(5)), std::future_status::ready);
-    powerManagerImpl->_apiLock.Lock();
-    auto controller = powerManagerImpl->_modeChangeController;
-    {
-        std::lock_guard<std::mutex> lock(controller->_timerLock);
-        auto handler = std::move(controller->_handler);
-        controller->_handler = [&, handler](bool timedOut, bool aborted) {
-            entered.set_value();
-            resumeFuture.wait();
-            handler(timedOut, aborted);
-        };
-    }
-    powerManagerImpl->_apiLock.Unlock();
-    const bool retryEntered = enteredFuture.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
-    if (!retryEntered) {
-        resume.set_value();
-        powerManagerImpl->Shutdown();
-        FAIL() << "Retry did not dispatch";
-    }
-    auto shutdown = std::async(std::launch::async, [&]() {
-        return powerManagerImpl->Shutdown();
-    });
-    EXPECT_EQ(shutdown.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
-    resume.set_value();
-    EXPECT_EQ(shutdown.wait_for(std::chrono::seconds(5)), std::future_status::ready);
-    EXPECT_EQ(shutdown.get(), Core::ERROR_NONE);
-    EXPECT_FALSE(powerManagerImpl->_modeChangeController);
-    EXPECT_EQ(powerManagerImpl->Unregister(&(*event)), Core::ERROR_NONE);
-    EXPECT_EQ(powerManagerImpl->RemovePowerModePreChangeClient(clientId), Core::ERROR_NONE);
 }
 
 TEST_F(TestPowerManager, RenegotiationReplacementCancelsPendingRetry)
@@ -1234,10 +1063,10 @@ TEST_F(TestPowerManager, RenegotiationUsesCurrentClientsAfterRemoval)
             EXPECT_EQ(powerManagerImpl->DelayPowerModeChangeAndRenegotiate(clientId, transactionId, 1), Core::ERROR_NONE);
             EXPECT_EQ(powerManagerImpl->RemovePowerModePreChangeClient(clientId), Core::ERROR_NONE);
             EXPECT_EQ(powerManagerImpl->DelayPowerModeChangeAndRenegotiate(clientId, transactionId, 1), Core::ERROR_INVALID_PARAMETER);
-            deferred.Done();
         }))
         .WillOnce(::testing::Invoke([&](const PowerState, const PowerState, const int transactionId, const int) {
             EXPECT_NE(transactionId, originalTransactionId);
+            deferred.Done();
         }));
     EXPECT_CALL(*changedEvent, OnPowerModeChanged(::testing::_, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP))
         .WillOnce(::testing::Invoke([&](const PowerState, const PowerState) { changed.Done(); }));
