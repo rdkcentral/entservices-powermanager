@@ -107,6 +107,7 @@ public:
      */
     uint32_t Ack(const uint32_t clientId, const int transactionId)
     {
+        const auto keepAlive = shared_from_this();
         std::unique_lock<std::mutex> lock(_timerLock);
         uint32_t status = WPEFramework::Core::ERROR_NONE;
 

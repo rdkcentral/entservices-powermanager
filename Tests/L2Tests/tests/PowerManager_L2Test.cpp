@@ -2343,6 +2343,9 @@ TEST_F(PowerManager_L2Test, DelayPowerModeChangeByRenegotiatesWithNewTransaction
         Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(engine));
     ASSERT_TRUE(client.IsValid());
 
+#if ((THUNDER_VERSION == 2) || ((THUNDER_VERSION == 4) && (THUNDER_VERSION_MINOR == 2)))
+    engine->Announcements(client->Announcement());
+#endif
     PluginHost::IShell* controller = client->Open<PluginHost::IShell>(_T("org.rdk.PowerManager"), ~0, 3000);
     ASSERT_NE(controller, nullptr);
     auto powerManager = controller->QueryInterface<Exchange::IPowerManager>();

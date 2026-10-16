@@ -824,6 +824,29 @@ TEST_F(TestPowerManager, RenegotiationKeepsLongestDeadlineAndAcceptsSubsequentDe
     EXPECT_EQ(expiration.wait_for(std::chrono::seconds(2)), std::future_status::ready);
 }
 
+TEST_F(TestPowerManager, AcknowledgementRetainsControllerDuringReentrantReplacement)
+{
+    auto controller = std::make_shared<Plugin::PowerManagerImplementation::PreModeChangeController>(
+        PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+    controller->AckAwait(1);
+    const int transaction = controller->TransactionId();
+    const std::weak_ptr<Plugin::PowerManagerImplementation::PreModeChangeController> weakController(controller);
+    bool completed = false;
+    auto completion = controller->Arm(60000, [&, retained = controller](bool timedOut, bool aborted) {
+        EXPECT_FALSE(timedOut);
+        EXPECT_FALSE(aborted);
+        EXPECT_EQ(retained.get(), controller.get());
+        controller.reset();
+        EXPECT_FALSE(weakController.expired());
+        completed = true;
+    });
+    ASSERT_FALSE(completion);
+    auto* rawController = controller.get();
+    EXPECT_EQ(rawController->Ack(1, transaction), Core::ERROR_NONE);
+    EXPECT_TRUE(completed);
+    EXPECT_TRUE(weakController.expired());
+}
+
 TEST_F(TestPowerManager, RenegotiationCannotReviveCompletedRound)
 {
     auto controller = std::make_shared<Plugin::PowerManagerImplementation::PreModeChangeController>(
