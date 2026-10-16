@@ -42,7 +42,7 @@ int WPEFramework::Plugin::PowerManagerImplementation::PreModeChangeController::_
 uint32_t WPEFramework::Plugin::PowerManagerImplementation::_nextClientId                          = 0;
 uint32_t WPEFramework::Plugin::PowerManagerImplementation::_nextAckClientId                       = 0;
 
-
+constexpr const char* WPEFramework::Plugin::PowerManagerImplementation::REASON_DEEP_SLEEP_TIMEDOUT;
 
 #ifndef POWER_MODE_PRECHANGE_TIMEOUT_SEC
 #define POWER_MODE_PRECHANGE_TIMEOUT_SEC 1
@@ -107,17 +107,27 @@ namespace Plugin {
         LOGINFO(">> DTOR <<");
     }
 
-    void PowerManagerImplementation::dispatchPowerModeChangedEvent(const PowerState& prevState, const PowerState& newState)
+    void PowerManagerImplementation::dispatchPowerModeChangedEvent(const PowerState& prevState, const PowerState& newState, const string& reason)
     {
         LOGINFO(">>");
+
+        // requestorId(s) are only meaningful when the state change was caused by a deep sleep
+        // wakeup timer expiry; discard any stale pending requestors otherwise.
+        string requestors;
+        _apiLock.Lock();
+        if (reason == REASON_DEEP_SLEEP_TIMEDOUT) {
+            requestors = _pendingRequestors;
+        }
+        _pendingRequestors.clear();
+        _apiLock.Unlock();
+
         _callbackLock.Lock();
         for (auto& notification : _modeChangedNotifications) {
             auto start = std::chrono::steady_clock::now();
-            // TODO: after ONEM-42980 is implemented, update the invocation like:
-            /* const string requestors = _pendingRequestors;
-               _pendingRequestors.clear();
-               notification->OnPowerModeChanged(prevState, newState, reason, requestors); */
-            notification->OnPowerModeChanged(prevState, newState);
+            // Always invokes the 4-parameter overload Clients that only override the
+	    // original 2-parameter overload are unaffected: IModeChangedNotification's
+	    // default 4-parameter body delegates back to their 2-parameter override for them.
+            notification->OnPowerModeChanged(prevState, newState, reason, requestors);
             auto elapsed = std::chrono::steady_clock::now() - start;
             LOGINFO("client %p took %" PRId64 "ms to process IModeChanged event", notification, std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
         }
@@ -358,7 +368,7 @@ namespace Plugin {
 
         // We don't do a thread switching here, as it may move device to deep sleep mode
         // even before client receiving the event
-        dispatchPowerModeChangedEvent(prevState, newState);
+        dispatchPowerModeChangedEvent(prevState, newState, reason);
 
         LOGINFO("keyCode: %d, prevState: %s, newState: %s, reason: %s, errorcode: %u", keyCode, util::str(prevState), util::str(newState), reason.c_str(), errorCode);
 
@@ -1490,19 +1500,19 @@ namespace Plugin {
         if (scheduleConsumed)
         {
             LOGINFO("Set Device to STANDBY on Deep Sleep timer expiry (scheduled wakeup), requestors: '%s'", requestors.c_str());
-            SetPowerState(0, PowerState::POWER_STATE_STANDBY, "DeepSleep timed out");
+            SetPowerState(0, PowerState::POWER_STATE_STANDBY, REASON_DEEP_SLEEP_TIMEDOUT);
         }
         else
         {
 #ifdef CUSTOM_LGI
             LOGINFO("Set Device to standby on Deep Sleep timer expiry (no scheduled wakeup)");
-            uint32_t errorCode = SetPowerState(0, PowerState::POWER_STATE_STANDBY, "DeepSleep timedout");
+            uint32_t errorCode = SetPowerState(0, PowerState::POWER_STATE_STANDBY, REASON_DEEP_SLEEP_TIMEDOUT);
             if (errorCode != Core::ERROR_NONE) {
                 LOGERR("Failed to set power state to standby, errorCode: %u", errorCode);
             }
 #else
             LOGINFO("Set Device to LIGHT_SLEEP on Deep Sleep timer expiry (no scheduled wakeup), requestors: '%s'", requestors.c_str());
-            SetPowerState(0, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "DeepSleep timed out");
+            SetPowerState(0, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, REASON_DEEP_SLEEP_TIMEDOUT);
 #endif
         }
         LOGINFO("<<");
