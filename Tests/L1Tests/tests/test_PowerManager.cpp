@@ -745,6 +745,8 @@ TEST_F(TestPowerManager, PowerModePreChangeAckTimeout)
     EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
             [&](const PowerState currState, const PowerState newState, const string &reason, const string &requestors) {
+                EXPECT_EQ(reason, "l1-test");
+                EXPECT_TRUE(requestors.empty());
                 EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
                 wg.Done();
             }));
