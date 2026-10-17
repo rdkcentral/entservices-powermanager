@@ -77,6 +77,41 @@ PowerState expectedTimerWakeupState()
     return PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP;
 #endif
 }
+
+// Intercept notification submission before Arm installs the round's handler.
+// All jobs and timers continue to use the fixture's real worker pool.
+class PreChangeSubmitGate : public Core::IWorkerPool {
+public:
+    PreChangeSubmitGate()
+        : delegate(Core::IWorkerPool::Instance())
+    {
+        Core::IWorkerPool::Assign(nullptr);
+        Core::IWorkerPool::Assign(this);
+    }
+    ~PreChangeSubmitGate() override
+    {
+        Core::IWorkerPool::Assign(nullptr);
+        Core::IWorkerPool::Assign(&delegate);
+    }
+    ::ThreadId Id(const uint8_t index) const override { return delegate.Id(index); }
+    void Submit(const Core::ProxyType<Core::IDispatch>& job) override
+    {
+        if (beforeSubmit) {
+            auto callback = std::move(beforeSubmit);
+            callback();
+        }
+        delegate.Submit(job);
+    }
+    void Schedule(const Core::Time& time, const Core::ProxyType<Core::IDispatch>& job) override { delegate.Schedule(time, job); }
+    bool Reschedule(const Core::Time& time, const Core::ProxyType<Core::IDispatch>& job) override { return delegate.Reschedule(time, job); }
+    uint32_t Revoke(const Core::ProxyType<Core::IDispatch>& job, const uint32_t waitTime) override { return delegate.Revoke(job, waitTime); }
+    void Join() override { delegate.Join(); }
+    const Metadata& Snapshot() const override { return delegate.Snapshot(); }
+
+    std::function<void()> beforeSubmit;
+private:
+    Core::IWorkerPool& delegate;
+};
 }
 
 #define TEST_LOG(x, ...) fprintf(stderr, "\033[1;32m[%s:%d](%s)<PID:%d><TID:%d>" x "\n\033[0m", __FILE__, __LINE__, __FUNCTION__, getpid(), gettid(), ##__VA_ARGS__); fflush(stderr);
@@ -943,6 +978,324 @@ TEST_F(TestPowerManager, NegotiationArmingDefersImmediateCompletions)
         EXPECT_EQ(query.get(), Core::ERROR_NONE);
         EXPECT_FALSE(controller->_timerJob.IsValid());
     }
+}
+
+TEST_F(TestPowerManager, TPSPrearmCancellationCompletesSynchronousRenegotiationExactlyOnce)
+{
+#ifndef OVERRIDE_NEGOTIATION_ON_TPS
+    GTEST_SKIP() << "TPS override disabled";
+#else
+    uint32_t clientId = 0;
+    ASSERT_EQ(powerManagerImpl->AddPowerModePreChangeClient("tps-prearm", clientId), Core::ERROR_NONE);
+    std::atomic<int> finishes(0);
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_OFF))
+        .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+    powerManagerImpl->_apiLock.Lock();
+    auto start = powerManagerImpl->preparePowerModePreChange(0,
+        PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, expectedTimerWakeupState(), "old-sync",
+        [&]() { ++finishes; });
+    const auto old = powerManagerImpl->_modeChangeController;
+    EXPECT_EQ(old->Reschedule(clientId, old->TransactionId(), 60000, true), Core::ERROR_NONE);
+    powerManagerImpl->_apiLock.Unlock();
+
+    EXPECT_EQ(powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_OFF, "TPS"), Core::ERROR_NONE);
+    EXPECT_EQ(finishes.load(), 0); // No handler exists until the retained start runs.
+    EXPECT_TRUE(old->_cancelled);
+    EXPECT_FALSE(powerManagerImpl->_modeChangeController);
+    start();
+    EXPECT_EQ(finishes.load(), 1);
+    EXPECT_FALSE(old->IsRunning());
+    EXPECT_FALSE(old->_timerJob.IsValid());
+    old->revoke(0);
+    EXPECT_EQ(finishes.load(), 1);
+
+    // Model stale callbacks at each handoff, including an already-claimed
+    // completion which passed its first identity check before TPS cancellation.
+    EXPECT_FALSE(powerManagerImpl->powerModePreChangeCompletionHandler(0,
+        PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, expectedTimerWakeupState(), "old-sync", old, {}));
+    powerManagerImpl->startPowerModeChangeAcknowledgement(0,
+        PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, expectedTimerWakeupState(), "old-sync", old);
+    EXPECT_FALSE(powerManagerImpl->_modeChangeAckController);
+    EXPECT_EQ(powerManagerImpl->setDevicePowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP,
+        expectedTimerWakeupState(), "old-sync", old), Core::ERROR_NONE);
+    powerManagerImpl->powerModeChangeAcknowledgementCompletionHandler(0,
+        PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, expectedTimerWakeupState(), "old-ack", old);
+    EXPECT_EQ(finishes.load(), 1);
+    EXPECT_EQ(powerManagerImpl->RemovePowerModePreChangeClient(clientId), Core::ERROR_NONE);
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_ON))
+        .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+    EXPECT_EQ(powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_ON, "after-tps"), Core::ERROR_NONE);
+#endif
+}
+
+TEST_F(TestPowerManager, TPSWaitsForCancelledSyncRoundToArmButNotRenegotiationDeadline)
+{
+    PreChangeSubmitGate pool;
+    uint32_t clientId = 0;
+    ASSERT_EQ(powerManagerImpl->AddPowerModePreChangeClient("tps-sync", clientId), Core::ERROR_NONE);
+    auto event = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    ASSERT_EQ(powerManagerImpl->Register(&(*event)), Core::ERROR_NONE);
+    std::promise<void> notified, tpsNotified;
+    auto notification = notified.get_future();
+    auto tpsNotification = tpsNotified.get_future();
+    std::atomic<int> notifications(0);
+    EXPECT_CALL(*event, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+#ifdef OVERRIDE_NEGOTIATION_ON_TPS
+        .Times(1)
+#else
+        .Times(2)
+#endif
+        .WillRepeatedly(::testing::Invoke([&](PowerState, PowerState, int transaction, int) {
+            if (++notifications == 1) {
+                notified.set_value();
+            } else {
+                EXPECT_EQ(powerManagerImpl->PowerModePreChangeComplete(clientId, transaction), Core::ERROR_NONE);
+                tpsNotified.set_value();
+            }
+        }));
+    powerManagerImpl->_powerController._settings.SetPowerState(PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    std::promise<void> prearmed, allowArm;
+    auto prepared = prearmed.get_future();
+    auto proceed = allowArm.get_future();
+    std::shared_ptr<Plugin::PowerManagerImplementation::PreModeChangeController> old;
+    pool.beforeSubmit = [&]() {
+        powerManagerImpl->_apiLock.Lock();
+        old = powerManagerImpl->_modeChangeController;
+        EXPECT_EQ(old->Reschedule(clientId, old->TransactionId(), 60000, true), Core::ERROR_NONE);
+        EXPECT_FALSE(old->_scheduled);
+        powerManagerImpl->_apiLock.Unlock();
+        prearmed.set_value();
+        proceed.wait();
+    };
+    std::atomic<int> halCalls(0);
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_OFF))
+        .WillOnce(::testing::Invoke([&](PWRMgr_PowerState_t) { ++halCalls; return PWRMGR_SUCCESS; }));
+    auto sync = std::async(std::launch::async, [&]() {
+        return powerManagerImpl->SetPowerState(0, expectedTimerWakeupState(), "sync-owner");
+    });
+    EXPECT_EQ(prepared.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+    auto tps = std::async(std::launch::async, [&]() {
+        return powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_OFF, "TPS");
+    });
+
+    bool cancelled = false;
+    const auto limit = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    do {
+        powerManagerImpl->_apiLock.Lock();
+        cancelled = old && old->_cancelled;
+        powerManagerImpl->_apiLock.Unlock();
+        if (cancelled) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    } while (std::chrono::steady_clock::now() < limit);
+#ifdef OVERRIDE_NEGOTIATION_ON_TPS
+    EXPECT_TRUE(cancelled);
+#else
+    EXPECT_FALSE(cancelled);
+#endif
+    EXPECT_EQ(halCalls.load(), 0);
+    EXPECT_EQ(tps.wait_for(std::chrono::milliseconds(0)), std::future_status::timeout);
+    allowArm.set_value();
+    EXPECT_EQ(sync.get(), Core::ERROR_NONE);
+    EXPECT_EQ(notification.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+
+    const auto tpsStatus = tps.wait_for(std::chrono::seconds(2));
+#ifdef OVERRIDE_NEGOTIATION_ON_TPS
+    EXPECT_EQ(tpsStatus, std::future_status::ready);
+#else
+    EXPECT_EQ(tpsStatus, std::future_status::timeout);
+#endif
+    // Also recover cleanly on the unfixed implementation, without waiting 60s.
+    if (tpsStatus != std::future_status::ready) {
+        powerManagerImpl->_apiLock.Lock();
+        powerManagerImpl->_modeChangeController.reset();
+        old->revoke(0);
+        powerManagerImpl->_apiLock.Unlock();
+    }
+    EXPECT_EQ(tps.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+    EXPECT_EQ(tps.get(), Core::ERROR_NONE);
+#ifndef OVERRIDE_NEGOTIATION_ON_TPS
+    // With the override disabled TPS is an ordinary asynchronous negotiation.
+    EXPECT_EQ(tpsNotification.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+#endif
+    EXPECT_EQ(halCalls.load(), 1);
+    EXPECT_FALSE(old->IsRunning());
+    EXPECT_EQ(powerManagerImpl->Unregister(&(*event)), Core::ERROR_NONE);
+    EXPECT_EQ(powerManagerImpl->RemovePowerModePreChangeClient(clientId), Core::ERROR_NONE);
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_ON))
+        .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+    EXPECT_EQ(powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_ON, "after-sync-tps"), Core::ERROR_NONE);
+    powerManagerImpl->_modeChangeController.reset(); // Controllers retain their pool by reference.
+}
+
+TEST_F(TestPowerManager, TPSClaimedTimeoutCannotRestartSynchronousRenegotiation)
+{
+#ifndef OVERRIDE_NEGOTIATION_ON_TPS
+    GTEST_SKIP() << "TPS override disabled";
+#else
+    uint32_t clientId = 0;
+    ASSERT_EQ(powerManagerImpl->AddPowerModePreChangeClient("tps-claimed-timeout", clientId), Core::ERROR_NONE);
+    int finishes = 0;
+    powerManagerImpl->_apiLock.Lock();
+    auto start = powerManagerImpl->preparePowerModePreChange(0,
+        PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, expectedTimerWakeupState(), "claimed-timeout",
+        [&]() { ++finishes; });
+    const auto old = powerManagerImpl->_modeChangeController;
+    EXPECT_EQ(old->Reschedule(clientId, old->TransactionId(), 60000, true), Core::ERROR_NONE);
+    powerManagerImpl->_apiLock.Unlock();
+    start();
+
+    // Match the timer's handler-claim step exactly, then let TPS win _apiLock
+    // before the claimed callback checks the active round's identity.
+    std::function<void(bool, bool)> claimed;
+    auto job = old->_timerJob;
+    {
+        std::lock_guard<std::mutex> lock(old->_timerLock);
+        old->_running = false;
+        claimed = std::move(old->_handler);
+    }
+    Core::IWorkerPool::Instance().Revoke(job, 0);
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_OFF))
+        .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+    EXPECT_EQ(powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_OFF, "TPS"), Core::ERROR_NONE);
+    EXPECT_EQ(finishes, 0);
+    ASSERT_TRUE(claimed);
+    claimed(true, false);
+    EXPECT_EQ(finishes, 1);
+    job->Dispatch();
+    old->revoke(0);
+    EXPECT_EQ(finishes, 1);
+    EXPECT_FALSE(powerManagerImpl->_modeChangeController);
+    EXPECT_FALSE(powerManagerImpl->_modeChangeAckController);
+    EXPECT_EQ(powerManagerImpl->RemovePowerModePreChangeClient(clientId), Core::ERROR_NONE);
+#endif
+}
+
+TEST_F(TestPowerManager, TPSCancelsArmedSyncRenegotiationAndPreservesSubsequentSerialization)
+{
+#ifndef OVERRIDE_NEGOTIATION_ON_TPS
+    GTEST_SKIP() << "TPS override disabled";
+#else
+    PreChangeSubmitGate pool;
+    uint32_t clientId = 0;
+    ASSERT_EQ(powerManagerImpl->AddPowerModePreChangeClient("tps-armed-sync", clientId), Core::ERROR_NONE);
+    auto event = Core::ProxyType<PowerModePreChangeEvent>::Create();
+    ASSERT_EQ(powerManagerImpl->Register(&(*event)), Core::ERROR_NONE);
+    std::promise<void> firstNotified, secondNotified, normalNotified;
+    auto firstNotification = firstNotified.get_future();
+    auto secondNotification = secondNotified.get_future();
+    auto normalNotification = normalNotified.get_future();
+    int syncNotifications = 0;
+    EXPECT_CALL(*event, OnPowerModePreChange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .Times(3).WillRepeatedly(::testing::Invoke([&](PowerState, PowerState target, int transaction, int) {
+            EXPECT_EQ(powerManagerImpl->PowerModePreChangeComplete(clientId, transaction), Core::ERROR_NONE);
+            if (target == PowerState::POWER_STATE_ON) {
+                normalNotified.set_value();
+            } else if (++syncNotifications == 1) {
+                firstNotified.set_value();
+            } else {
+                secondNotified.set_value();
+            }
+        }));
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_OFF))
+        .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_ON))
+        .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+
+    const auto deferSync = [&]() {
+        powerManagerImpl->_powerController._settings.SetPowerState(PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+        pool.beforeSubmit = [&]() {
+            const auto controller = powerManagerImpl->_modeChangeController;
+            EXPECT_EQ(powerManagerImpl->DelayPowerModeChangeAndRenegotiate(
+                clientId, controller->TransactionId(), 60), Core::ERROR_NONE);
+        };
+        EXPECT_EQ(powerManagerImpl->SetPowerState(0, expectedTimerWakeupState(), "sync-delay"), Core::ERROR_NONE);
+    };
+    deferSync();
+    EXPECT_EQ(firstNotification.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+    const auto first = powerManagerImpl->_modeChangeController;
+    EXPECT_TRUE(first->IsRunning());
+    auto tps = std::async(std::launch::async, [&]() {
+        return powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_OFF, "TPS");
+    });
+    const auto status = tps.wait_for(std::chrono::seconds(2));
+    EXPECT_EQ(status, std::future_status::ready);
+    if (status != std::future_status::ready) {
+        powerManagerImpl->_apiLock.Lock();
+        powerManagerImpl->_modeChangeController.reset();
+        first->revoke(0);
+        powerManagerImpl->_apiLock.Unlock();
+    }
+    EXPECT_EQ(tps.get(), Core::ERROR_NONE);
+    EXPECT_FALSE(first->IsRunning());
+    EXPECT_FALSE(first->_timerJob.IsValid());
+
+    deferSync();
+    EXPECT_EQ(secondNotification.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+    const auto second = powerManagerImpl->_modeChangeController;
+    EXPECT_TRUE(second->IsRunning());
+    auto normal = std::async(std::launch::async, [&]() {
+        return powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_ON, "normal-after-tps");
+    });
+    // A duplicate semaphore release by TPS would allow this request through.
+    EXPECT_EQ(normal.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+    powerManagerImpl->_apiLock.Lock();
+    if (powerManagerImpl->_modeChangeController == second) {
+        powerManagerImpl->_modeChangeController.reset();
+    }
+    second->revoke(0);
+    powerManagerImpl->_apiLock.Unlock();
+    EXPECT_EQ(normal.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+    EXPECT_EQ(normal.get(), Core::ERROR_NONE);
+    EXPECT_EQ(normalNotification.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+    EXPECT_EQ(powerManagerImpl->Unregister(&(*event)), Core::ERROR_NONE);
+    EXPECT_EQ(powerManagerImpl->RemovePowerModePreChangeClient(clientId), Core::ERROR_NONE);
+    powerManagerImpl->_modeChangeController.reset();
+#endif
+}
+
+TEST_F(TestPowerManager, TPSKeepsSerializationUntilItsStateChangeCompletes)
+{
+#ifndef OVERRIDE_NEGOTIATION_ON_TPS
+    GTEST_SKIP() << "TPS override disabled";
+#else
+    auto event = Core::ProxyType<PowerModeChangedEvent>::Create();
+    ASSERT_EQ(powerManagerImpl->Register(&(*event)), Core::ERROR_NONE);
+    std::promise<void> changed, allowReturn;
+    auto changing = changed.get_future();
+    auto proceed = allowReturn.get_future();
+    EXPECT_CALL(*event, OnPowerModeChanged(::testing::_, PowerState::POWER_STATE_OFF))
+        .WillOnce(::testing::Invoke([&](PowerState, PowerState) {
+            changed.set_value();
+            proceed.wait();
+        }));
+    EXPECT_CALL(*event, OnPowerModeChanged(::testing::_, PowerState::POWER_STATE_ON)).Times(1);
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_OFF))
+        .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_ON))
+        .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+    auto tps = std::async(std::launch::async, [&]() {
+        return powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_OFF, "TPS");
+    });
+    EXPECT_EQ(changing.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+    auto normal = std::async(std::launch::async, [&]() {
+        return powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_ON, "during-tps");
+    });
+    EXPECT_EQ(normal.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+    // Queries must remain available while an observer is still handling TPS.
+    auto query = std::async(std::launch::async, [&]() {
+        PowerState current, previous;
+        return powerManagerImpl->GetPowerState(current, previous);
+    });
+    EXPECT_EQ(query.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    allowReturn.set_value();
+    EXPECT_EQ(query.get(), Core::ERROR_NONE);
+    EXPECT_EQ(tps.get(), Core::ERROR_NONE);
+    EXPECT_EQ(normal.get(), Core::ERROR_NONE);
+    EXPECT_EQ(powerManagerImpl->Unregister(&(*event)), Core::ERROR_NONE);
+#endif
 }
 
 TEST_F(TestPowerManager, InlinePowerModeChangedAllowsCrossThreadApiCall)

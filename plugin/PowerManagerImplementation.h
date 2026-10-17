@@ -198,11 +198,12 @@ namespace Plugin {
         std::function<void()> preparePowerModePreChange(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason, const std::function<void()>& finished);
         bool powerModePreChangeCompletionHandler(const int keyCode, PowerState currentState, PowerState powerState, const std::string& reason, const std::weak_ptr<PreModeChangeController>& controller, const std::function<void()>& finished);
         Core::hresult delayPowerModeChange(const uint32_t clientId, const int transactionId, const int delayPeriod, const bool renegotiate);
-        void startPowerModeChangeAcknowledgement(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason);
+        void startPowerModeChangeAcknowledgement(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason, const std::shared_ptr<PreModeChangeController>& controller);
         void submitPowerModeChangeAcknowledgementRequestedEvent(const PowerState currentState, const PowerState newState, const int transactionId, const string& reason);
-        void powerModeChangeAcknowledgementCompletionHandler(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason);
+        void powerModeChangeAcknowledgementCompletionHandler(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason, const std::shared_ptr<PreModeChangeController>& controller);
         void logUnresponsiveAckClients(const std::shared_ptr<PreModeChangeController>& ackController);
-        Core::hresult setDevicePowerState(const int& keyCode, PowerState currentState, PowerState powerState, const std::string& reason);
+        Core::hresult setDevicePowerState(const int& keyCode, PowerState currentState, PowerState powerState, const std::string& reason, const std::shared_ptr<PreModeChangeController>& controller = {});
+        void cancelPowerModeChangeForTPS();
         inline bool isSyncStateChange(PowerState currState, PowerState newState) const;
 
         // DeepSleepController::INotification

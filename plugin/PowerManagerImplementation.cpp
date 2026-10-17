@@ -347,9 +347,18 @@ namespace Plugin {
         return errorCode;
     }
 
-    Core::hresult PowerManagerImplementation::setDevicePowerState(const int& keyCode, PowerState prevState, PowerState newState, const std::string& reason)
+    Core::hresult PowerManagerImplementation::setDevicePowerState(const int& keyCode, PowerState prevState, PowerState newState, const std::string& reason, const std::shared_ptr<PreModeChangeController>& controller)
     {
+        // Cancellation and the actual state write must be atomic. Release this
+        // lock before notifying observers, which may make cross-thread API calls.
+        _apiLock.Lock();
+        if (controller && _modeChangeController != controller && _modeChangeAckController != controller) {
+            _apiLock.Unlock();
+            LOGINFO("Ignoring power state change from an inactive negotiation");
+            return Core::ERROR_NONE;
+        }
         uint32_t errorCode = _powerController.SetPowerState(keyCode, newState, reason);
+        _apiLock.Unlock();
 
         if (Core::ERROR_NONE != errorCode) {
             LOGERR("Failed to set power state, errorCode: %d", errorCode);
@@ -363,12 +372,34 @@ namespace Plugin {
         LOGINFO("keyCode: %d, prevState: %s, newState: %s, reason: %s, errorcode: %u", keyCode, util::str(prevState), util::str(newState), reason.c_str(), errorCode);
 
         if (PowerState::POWER_STATE_STANDBY_DEEP_SLEEP == newState) {
-            LOGINFO("newState is DEEP SLEEP, activating deep sleep mode");
-            _powerController.ActivateDeepSleep();
+            _apiLock.Lock();
+            if (!controller || _modeChangeController == controller || _modeChangeAckController == controller) {
+                LOGINFO("newState is DEEP SLEEP, activating deep sleep mode");
+                _powerController.ActivateDeepSleep();
+            }
+            _apiLock.Unlock();
         }
 
         return errorCode;
     }
+
+#ifdef OVERRIDE_NEGOTIATION_ON_TPS
+    void PowerManagerImplementation::cancelPowerModeChangeForTPS()
+    {
+        _apiLock.Lock();
+        // Invalidate identity before notifying completions, including a timeout
+        // which already claimed its handler. A pre-arm revoke is completed by Arm.
+        auto preChange = std::move(_modeChangeController);
+        auto acknowledgement = std::move(_modeChangeAckController);
+        if (acknowledgement) {
+            acknowledgement->revoke(0);
+        }
+        if (preChange) {
+            preChange->revoke(0);
+        }
+        _apiLock.Unlock();
+    }
+#endif
 
     // Wake transitions from DEEP_SLEEP to standby states are synchronous.
     bool PowerManagerImplementation::isSyncStateChange(PowerState currState, PowerState newState) const
@@ -409,7 +440,18 @@ namespace Plugin {
         LOGINFO(">> newState: %s, reason %s", util::str(newState), reason.c_str());
 
         uint32_t lockStatus = Core::ERROR_NONE;
-        while ((lockStatus = selfLock.Lock(kSelfLockRetryIntervalMs)) != Core::ERROR_NONE) {
+        for (;;) {
+#ifdef OVERRIDE_NEGOTIATION_ON_TPS
+            if (reason == "TPS") {
+                // A synchronous renegotiation owns selfLock until its final
+                // completion. Cancel that owner, never unlock on its behalf.
+                cancelPowerModeChangeForTPS();
+            }
+#endif
+            lockStatus = selfLock.Lock(kSelfLockRetryIntervalMs);
+            if (lockStatus == Core::ERROR_NONE) {
+                break;
+            }
             PowerState inProgressState = POWER_STATE_UNKNOWN;
             bool hasInProgressState = false;
 
@@ -426,6 +468,12 @@ namespace Plugin {
 
         LOGINFO("selfLock Acquired");
 
+#ifdef OVERRIDE_NEGOTIATION_ON_TPS
+        if (reason == "TPS") {
+            // A different caller may have acquired selfLock before us.
+            cancelPowerModeChangeForTPS();
+        }
+#endif
         uint32_t errorCode = GetPowerState(currState, prevState);
 
         // Cannot determine current state, won't be able to process request
@@ -449,24 +497,9 @@ namespace Plugin {
             if (reason == "TPS") {
                 LOGWARN("reason is 'TPS' - bypassing negotiation phases, switching to %s immediately to protect hardware", util::str(newState));
 
-                _apiLock.Lock();
-                // Cancel any negotiation round(s) already in progress. Call revoke() explicitly so any scheduled
-                // timer job is cancelled and the controller's completion handler is notified (isRevoked=true) to
-                // release resources, even if other owners keep the controller alive (e.g. handler captures).
-                if (_modeChangeAckController) {
-                    _modeChangeAckController->revoke(0);
-                }
-                if (_modeChangeController) {
-                    _modeChangeController->revoke(0);
-                }
-                _modeChangeAckController.reset();
-                _modeChangeController.reset();
-                _apiLock.Unlock();
-
+                errorCode = setDevicePowerState(keyCode, currState, newState, reason);
                 selfLock.Unlock();
                 LOGINFO("selfLock Released isSync: (TPS override)");
-
-                errorCode = setDevicePowerState(keyCode, currState, newState, reason);
                 return errorCode;
             }
 #endif
@@ -1166,7 +1199,7 @@ namespace Plugin {
             _apiLock.Unlock();
 
             LOGINFO("No acknowledgement clients registered, skipping acknowledgement-stage negotiation");
-            setDevicePowerState(keyCode, currentState, newState, reason);
+            setDevicePowerState(keyCode, currentState, newState, reason, controller);
 
             LOGINFO("<<");
             return false;
@@ -1174,7 +1207,7 @@ namespace Plugin {
 
         _apiLock.Unlock();
 
-        startPowerModeChangeAcknowledgement(keyCode, currentState, newState, reason);
+        startPowerModeChangeAcknowledgement(keyCode, currentState, newState, reason, controller);
 
         LOGINFO("<<");
         return false;
@@ -1183,9 +1216,15 @@ namespace Plugin {
     // Starts the acknowledgement negotiation round: creates a fresh ack controller,
     // registers all currently known acknowledgement clients on it, notifies them via
     // `OnPowerModeChangeAcknowledgementRequested`, and schedules the ack timeout.
-    void PowerManagerImplementation::startPowerModeChangeAcknowledgement(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason)
+    void PowerManagerImplementation::startPowerModeChangeAcknowledgement(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason, const std::shared_ptr<PreModeChangeController>& controller)
     {
         _apiLock.Lock();
+
+        if (_modeChangeController != controller) {
+            _apiLock.Unlock();
+            LOGINFO("Ignoring acknowledgement stage from an inactive pre-change round");
+            return;
+        }
 
         _modeChangeAckController = std::shared_ptr<PreModeChangeController>(new PreModeChangeController(newState));
         const int transactionId  = _modeChangeAckController->TransactionId(); // transactionId is unique per acknowledgement round
@@ -1224,7 +1263,7 @@ namespace Plugin {
                         // Logging full diagnostic details here and then proceed with the power state change.
                         logUnresponsiveAckClients(ackController);
                     }
-                    powerModeChangeAcknowledgementCompletionHandler(keyCode, currentState, newState, reason);
+                    powerModeChangeAcknowledgementCompletionHandler(keyCode, currentState, newState, reason, ackController);
                 } else {
                     LOGWARN("modeChangeAckController was already deleted, do not process AckCompletionHandler");
                 }
@@ -1262,11 +1301,11 @@ namespace Plugin {
         _apiLock.Unlock();
     }
 
-    void PowerManagerImplementation::powerModeChangeAcknowledgementCompletionHandler(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason)
+    void PowerManagerImplementation::powerModeChangeAcknowledgementCompletionHandler(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason, const std::shared_ptr<PreModeChangeController>& controller)
     {
         LOGINFO(">> keyCode: %d, powerState: %s", keyCode, util::str(newState));
 
-        setDevicePowerState(keyCode, currentState, newState, reason);
+        setDevicePowerState(keyCode, currentState, newState, reason, controller);
 
         LOGINFO("<<");
     }
