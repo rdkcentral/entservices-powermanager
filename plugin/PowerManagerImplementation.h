@@ -202,7 +202,7 @@ namespace Plugin {
         void submitPowerModeChangeAcknowledgementRequestedEvent(const PowerState currentState, const PowerState newState, const int transactionId, const string& reason);
         void powerModeChangeAcknowledgementCompletionHandler(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason, const std::shared_ptr<PreModeChangeController>& controller);
         void logUnresponsiveAckClients(const std::shared_ptr<PreModeChangeController>& ackController);
-        Core::hresult setDevicePowerState(const int& keyCode, PowerState currentState, PowerState powerState, const std::string& reason, const std::shared_ptr<PreModeChangeController>& controller = {});
+        Core::hresult setDevicePowerState(const int& keyCode, PowerState currentState, PowerState powerState, const std::string& reason, const std::shared_ptr<PreModeChangeController>& controller = {}, const std::function<void()>& writeCompleted = {});
         void cancelPowerModeChangeForTPS();
         inline bool isSyncStateChange(PowerState currState, PowerState newState) const;
 

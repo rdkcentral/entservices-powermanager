@@ -347,18 +347,27 @@ namespace Plugin {
         return errorCode;
     }
 
-    Core::hresult PowerManagerImplementation::setDevicePowerState(const int& keyCode, PowerState prevState, PowerState newState, const std::string& reason, const std::shared_ptr<PreModeChangeController>& controller)
+    Core::hresult PowerManagerImplementation::setDevicePowerState(const int& keyCode, PowerState prevState, PowerState newState, const std::string& reason, const std::shared_ptr<PreModeChangeController>& controller, const std::function<void()>& writeCompleted)
     {
         // Cancellation and the actual state write must be atomic. Release this
         // lock before notifying observers, which may make cross-thread API calls.
         _apiLock.Lock();
         if (controller && _modeChangeController != controller && _modeChangeAckController != controller) {
             _apiLock.Unlock();
+            if (writeCompleted) {
+                writeCompleted();
+            }
             LOGINFO("Ignoring power state change from an inactive negotiation");
             return Core::ERROR_NONE;
         }
         uint32_t errorCode = _powerController.SetPowerState(keyCode, newState, reason);
         _apiLock.Unlock();
+
+        // TPS owns serialization through the write, but observers must be free
+        // to call SetPowerState synchronously, including after a failed write.
+        if (writeCompleted) {
+            writeCompleted();
+        }
 
         if (Core::ERROR_NONE != errorCode) {
             LOGERR("Failed to set power state, errorCode: %d", errorCode);
@@ -497,9 +506,10 @@ namespace Plugin {
             if (reason == "TPS") {
                 LOGWARN("reason is 'TPS' - bypassing negotiation phases, switching to %s immediately to protect hardware", util::str(newState));
 
-                errorCode = setDevicePowerState(keyCode, currState, newState, reason);
-                selfLock.Unlock();
-                LOGINFO("selfLock Released isSync: (TPS override)");
+                errorCode = setDevicePowerState(keyCode, currState, newState, reason, {}, []() {
+                    selfLock.Unlock();
+                    LOGINFO("selfLock Released isSync: (TPS override)");
+                });
                 return errorCode;
             }
 #endif

@@ -22,6 +22,7 @@
 #include <future>
 #include <bitset>
 #include <atomic>
+#include <unistd.h>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -1256,34 +1257,44 @@ TEST_F(TestPowerManager, TPSCancelsArmedSyncRenegotiationAndPreservesSubsequentS
 #endif
 }
 
-TEST_F(TestPowerManager, TPSKeepsSerializationUntilItsStateChangeCompletes)
+TEST_F(TestPowerManager, TPSKeepsSerializationThroughWriteButNotNotification)
 {
 #ifndef OVERRIDE_NEGOTIATION_ON_TPS
     GTEST_SKIP() << "TPS override disabled";
 #else
     auto event = Core::ProxyType<PowerModeChangedEvent>::Create();
     ASSERT_EQ(powerManagerImpl->Register(&(*event)), Core::ERROR_NONE);
-    std::promise<void> changed, allowReturn;
+    std::promise<void> writing, allowWrite, changed, allowReturn, setterStarted;
+    auto writeStarted = writing.get_future();
+    auto writeAllowed = allowWrite.get_future();
     auto changing = changed.get_future();
     auto proceed = allowReturn.get_future();
+    auto started = setterStarted.get_future();
     EXPECT_CALL(*event, OnPowerModeChanged(::testing::_, PowerState::POWER_STATE_OFF))
         .WillOnce(::testing::Invoke([&](PowerState, PowerState) {
             changed.set_value();
             proceed.wait();
         }));
-    EXPECT_CALL(*event, OnPowerModeChanged(::testing::_, PowerState::POWER_STATE_ON)).Times(1);
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_OFF))
-        .WillOnce(::testing::Return(PWRMGR_SUCCESS));
-    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_ON))
-        .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+        .WillOnce(::testing::Invoke([&](PWRMgr_PowerState_t) {
+            writing.set_value();
+            writeAllowed.wait();
+            return PWRMGR_SUCCESS;
+        }));
     auto tps = std::async(std::launch::async, [&]() {
         return powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_OFF, "TPS");
     });
-    EXPECT_EQ(changing.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+    EXPECT_EQ(writeStarted.wait_for(std::chrono::seconds(2)), std::future_status::ready);
     auto normal = std::async(std::launch::async, [&]() {
-        return powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_ON, "during-tps");
+        setterStarted.set_value();
+        return powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_OFF, "during-tps");
     });
+    EXPECT_EQ(started.wait_for(std::chrono::seconds(2)), std::future_status::ready);
     EXPECT_EQ(normal.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+    allowWrite.set_value();
+    EXPECT_EQ(changing.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+    EXPECT_EQ(normal.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    EXPECT_EQ(tps.wait_for(std::chrono::milliseconds(0)), std::future_status::timeout);
     // Queries must remain available while an observer is still handling TPS.
     auto query = std::async(std::launch::async, [&]() {
         PowerState current, previous;
@@ -1294,6 +1305,93 @@ TEST_F(TestPowerManager, TPSKeepsSerializationUntilItsStateChangeCompletes)
     EXPECT_EQ(query.get(), Core::ERROR_NONE);
     EXPECT_EQ(tps.get(), Core::ERROR_NONE);
     EXPECT_EQ(normal.get(), Core::ERROR_NONE);
+    EXPECT_EQ(powerManagerImpl->Unregister(&(*event)), Core::ERROR_NONE);
+#endif
+}
+
+TEST_F(TestPowerManager, TPSInlinePowerModeChangedAllowsReentrantSetters)
+{
+#ifndef OVERRIDE_NEGOTIATION_ON_TPS
+    GTEST_SKIP() << "TPS override disabled";
+#else
+    struct DeathTestStyleGuard {
+        std::string original = GTEST_FLAG_GET(death_test_style);
+        ~DeathTestStyleGuard() { GTEST_FLAG_SET(death_test_style, original); }
+    } deathTestStyleGuard;
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    ASSERT_EXIT(
+        {
+            // Bound a same-thread semaphore deadlock without forking the live fixture's worker threads.
+            alarm(5);
+            auto event = Core::ProxyType<PowerModeChangedEvent>::Create();
+            EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_OFF))
+                .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+            EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_ON))
+                .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+            EXPECT_CALL(*event, OnPowerModeChanged(::testing::_, PowerState::POWER_STATE_OFF))
+                .WillOnce(::testing::Invoke([&](PowerState, PowerState) {
+                    EXPECT_EQ(powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_OFF, "inline-same-state"),
+                        Core::ERROR_NONE);
+                    EXPECT_EQ(powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_ON, "inline-other-state"),
+                        Core::ERROR_NONE);
+                }));
+            EXPECT_CALL(*event, OnPowerModeChanged(PowerState::POWER_STATE_OFF, PowerState::POWER_STATE_ON)).Times(1);
+            EXPECT_EQ(powerManagerImpl->Register(&(*event)), Core::ERROR_NONE);
+            EXPECT_EQ(powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_OFF, "TPS"), Core::ERROR_NONE);
+            PowerState current;
+            PowerState previous;
+            EXPECT_EQ(powerManagerImpl->GetPowerState(current, previous), Core::ERROR_NONE);
+            EXPECT_EQ(current, PowerState::POWER_STATE_ON);
+            EXPECT_EQ(powerManagerImpl->Unregister(&(*event)), Core::ERROR_NONE);
+            ::testing::Mock::VerifyAndClearExpectations(&(*event));
+            ::testing::Mock::VerifyAndClearExpectations(p_powerManagerHalMock);
+            _exit(::testing::Test::HasFailure() ? 1 : 0);
+        },
+        ::testing::ExitedWithCode(0), "");
+#endif
+}
+
+TEST_F(TestPowerManager, TPSPowerModeChangedAllowsCrossThreadSetter)
+{
+#ifndef OVERRIDE_NEGOTIATION_ON_TPS
+    GTEST_SKIP() << "TPS override disabled";
+#else
+    auto event = Core::ProxyType<PowerModeChangedEvent>::Create();
+    std::future<uint32_t> setter;
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_OFF))
+        .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+    EXPECT_CALL(*event, OnPowerModeChanged(::testing::_, PowerState::POWER_STATE_OFF))
+        .WillOnce(::testing::Invoke([&](PowerState, PowerState) {
+            setter = std::async(std::launch::async, [&]() {
+                return powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_OFF, "observer-same-state");
+            });
+            // Return on timeout so an unfixed TPS caller can release its lock.
+            EXPECT_EQ(setter.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+        }));
+    ASSERT_EQ(powerManagerImpl->Register(&(*event)), Core::ERROR_NONE);
+    EXPECT_EQ(powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_OFF, "TPS"), Core::ERROR_NONE);
+    ASSERT_TRUE(setter.valid());
+    EXPECT_EQ(setter.get(), Core::ERROR_NONE);
+    EXPECT_EQ(powerManagerImpl->Unregister(&(*event)), Core::ERROR_NONE);
+#endif
+}
+
+TEST_F(TestPowerManager, TPSFailedWriteReleasesSerializationWithoutNotification)
+{
+#ifndef OVERRIDE_NEGOTIATION_ON_TPS
+    GTEST_SKIP() << "TPS override disabled";
+#else
+    auto event = Core::ProxyType<PowerModeChangedEvent>::Create();
+    EXPECT_CALL(*event, OnPowerModeChanged(::testing::_, ::testing::_)).Times(0);
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_OFF))
+        .WillOnce(::testing::Return(PWRMGR_SET_FAILURE));
+    ASSERT_EQ(powerManagerImpl->Register(&(*event)), Core::ERROR_NONE);
+    EXPECT_NE(powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_OFF, "TPS"), Core::ERROR_NONE);
+    auto setter = std::async(std::launch::async, [&]() {
+        return powerManagerImpl->SetPowerState(0, initialPowerState(), "after-failed-tps");
+    });
+    EXPECT_EQ(setter.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    EXPECT_EQ(setter.get(), Core::ERROR_NONE);
     EXPECT_EQ(powerManagerImpl->Unregister(&(*event)), Core::ERROR_NONE);
 #endif
 }
