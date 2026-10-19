@@ -641,7 +641,7 @@ jobs:
           genhtml
           -o coverage
           -t "entservices-testframework coverage"
-          filtered_coverage.info
+          filtered_coverage.info || true
 
       - name: Upload artifacts
         if: ${{ !env.ACT }}
