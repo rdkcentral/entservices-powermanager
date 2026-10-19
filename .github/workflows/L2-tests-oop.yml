@@ -115,7 +115,7 @@ jobs:
         with:
           repository: rdkcentral/entservices-testframework
           path: entservices-testframework
-          ref: 2.0.0
+          ref: feature/RDKEMW-25013
 
       - name: Checkout entservices-powermanager
         if: ${{ inputs.caller_source == 'local' }}
@@ -429,6 +429,7 @@ jobs:
           -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install/usr"
           -DCMAKE_MODULE_PATH="$GITHUB_WORKSPACE/install/tools/cmake"
           -DHIDE_NON_EXTERNAL_SYMBOLS=OFF
+          -DCMAKE_SHARED_LINKER_FLAGS="-L$GITHUB_WORKSPACE/install/usr/lib -Wl,--no-as-needed -lds-hal -Wl,--as-needed"
           -DCMAKE_CXX_FLAGS="
           -DEXCEPTIONS_ENABLE=ON
           -fprofile-arcs
