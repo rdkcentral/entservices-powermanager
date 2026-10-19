@@ -49,6 +49,8 @@ The plugin employs a specialized controller pattern with four distinct controlle
 #### Platform Interface (`hal/PowerImpl.h`)
 - **IPlatform**: Abstract interface for hardware-specific power operations
 - **PowerImpl**: Default platform implementation
+- **PowerImplLgi** (`hal/PowerImplLgi.h`): Subclass of PowerImpl that overrides `Reboot()` so LGI-specific reboot behavior can be customized (currently forwards to `PowerImpl::Reboot`)
+- The default implementation (`PowerController::DefaultImpl`) is selected at compile time: PowerImplLgi when built with `CUSTOM_LGI` defined, otherwise PowerImpl
 - Provides abstraction for:
   - Power state get/set operations
   - Wakeup source configuration
