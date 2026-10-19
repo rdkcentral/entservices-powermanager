@@ -20,6 +20,7 @@
 #pragma once
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <unordered_set>
 
 #include <core/Portability.h>
@@ -57,6 +58,9 @@ public:
         , _timeout(WPEFramework::Core::Time::Now())
         , _handler(nullptr)
         , _running(false)
+        , _scheduled(false)
+        , _cancelled(false)
+        , _renegotiate(false)
     {
     }
 
@@ -103,6 +107,8 @@ public:
      */
     uint32_t Ack(const uint32_t clientId, const int transactionId)
     {
+        const auto keepAlive = shared_from_this();
+        std::unique_lock<std::mutex> lock(_timerLock);
         uint32_t status = WPEFramework::Core::ERROR_NONE;
 
         do {
@@ -122,8 +128,9 @@ public:
 
             _pending.erase(clientId);
 
-            if (_pending.empty() && _running) {
+            if (_pending.empty() && _running && !_renegotiate) {
                 _running = false;
+                lock.unlock();
                 runHandler(false);
             }
         } while (false);
@@ -159,6 +166,7 @@ public:
      */
     bool IsRunning() const
     {
+        std::lock_guard<std::mutex> lock(_timerLock);
         return _running && _timerJob.IsValid();
     }
 
@@ -169,6 +177,12 @@ public:
     const std::unordered_set<uint32_t>& Pending() const
     {
         return _pending;
+    }
+
+    bool RenegotiationRequested() const
+    {
+        std::lock_guard<std::mutex> lock(_timerLock);
+        return _renegotiate;
     }
 
     /**
@@ -188,18 +202,37 @@ public:
      */
     void Schedule(const uint64_t offsetInMilliseconds, std::function<void(bool, bool)> handler)
     {
+        auto completion = Arm(offsetInMilliseconds, std::move(handler));
+        if (completion) {
+            completion();
+        }
+    }
+
+    // Arm under the caller's lock, then invoke any returned completion after
+    // unlocking. Timer completion continues to run on the worker pool.
+    std::function<void()> Arm(const uint64_t offsetInMilliseconds, std::function<void(bool, bool)> handler)
+    {
+        std::lock_guard<std::mutex> lock(_timerLock);
         ASSERT(false == _running);
         ASSERT(nullptr == _handler);
 
+        _scheduled = true;
+        _handler = std::move(handler);
+        if (_cancelled) {
+            _cancelled = false;
+            auto cancelledHandler = std::move(_handler);
+            return [cancelledHandler]() { cancelledHandler(false, true); };
+        }
+
         LOGINFO("time offset: %" PRIu64 "ms, pending: %d", offsetInMilliseconds, int(_pending.size()));
 
-        if (_pending.empty() || 0 == offsetInMilliseconds) {
+        if (!_renegotiate && (_pending.empty() || 0 == offsetInMilliseconds)) {
             // no clients acks to wait for, trigger completion handler immediately
-            handler(false, false);
+            auto completedHandler = std::move(_handler);
+            return [completedHandler]() { completedHandler(false, false); };
         } else {
             std::weak_ptr<AckController> wPtr = shared_from_this();
             _running                          = true;
-            _handler                          = std::move(handler);
 
             // If timeout is already set (via Reschedule), use max of offset or timeout
             auto newTimeout = WPEFramework::Core::Time::Now().Add(offsetInMilliseconds);
@@ -214,11 +247,17 @@ public:
                 LOGINFO("AckTimer handler isTimedout: 1, isRevoked: %d", isRevoked);
 
                 if (!isRevoked) {
-                    if (self->_running) {
-                        self->_running = false;
-                        self->_handler(isTimedout, isRevoked);
-                    } else {
-                        LOGERR("FATAL not expected to reach timeout, without timer running");
+                    std::function<void(bool, bool)> handler;
+                    {
+                        std::lock_guard<std::mutex> lock(self->_timerLock);
+                        // A previously dispatched timeout may outlive a deadline extension.
+                        if (self->_running && WPEFramework::Core::Time::Now() >= self->_timeout) {
+                            self->_running = false;
+                            handler = std::move(self->_handler);
+                        }
+                    }
+                    if (handler) {
+                        handler(isTimedout, isRevoked);
                     }
                 } else {
                     LOGERR("FATAL AckController is already revoked\n\trevoke operation should have triggered completion handler");
@@ -226,6 +265,7 @@ public:
             });
             _workerPool.Schedule(_timeout, _timerJob);
         }
+        return {};
     }
 
     /**
@@ -237,21 +277,13 @@ public:
      *                  ERROR_ILLEGAL_STATE if the controller is not running.
      *                  ERROR_NONE on success.
      */
-    uint32_t Reschedule(const uint32_t clientId, const int transactionId, const int offsetInMilliseconds)
+    uint32_t Reschedule(const uint32_t clientId, const int transactionId, const int64_t offsetInMilliseconds, const bool renegotiate = false)
     {
+        std::lock_guard<std::mutex> lock(_timerLock);
         uint32_t status = WPEFramework::Core::ERROR_NONE;
-        ASSERT(nullptr != _handler);
 
         do {
             auto newTimeout = WPEFramework::Core::Time::Now().Add(offsetInMilliseconds);
-
-            // If Reschedule is called even before Schedule, cache the timeout value
-            // use timeout value later when Schedule gets called
-            if (!_running) {
-                _timeout = std::max(_timeout, newTimeout);
-                status = WPEFramework::Core::ERROR_NONE;
-                break;
-            }
 
             if (transactionId != _transactionId) {
                 LOGERR("Invalid transactionId: %d", transactionId);
@@ -266,17 +298,31 @@ public:
                 break;
             }
 
+            if (_cancelled || (_scheduled && !_running)) {
+                LOGWARN("Delay received for completed transactionId: %d", transactionId);
+                status = WPEFramework::Core::ERROR_ILLEGAL_STATE;
+                break;
+            }
+
+            _renegotiate = _renegotiate || renegotiate;
+            if (!_scheduled) {
+                _timeout = std::max(_timeout, newTimeout);
+                break;
+            }
+
             // set new timeout only if it's greater than previous timeout, else fail silently
             if (newTimeout > _timeout) {
                 _timeout = newTimeout;
-                _workerPool.Reschedule(newTimeout, _timerJob);
+                // Do not wait for a dispatched timeout while holding its state lock.
+                _workerPool.Revoke(_timerJob, 0);
+                _workerPool.Schedule(newTimeout, _timerJob);
             } else {
                 LOGWARN("Skipping new timeout %" PRIu64 " is less than previous timeout %" PRIu64,
                     newTimeout.Ticks(), _timeout.Ticks());
             }
         } while (false);
 
-        LOGINFO("clientId: %u, transactionId: %d, offset: %d, status: %d",
+        LOGINFO("clientId: %u, transactionId: %d, offset: %" PRId64 ", status: %d",
             clientId, transactionId, offsetInMilliseconds, status);
 
         return status;
@@ -290,19 +336,26 @@ public:
      *        Public (not just called from the destructor) so callers can cancel a round explicitly,
      *        since other owners may keep the shared_ptr alive even after this owner drops its reference.
      */
-    void revoke()
+    void revoke(const uint32_t waitTime = WPEFramework::Core::infinite)
     {
-        if (_running) {
-            _running = false;
-            if (_timerJob.IsValid()) {
-                _workerPool.Revoke(_timerJob);
-                bool isTimedout = false;
-                bool isRevoked  = true;
-                _handler(isTimedout, isRevoked);
-            }
+        std::unique_lock<std::mutex> lock(_timerLock);
+        if (!_scheduled) {
+            _cancelled = true;
+        }
+        auto job = _timerJob;
+        std::function<void(bool, bool)> handler;
+        if (_running.exchange(false)) {
+            handler = std::move(_handler);
         }
         if (_timerJob.IsValid()) {
             _timerJob.Release();
+        }
+        lock.unlock();
+        if (handler && job.IsValid()) {
+            _workerPool.Revoke(job, waitTime);
+        }
+        if (handler) {
+            handler(false, true);
         }
     }
 
@@ -313,12 +366,16 @@ private:
      */
     void runHandler(bool isTimedout)
     {
+        std::unique_lock<std::mutex> lock(_timerLock);
+        auto job = _timerJob;
+        auto handler = std::move(_handler);
+        lock.unlock();
         LOGINFO("isTimedout: %d, pending: %d", isTimedout, int(_pending.size()));
         if (!isTimedout) {
-            _workerPool.Revoke(_timerJob);
+            _workerPool.Revoke(job);
         }
         bool isRevoked = false;
-        _handler(isTimedout, isRevoked);
+        handler(isTimedout, isRevoked);
     }
 
 private:
@@ -332,6 +389,10 @@ private:
     TimerJob _timerJob;                           // job scheduler to timeout
     std::function<void(bool, bool)> _handler;     // Completion handler to be called on timeout or all acknowledgements.
     std::atomic<bool> _running;                   // Flag to synchronize timer timeout callback and Ack* APIs.
+    bool _scheduled;                              // Whether the completion handler has been armed for this round.
+    bool _cancelled;                              // Revoked before the timer was armed.
+    bool _renegotiate;                            // Timer expiry must start a fresh negotiation.
+    mutable std::mutex _timerLock;               // Serialize deadline updates with timer completion.
 
     static int _nextTransactionId; // static counter for unique transaction ID generation.
 };
