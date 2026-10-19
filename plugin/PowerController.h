@@ -19,7 +19,13 @@
 #pragma once
 
 #include <chrono>      // for steady_clock, time_point
+#include <cstddef>
 #include <cstdint>     // for uint32_t
+#ifdef CUSTOM_LGI
+#include <condition_variable>
+#include <functional>  // for function
+#include <mutex>
+#endif
 #include <memory>      // for unique_ptr, default_delete
 #include <string>      // for basic_string, string
 #include <type_traits> // for is_base_of
@@ -89,6 +95,14 @@ public:
         return WPEFramework::Core::ERROR_NONE;
     }
 
+#ifdef CUSTOM_LGI
+    void HandleRebootOnMaintenance(
+        const std::function<void(const std::shared_ptr<RebootController::MaintenanceRebootGuard>&)>& reboot);
+    void ClearMaintenanceReboot();
+    void ShutdownMaintenanceJobs();
+    void SetRebootReason(const std::string& reason);
+#endif
+
     uint32_t SetNetworkStandbyMode(const bool standbyMode);
     uint32_t GetNetworkStandbyMode(bool& standbyMode) const;
     uint32_t SetWakeupSourceConfig(const std::list<WPEFramework::Exchange::IPowerManager::WakeupSourceConfig>& configs);
@@ -96,6 +110,11 @@ public:
     uint32_t GetWakeupSourceConfig(int& powerMode, int& srcType, int& config) const;
     uint32_t GetTimeSinceWakeup(uint32_t& secondsSinceWakeup);
     uint32_t Reboot(const string& requestor, const string& reasonCustom, const string& reasonOther);
+#ifdef CUSTOM_LGI
+    uint32_t RebootForMaintenance(const string& requestor, const string& reasonCustom,
+        const string& reasonOther,const std::shared_ptr<RebootController::MaintenanceRebootGuard>& maintenanceGuard,
+                std::function<void()> onRebootBegin );
+#endif
     uint32_t SetDeepSleepTimer(const int timeOut);
 
     template <typename IMPL = DefaultImpl, typename... Args>
@@ -114,6 +133,49 @@ public:
     PowerController(PowerController&&) = default;
 
 private:
+#ifdef CUSTOM_LGI
+    struct MaintenanceJobState {
+        MaintenanceJobState()
+            : shuttingDown(false)
+            , outstandingJobs(0)
+        {
+        }
+
+        std::mutex mutex;
+        std::condition_variable condition;
+        bool shuttingDown;
+        std::size_t outstandingJobs;
+    };
+
+    struct MaintenanceJobCompletion {
+        explicit MaintenanceJobCompletion(const std::shared_ptr<MaintenanceJobState>& state)
+            : state(state)
+            , active(false)
+        {
+        }
+
+        void Complete();
+        ~MaintenanceJobCompletion();
+
+        std::shared_ptr<MaintenanceJobState> state;
+        bool active;
+    };
+
+    struct MaintenanceJobDispatchCompletion {
+        explicit MaintenanceJobDispatchCompletion(const std::shared_ptr<MaintenanceJobCompletion>& completion)
+            : completion(completion)
+        {
+        }
+
+        ~MaintenanceJobDispatchCompletion()
+        {
+            completion->Complete();
+        }
+
+        std::shared_ptr<MaintenanceJobCompletion> completion;
+    };
+#endif
+
     const std::string m_settingsFile = "/opt/uimgr_settings.bin";
     std::unique_ptr<IPlatform> _platform;
     PowerState _powerStateBeforeReboot;
@@ -122,10 +184,13 @@ private:
     DeepSleepWakeupSettings _deepSleepWakeupSettings;
     WPEFramework::Core::IWorkerPool& _workerPool;
     std::chrono::steady_clock::time_point _wakeupTimestamp;
+#ifdef CUSTOM_LGI
+    std::shared_ptr<MaintenanceJobState> _maintenanceJobState;
+#endif
 
     // keep this last
     DeepSleepController& _deepSleep;
 #ifdef OFFLINE_MAINT_REBOOT
-    RebootController _rebootController;
+    std::unique_ptr<RebootController> _rebootController;
 #endif
 };

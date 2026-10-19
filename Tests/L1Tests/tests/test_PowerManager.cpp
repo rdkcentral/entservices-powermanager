@@ -2591,6 +2591,13 @@ TEST_F(TestPowerManager, DeepSleepTimerWakeup_CustomLgi_StaysInStandby)
                 *isGPIOWakeup = false;
                 return DEEPSLEEPMGR_SUCCESS;
             }));
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_GetLastWakeupReason(::testing::_))
+        .Times(2)
+        .WillRepeatedly(::testing::Invoke(
+            [](DeepSleep_WakeupReason_t* wakeupReason) {
+                *wakeupReason = DEEPSLEEP_WAKEUPREASON_TIMER;
+                return DEEPSLEEPMGR_SUCCESS;
+            }));
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_DeepSleepWakeup())
         .WillOnce(testing::Return(DEEPSLEEPMGR_SUCCESS));
 
@@ -2605,11 +2612,11 @@ TEST_F(TestPowerManager, DeepSleepTimerWakeup_CustomLgi_StaysInStandby)
                   keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test"),
               Core::ERROR_NONE);
 
+    wakeupComplete.Wait();
+
     WakeupReason wakeupReason = WakeupReason::WAKEUP_REASON_UNKNOWN;
     ASSERT_EQ(powerManagerImpl->GetLastWakeupReason(wakeupReason), Core::ERROR_NONE);
     EXPECT_EQ(wakeupReason, WakeupReason::WAKEUP_REASON_MAINTENANCE);
-
-    wakeupComplete.Wait();
 
     PowerState newState = PowerState::POWER_STATE_UNKNOWN;
     PowerState previousState = PowerState::POWER_STATE_UNKNOWN;
@@ -2619,6 +2626,22 @@ TEST_F(TestPowerManager, DeepSleepTimerWakeup_CustomLgi_StaysInStandby)
 
     ASSERT_EQ(0, system("rm -f /tmp/deepSleepWakeupTimer"));
     ASSERT_EQ(powerManagerImpl->Unregister(&(*modeChanged)), Core::ERROR_NONE);
+}
+
+TEST_F(TestPowerManager, GetLastWakeupReason_MaintenanceScheduledPreservesNetworkWakeSource)
+{
+    powerManagerImpl->_deepSleepController._maintenanceWakeupScheduled->store(true);
+
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_GetLastWakeupReason(::testing::_))
+        .WillOnce(::testing::Invoke(
+            [](DeepSleep_WakeupReason_t* wakeupReason) {
+                *wakeupReason = DEEPSLEEP_WAKEUPREASON_LAN;
+                return DEEPSLEEPMGR_SUCCESS;
+            }));
+
+    WakeupReason wakeupReason = WakeupReason::WAKEUP_REASON_UNKNOWN;
+    ASSERT_EQ(powerManagerImpl->GetLastWakeupReason(wakeupReason), Core::ERROR_NONE);
+    EXPECT_EQ(wakeupReason, WakeupReason::WAKEUP_REASON_LAN);
 }
 
 #else
@@ -3341,6 +3364,80 @@ TEST_F(TestPowerManager, GetRebootReason_ViaSetPowerStateOff)
     EXPECT_EQ(status, Core::ERROR_NONE);
     EXPECT_EQ(reason, "OVERHEATING_REBOOT");
 }
+
+#if defined(CUSTOM_LGI) && defined(OFFLINE_MAINT_REBOOT)
+TEST_F(TestPowerManager, PoweringOnClearsPendingMaintenanceReboot)
+{
+    powerManagerImpl->_powerController.HandleRebootOnMaintenance([](const auto&) {});
+
+    ASSERT_TRUE(static_cast<bool>(powerManagerImpl->_powerController._rebootController->_maintenanceReboot));
+
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_ON))
+        .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+
+    const uint32_t status = powerManagerImpl->setDevicePowerState(
+        0, PowerState::POWER_STATE_STANDBY, PowerState::POWER_STATE_ON, "user wake");
+
+    EXPECT_EQ(status, Core::ERROR_NONE);
+    EXPECT_FALSE(static_cast<bool>(powerManagerImpl->_powerController._rebootController->_maintenanceReboot));
+}
+
+TEST_F(TestPowerManager, MaintenanceRebootRunsOnceWhenThresholdIsReached)
+{
+    auto& rebootController = *powerManagerImpl->_powerController._rebootController;
+    rebootController._rfcUpdated = true;
+    rebootController._rebootOnlyInMaintenanceWindow = true;
+    rebootController._forcedRebootThreshold.SetThreshold(1);
+
+    int rebootCount = 0;
+    rebootController.rebootOnMaintenance([&rebootCount](const auto&) {
+        ++rebootCount;
+    });
+
+    rebootController.heartbeatMsg();
+
+    EXPECT_EQ(rebootCount, 1);
+    EXPECT_FALSE(static_cast<bool>(rebootController._maintenanceReboot));
+}
+
+TEST_F(TestPowerManager, UserWakeCancelsClaimedMaintenanceReboot)
+{
+    auto& rebootController = *powerManagerImpl->_powerController._rebootController;
+    rebootController._rfcUpdated = true;
+    rebootController._rebootOnlyInMaintenanceWindow = true;
+    rebootController._forcedRebootThreshold.SetThreshold(1);
+
+    std::shared_ptr<RebootController::MaintenanceRebootGuard> claimedGuard;
+    rebootController.rebootOnMaintenance([&claimedGuard](const auto& guard) {
+        claimedGuard = guard;
+    });
+
+    rebootController.heartbeatMsg();
+    ASSERT_NE(claimedGuard, nullptr);
+
+    rebootController.clearMaintenanceReboot();
+    EXPECT_FALSE(claimedGuard->TryCommit());
+}
+
+TEST_F(TestPowerManager, MaintenanceRebootWaitsForEnabledMaintenanceWindowRFC)
+{
+    auto& rebootController = *powerManagerImpl->_powerController._rebootController;
+    rebootController._rfcUpdated = true;
+    rebootController._rebootOnlyInMaintenanceWindow = false;
+    rebootController._forcedRebootThreshold.SetThreshold(1);
+
+    int rebootCount = 0;
+    rebootController.rebootOnMaintenance([&rebootCount](const auto&) {
+        ++rebootCount;
+    });
+
+    rebootController.heartbeatMsg();
+
+    EXPECT_EQ(rebootCount, 0);
+    EXPECT_TRUE(static_cast<bool>(rebootController._maintenanceReboot));
+    rebootController.clearMaintenanceReboot();
+}
+#endif
 
 TEST_F(TestPowerManager, NetworkStandby)
 {
