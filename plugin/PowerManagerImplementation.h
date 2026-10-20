@@ -49,6 +49,10 @@ namespace Plugin {
     public:
         using PreModeChangeController = AckController;
 
+        // Reason string reported (via SetPowerState/dispatchPowerModeChangedEvent) when a power state
+        // change is triggered by a deep sleep wakeup timer expiry.
+        static constexpr const char* REASON_DEEP_SLEEP_TIMEDOUT = "DeepSleep timed out";
+
         // We do not allow this plugin to be copied !!
         PowerManagerImplementation();
         ~PowerManagerImplementation() override;
@@ -188,7 +192,7 @@ namespace Plugin {
 
         static std::unique_ptr<WakeupScheduleRegister> createWakeupScheduleRegister();
 
-        void dispatchPowerModeChangedEvent(const PowerState& currentState, const PowerState& newState);
+        void dispatchPowerModeChangedEvent(const PowerState& currentState, const PowerState& newState, const string& reason);
         void dispatchDeepSleepTimeoutEvent(const uint32_t& timeout);
         void dispatchRebootBeginEvent(const string& rebootReasonCustom, const string& rebootReasonOther, const string& rebootRequestor);
         void dispatchThermalModeChangedEvent(const ThermalTemperature& currentThermalLevel, const ThermalTemperature& newThermalLevel, const float& currentTemperature);
