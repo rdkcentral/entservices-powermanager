@@ -100,6 +100,9 @@ class PwrMgr_Notification : public Exchange::IPowerManager::IRebootNotification,
         /** @brief transactionId received via the most recent OnPowerModeChangeAcknowledgementRequested event */
         int m_ackTransactionId;
 
+        /** @brief reason received via the most recent acknowledgement request */
+        string m_ackReason;
+
         /** @brief transactionId received via the most recent OnPowerModePreChange event */
         int m_preChangeTransactionId;
 
@@ -174,6 +177,7 @@ PwrMgr_Notification() : m_event_signalled(POWERMANAGERL2TEST_STATE_INVALID), m_a
             TEST_LOG("OnPowerModeChangeAcknowledgementRequested currentState: %u, newState: %u, transactionId: %d\n", currentState, newState, transactionId);
 
             m_ackTransactionId = transactionId;
+            m_ackReason = reason;
 
             /* Notify the requester thread. */
             m_event_signalled |= POWERMANAGERL2TEST_MODE_CHANGE_ACK_REQUESTED;
@@ -184,6 +188,12 @@ PwrMgr_Notification() : m_event_signalled(POWERMANAGERL2TEST_STATE_INVALID), m_a
         {
             std::unique_lock<std::mutex> lock(m_mutex);
             return m_ackTransactionId;
+        }
+
+        string GetAckReason()
+        {
+            std::unique_lock<std::mutex> lock(m_mutex);
+            return m_ackReason;
         }
 
         void OnDeepSleepTimeout(const int wakeupTimeout) override
@@ -308,6 +318,7 @@ class PowerManager_L2Test : public L2TestMocks {
       void Test_PerformReboot( Exchange::IPowerManager* PowerManagerPlugin);
       void Test_NetworkStandbyMode( Exchange::IPowerManager* PowerManagerPlugin);
       Core::Sink<PwrMgr_Notification> mNotification;
+      bool m_enableMaintenanceWakeupRFC { false };
 
     private:
         /** @brief Mutex */
@@ -354,7 +365,7 @@ PowerManager_L2Test::PowerManager_L2Test()
 
          ON_CALL(*p_rfcApiImplMock, getRFCParameter(::testing::_, ::testing::_, ::testing::_))
          .WillByDefault(::testing::Invoke(
-             [](char* pcCallerID, const char* pcParameterName, RFC_ParamData_t* pstParamData) {
+             [this](char* pcCallerID, const char* pcParameterName, RFC_ParamData_t* pstParamData) {
                  if (strcmp("RFC_DATA_ThermalProtection_POLL_INTERVAL", pcParameterName) == 0) {
                      strcpy(pstParamData->value, "2");
                      return WDMP_SUCCESS;
@@ -363,6 +374,21 @@ PowerManager_L2Test::PowerManager_L2Test()
                      return WDMP_SUCCESS;
                  } else if (strcmp("RFC_DATA_ThermalProtection_DEEPSLEEP_GRACE_INTERVAL", pcParameterName) == 0) {
                      strcpy(pstParamData->value, "6");
+                     return WDMP_SUCCESS;
+                 } else if (m_enableMaintenanceWakeupRFC &&
+                            strcmp("Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.MaintenanceWakeup.FixedStarts",
+                                   pcParameterName) == 0) {
+                     strcpy(pstParamData->value, "1,2,3");
+                     return WDMP_SUCCESS;
+                 } else if (m_enableMaintenanceWakeupRFC &&
+                            strcmp("Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.MaintenanceWakeup.RandomDelay",
+                                   pcParameterName) == 0) {
+                     strcpy(pstParamData->value, "0");
+                     return WDMP_SUCCESS;
+                 } else if (m_enableMaintenanceWakeupRFC &&
+                            strcmp("Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.MaintenanceWakeup.InactivityTimeout",
+                                   pcParameterName) == 0) {
+                     strcpy(pstParamData->value, "120");
                      return WDMP_SUCCESS;
                  } else {
                      /* The default threshold values will assign, if RFC call failed */
@@ -1507,6 +1533,136 @@ TEST_F(PowerManager_L2Test, DeepSleepTimerWakeup_CustomLgi_StaysInStandby)
         }
     }
 }
+
+TEST_F(PowerManager_L2Test, MaintenanceWakeup_CustomLgi_ReportsMaintenanceAndAllowsUserPowerOn)
+{
+    m_enableMaintenanceWakeupRFC = true;
+
+    // The fixture initially activates the plugin before the test body runs.
+    // Restart it now so the maintenance RFC values are available during
+    // DeepSleepWakeupSettings construction and initialization.
+    EXPECT_CALL(POWERMANAGER_MOCK, PLAT_TERM())
+        .WillOnce(::testing::Return(PWRMGR_SUCCESS));
+    EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_TERM())
+        .WillOnce(::testing::Return(DEEPSLEEPMGR_SUCCESS));
+    ASSERT_EQ(DeactivateService("org.rdk.PowerManager"), Core::ERROR_NONE);
+
+    EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_INIT())
+        .WillOnce(::testing::Return(DEEPSLEEPMGR_SUCCESS));
+    EXPECT_CALL(*p_mfrMock, mfrSetTempThresholds(::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [](int high, int critical) {
+                EXPECT_EQ(high, 100);
+                EXPECT_EQ(critical, 110);
+                return mfrERR_NONE;
+            }));
+    ASSERT_EQ(ActivateService("org.rdk.PowerManager"), Core::ERROR_NONE);
+
+    Core::ProxyType<RPC::InvokeServerType<1, 0, 4>> mEngine_PowerManager;
+    Core::ProxyType<RPC::CommunicatorClient> mClient_PowerManager;
+    PluginHost::IShell *mController_PowerManager;
+
+    mEngine_PowerManager = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
+    mClient_PowerManager = Core::ProxyType<RPC::CommunicatorClient>::Create(
+        Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(mEngine_PowerManager));
+
+#if ((THUNDER_VERSION == 2) || ((THUNDER_VERSION == 4) && (THUNDER_VERSION_MINOR == 2)))
+    mEngine_PowerManager->Announcements(mClient_PowerManager->Announcement());
+#endif
+
+    ASSERT_TRUE(mClient_PowerManager.IsValid());
+    mController_PowerManager = mClient_PowerManager->Open<PluginHost::IShell>(_T("org.rdk.PowerManager"), ~0, 3000);
+    ASSERT_NE(mController_PowerManager, nullptr);
+
+    auto PowerManagerPlugin = mController_PowerManager->QueryInterface<Exchange::IPowerManager>();
+    ASSERT_NE(PowerManagerPlugin, nullptr);
+
+    PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IRebootNotification>());
+    PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
+    PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IDeepSleepTimeoutNotification>());
+
+    EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
+        .Times(3)
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY_DEEP_SLEEP);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_STANDBY);
+                return PWRMGR_SUCCESS;
+            }))
+        .WillOnce(::testing::Invoke(
+            [](PWRMgr_PowerState_t powerState) {
+                EXPECT_EQ(powerState, PWRMGR_POWERSTATE_ON);
+                return PWRMGR_SUCCESS;
+            }));
+
+    std::mutex wakeupMutex;
+    std::condition_variable wakeupCondition;
+    bool allowWakeup = false;
+
+    EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_SetDeepSleep(::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](uint32_t timeout, bool* isGPIOWakeup, bool networkStandby) {
+                EXPECT_GT(timeout, 0u);
+                EXPECT_NE(isGPIOWakeup, nullptr);
+                std::unique_lock<std::mutex> lock(wakeupMutex);
+                EXPECT_TRUE(wakeupCondition.wait_for(
+                     lock, std::chrono::milliseconds(JSON_TIMEOUT * 3),
+                     [&allowWakeup]() { return allowWakeup; }));
+                *isGPIOWakeup = false;
+                return DEEPSLEEPMGR_SUCCESS;
+            }));
+    EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_GetLastWakeupReason(::testing::_))
+        .Times(2)
+        .WillRepeatedly(::testing::Invoke(
+            [](DeepSleep_WakeupReason_t* wakeupReason) {
+                *wakeupReason = DEEPSLEEP_WAKEUPREASON_TIMER;
+                return DEEPSLEEPMGR_SUCCESS;
+            }));
+    EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_DeepSleepWakeup())
+        .WillOnce(::testing::Return(DEEPSLEEPMGR_SUCCESS));
+
+    EXPECT_EQ(PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-maintenance"),
+              Core::ERROR_NONE);
+    EXPECT_TRUE(mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED)
+                & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+
+    {
+        std::lock_guard<std::mutex> lock(wakeupMutex);
+        allowWakeup = true;
+    }
+    wakeupCondition.notify_one();
+
+    EXPECT_TRUE(mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_DEEP_SLEEP_TIMEOUT)
+                & POWERMANAGERL2TEST_DEEP_SLEEP_TIMEOUT);
+    EXPECT_TRUE(mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED)
+                & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+
+    PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState previousState = PowerState::POWER_STATE_UNKNOWN;
+    EXPECT_EQ(PowerManagerPlugin->GetPowerState(currentState, previousState), Core::ERROR_NONE);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_STANDBY);
+
+    WakeupReason wakeupReason = WakeupReason::WAKEUP_REASON_UNKNOWN;
+    EXPECT_EQ(PowerManagerPlugin->GetLastWakeupReason(wakeupReason), Core::ERROR_NONE);
+    EXPECT_EQ(wakeupReason, WakeupReason::WAKEUP_REASON_MAINTENANCE);
+
+    EXPECT_EQ(PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_ON, "l2-user-wakeup"),
+              Core::ERROR_NONE);
+    EXPECT_TRUE(mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED)
+                & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+    EXPECT_EQ(PowerManagerPlugin->GetPowerState(currentState, previousState), Core::ERROR_NONE);
+    EXPECT_EQ(currentState, PowerState::POWER_STATE_ON);
+
+    PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IRebootNotification>());
+    PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
+    PowerManagerPlugin->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IDeepSleepTimeoutNotification>());
+    PowerManagerPlugin->Release();
+    mController_PowerManager->Release();
+}
 #endif // CUSTOM_LGI
 
 TEST_F(PowerManager_L2Test, PowerModePreChangeAckTimeout)
@@ -2335,6 +2491,91 @@ TEST_F(PowerManager_L2Test, ScheduleDeepSleepWakeupMultiple)
     }
 }
 
+TEST_F(PowerManager_L2Test, DelayPowerModeChangeByRenegotiatesWithNewTransactionAndOriginalReason)
+{
+    Core::ProxyType<RPC::InvokeServerType<1, 0, 4>> engine;
+    Core::ProxyType<RPC::CommunicatorClient> client;
+    engine = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
+    client = Core::ProxyType<RPC::CommunicatorClient>::Create(
+        Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(engine));
+    ASSERT_TRUE(client.IsValid());
+
+#if ((THUNDER_VERSION == 2) || ((THUNDER_VERSION == 4) && (THUNDER_VERSION_MINOR == 2)))
+    engine->Announcements(client->Announcement());
+#endif
+    PluginHost::IShell* controller = client->Open<PluginHost::IShell>(_T("org.rdk.PowerManager"), ~0, 3000);
+    ASSERT_NE(controller, nullptr);
+    auto powerManager = controller->QueryInterface<Exchange::IPowerManager>();
+    ASSERT_NE(powerManager, nullptr);
+
+    ASSERT_EQ(powerManager->Register(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>()),
+        Core::ERROR_NONE);
+    ASSERT_EQ(powerManager->Register(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>()),
+        Core::ERROR_NONE);
+    ASSERT_EQ(powerManager->Register(mNotification.baseInterface<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested>()),
+        Core::ERROR_NONE);
+
+    uint32_t preChangeClientId = 0;
+    uint32_t secondPreChangeClientId = 0;
+    uint32_t ackClientId = 0;
+    ASSERT_EQ(powerManager->AddPowerModePreChangeClient("l2-renegotiate-prechange", preChangeClientId), Core::ERROR_NONE);
+    ASSERT_EQ(powerManager->AddPowerModePreChangeClient("l2-renegotiate-second", secondPreChangeClientId), Core::ERROR_NONE);
+    ASSERT_EQ(powerManager->AddPowerModeChangeAcknowledgementClient("l2-renegotiate-ack", ackClientId), Core::ERROR_NONE);
+
+    EXPECT_CALL(POWERMANAGER_MOCK, PLAT_API_SetPowerState(::testing::_))
+        .WillOnce(::testing::Invoke([](PWRMgr_PowerState_t state) {
+            EXPECT_EQ(state, PWRMGR_POWERSTATE_ON);
+            return PWRMGR_SUCCESS;
+        }));
+
+    const string originalReason = "l2-renegotiation-original";
+    ASSERT_EQ(powerManager->SetPowerState(0, PowerState::POWER_STATE_ON, originalReason), Core::ERROR_NONE);
+
+    uint32_t signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+    ASSERT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+    const int firstTransactionId = mNotification.GetPreChangeTransactionId();
+    ASSERT_EQ(powerManager->PowerModePreChangeComplete(secondPreChangeClientId, firstTransactionId), Core::ERROR_NONE);
+    ASSERT_EQ(powerManager->DelayPowerModeChangeAndRenegotiate(preChangeClientId, firstTransactionId, 1), Core::ERROR_NONE);
+    EXPECT_EQ(powerManager->DelayPowerModeChangeBy(preChangeClientId, firstTransactionId, 1), Core::ERROR_NONE);
+    EXPECT_EQ(powerManager->PowerModePreChangeComplete(preChangeClientId, firstTransactionId), Core::ERROR_NONE);
+
+    signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+    ASSERT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_PRECHANGE);
+    const int restartedTransactionId = mNotification.GetPreChangeTransactionId();
+    EXPECT_NE(restartedTransactionId, firstTransactionId);
+    EXPECT_EQ(powerManager->PowerModePreChangeComplete(preChangeClientId, firstTransactionId), Core::ERROR_INVALID_PARAMETER);
+    EXPECT_EQ(powerManager->DelayPowerModeChangeBy(preChangeClientId, firstTransactionId, 30), Core::ERROR_INVALID_PARAMETER);
+    EXPECT_EQ(powerManager->DelayPowerModeChangeAndRenegotiate(preChangeClientId, firstTransactionId, 30), Core::ERROR_INVALID_PARAMETER);
+
+    signalled = mNotification.WaitForRequestStatus(100, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+    EXPECT_FALSE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+
+    ASSERT_EQ(powerManager->PowerModePreChangeComplete(preChangeClientId, restartedTransactionId), Core::ERROR_NONE);
+    signalled = mNotification.WaitForRequestStatus(100, POWERMANAGERL2TEST_MODE_CHANGE_ACK_REQUESTED);
+    EXPECT_FALSE(signalled & POWERMANAGERL2TEST_MODE_CHANGE_ACK_REQUESTED);
+    ASSERT_EQ(powerManager->PowerModePreChangeComplete(secondPreChangeClientId, restartedTransactionId), Core::ERROR_NONE);
+    signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_MODE_CHANGE_ACK_REQUESTED);
+    ASSERT_TRUE(signalled & POWERMANAGERL2TEST_MODE_CHANGE_ACK_REQUESTED);
+    EXPECT_EQ(mNotification.GetAckReason(), originalReason);
+    ASSERT_EQ(powerManager->PowerModeChangeAcknowledgement(
+        ackClientId, mNotification.GetAckTransactionId()), Core::ERROR_NONE);
+
+    signalled = mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+    EXPECT_TRUE(signalled & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+
+    EXPECT_EQ(powerManager->RemovePowerModePreChangeClient(preChangeClientId), Core::ERROR_NONE);
+    EXPECT_EQ(powerManager->RemovePowerModePreChangeClient(secondPreChangeClientId), Core::ERROR_NONE);
+    EXPECT_EQ(powerManager->RemovePowerModeChangeAcknowledgementClient(ackClientId), Core::ERROR_NONE);
+    EXPECT_EQ(powerManager->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>()),
+        Core::ERROR_NONE);
+    EXPECT_EQ(powerManager->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>()),
+        Core::ERROR_NONE);
+    EXPECT_EQ(powerManager->Unregister(mNotification.baseInterface<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested>()),
+        Core::ERROR_NONE);
+    powerManager->Release();
+    controller->Release();
+}
+
 /***
 ** Test: CancelScheduledDeepSleepWakeups - Exact Match
 ** Verify that a previously scheduled wakeup can be cancelled by its exact
@@ -2347,7 +2588,6 @@ TEST_F(PowerManager_L2Test, CancelScheduledDeepSleepWakeupsExactMatch)
     PluginHost::IShell *mController_PowerManager;
 
     {
-        ASSERT_EQ(0, system("mkdir -p /mnt/secure_storage/pwrmgr")) << "Failed to create wakeup schedule storage directory";
         std::ofstream ofs("/mnt/secure_storage/pwrmgr/schedules.stg", std::ios::trunc);
         ASSERT_TRUE(ofs.is_open()) << "Failed to reset wakeup schedule storage";
     }
@@ -2410,7 +2650,6 @@ TEST_F(PowerManager_L2Test, CancelScheduledDeepSleepWakeupsAll)
     PluginHost::IShell *mController_PowerManager;
 
     {
-        ASSERT_EQ(0, system("mkdir -p /mnt/secure_storage/pwrmgr")) << "Failed to create wakeup schedule storage directory";
         std::ofstream ofs("/mnt/secure_storage/pwrmgr/schedules.stg", std::ios::trunc);
         ASSERT_TRUE(ofs.is_open()) << "Failed to reset wakeup schedule storage";
     }

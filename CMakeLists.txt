@@ -31,6 +31,8 @@ option(TESTBINARIES "Generate plugin specific test binaries" OFF)
 option(CUSTOM_LGI
        "Enable CUSTOM_LGI behavior: transition to standby after a deep-sleep timer wakeup" OFF)
 
+option(OVERRIDE_NEGOTIATION_ON_TPS "Bypass negotiation in SetPowerState when reason is TPS" ON)
+
 if(TESTBINARIES)
     message(INFO "Enabling test binaries")
     add_subdirectory(Tests)

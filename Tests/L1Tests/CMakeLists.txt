@@ -122,6 +122,9 @@ add_library(${MODULE_NAME} SHARED ${TEST_SRC})
 if(CUSTOM_LGI)
     target_compile_definitions(${MODULE_NAME} PRIVATE CUSTOM_LGI)
 endif()
+if(OVERRIDE_NEGOTIATION_ON_TPS)
+    target_compile_definitions(${MODULE_NAME} PRIVATE OVERRIDE_NEGOTIATION_ON_TPS)
+endif()
 
 set_source_files_properties(
         tests/test_PowerManager.cpp

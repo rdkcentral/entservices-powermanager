@@ -46,9 +46,12 @@ PowerController::PowerController(DeepSleepController& deepSleep, WakeupScheduleR
     , _deepSleepWakeupSettings(_settings, wakeupScheduleRegister)
     , _workerPool(WPEFramework::Core::WorkerPool::Instance())
     , _wakeupTimestamp{}
+#ifdef CUSTOM_LGI
+    , _maintenanceJobState(std::make_shared<MaintenanceJobState>())
+#endif
     , _deepSleep(deepSleep)
 #ifdef OFFLINE_MAINT_REBOOT
-    , _rebootController(_settings)
+    , _rebootController(new RebootController(_settings))
 #endif
 {
     ASSERT(nullptr != _platform);
@@ -256,9 +259,66 @@ uint32_t PowerController::Reboot(const string& requestor, const string& reasonCu
     _workerPool.Submit(LambdaJob::Create([this, requestor, reasonCustom, reasonOther]() {
         platform().Reboot(requestor, reasonCustom, reasonOther);
     }));
-
     return WPEFramework::Core::ERROR_NONE;
 }
+
+#ifdef CUSTOM_LGI
+void PowerController::MaintenanceJobCompletion::Complete()
+{
+    std::lock_guard<std::mutex> lock(state->mutex);
+    if (active) {
+        active = false;
+        --state->outstandingJobs;
+        state->condition.notify_all();
+    }
+}
+
+PowerController::MaintenanceJobCompletion::~MaintenanceJobCompletion()
+{
+    Complete();
+}
+
+uint32_t PowerController::RebootForMaintenance(const string& requestor, const string& reasonCustom,
+                        const string& reasonOther,
+                        const std::shared_ptr<RebootController::MaintenanceRebootGuard>& maintenanceGuard,
+                        std::function<void()> onRebootBegin)
+{
+    std::shared_ptr<MaintenanceJobCompletion> completion(new MaintenanceJobCompletion(_maintenanceJobState));
+    {
+        std::lock_guard<std::mutex> lock(_maintenanceJobState->mutex);
+        if (_maintenanceJobState->shuttingDown) {
+            return WPEFramework::Core::ERROR_ILLEGAL_STATE;
+        }
+        ++_maintenanceJobState->outstandingJobs;
+        completion->active = true;
+    }
+
+    _workerPool.Submit(LambdaJob::Create([this, requestor, reasonCustom, reasonOther, maintenanceGuard, onRebootBegin, completion]() {
+        MaintenanceJobDispatchCompletion dispatchCompletion(completion);
+        if (maintenanceGuard->TryCommit()) {
+            onRebootBegin();
+            platform().Reboot(requestor, reasonCustom, reasonOther);
+        }
+    }));
+    LOGINFO("Maintenance reboot queued");
+    return WPEFramework::Core::ERROR_NONE;
+}
+
+void PowerController::ShutdownMaintenanceJobs()
+{
+    std::unique_lock<std::mutex> lock(_maintenanceJobState->mutex);
+    _maintenanceJobState->shuttingDown = true;
+    _maintenanceJobState->condition.wait(lock, [this]() {
+        return _maintenanceJobState->outstandingJobs == 0;
+    });
+}
+
+void PowerController::SetRebootReason(const std::string& reason)
+{
+    _settings.SetRebootReason(reason.empty() ? "Unknown" : reason);
+    _settings.Save(m_settingsFile);
+}
+#endif
 
 uint32_t PowerController::SetDeepSleepTimer(const int timeOut)
 {
@@ -289,3 +349,22 @@ uint32_t PowerController::GetTimeSinceWakeup(uint32_t& secondsSinceWakeup)
 
     return WPEFramework::Core::ERROR_NONE;
 }
+
+#ifdef CUSTOM_LGI
+void PowerController::HandleRebootOnMaintenance(
+    const std::function<void(const std::shared_ptr<RebootController::MaintenanceRebootGuard>&)>& reboot)
+{
+#ifdef OFFLINE_MAINT_REBOOT
+    _rebootController->rebootOnMaintenance(reboot);
+#else
+    (void)reboot;
+#endif
+}
+
+void PowerController::ClearMaintenanceReboot()
+{
+#ifdef OFFLINE_MAINT_REBOOT
+    _rebootController->clearMaintenanceReboot();
+#endif
+}
+#endif

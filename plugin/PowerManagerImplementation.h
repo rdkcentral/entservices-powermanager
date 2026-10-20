@@ -151,6 +151,7 @@ namespace Plugin {
         Core::hresult GetRebootReason(string& reason) override;
         Core::hresult PowerModePreChangeComplete(const uint32_t clientId, const int transactionId) override;
         Core::hresult DelayPowerModeChangeBy(const uint32_t clientId, const int transactionId, const int delayPeriod) override;
+        Core::hresult DelayPowerModeChangeAndRenegotiate(const uint32_t clientId, const int transactionId, const int delayPeriod) override;
         Core::hresult AddPowerModePreChangeClient(const string& clientName, uint32_t& clientId) override;
         Core::hresult RemovePowerModePreChangeClient(const uint32_t clientId) override;
         Core::hresult PowerModeChangeAcknowledgement(const uint32_t acknowledgeClientId, const int transactionId) override;
@@ -198,12 +199,18 @@ namespace Plugin {
         void dispatchNetworkStandbyModeChangedEvent(const bool& enabled);
 
         void submitPowerModePreChangeEvent(const PowerState currentState, const PowerState newState, const int transactionId, const int timeOut);
-        void powerModePreChangeCompletionHandler(const int keyCode, PowerState currentState, PowerState powerState, const std::string& reason);
-        void startPowerModeChangeAcknowledgement(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason);
+        std::function<void()> preparePowerModePreChange(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason, const std::function<void()>& finished);
+        bool powerModePreChangeCompletionHandler(const int keyCode, PowerState currentState, PowerState powerState, const std::string& reason, const std::weak_ptr<PreModeChangeController>& controller, const std::function<void()>& finished);
+        Core::hresult delayPowerModeChange(const uint32_t clientId, const int transactionId, const int delayPeriod, const bool renegotiate);
+        void startPowerModeChangeAcknowledgement(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason, const std::shared_ptr<PreModeChangeController>& controller);
         void submitPowerModeChangeAcknowledgementRequestedEvent(const PowerState currentState, const PowerState newState, const int transactionId, const string& reason);
-        void powerModeChangeAcknowledgementCompletionHandler(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason);
+        void powerModeChangeAcknowledgementCompletionHandler(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason, const std::shared_ptr<PreModeChangeController>& controller);
+#ifdef CUSTOM_LGI
+        Core::hresult rebootForMaintenance(const std::shared_ptr<RebootController::MaintenanceRebootGuard>& maintenanceGuard);
+#endif
         void logUnresponsiveAckClients(const std::shared_ptr<PreModeChangeController>& ackController);
-        Core::hresult setDevicePowerState(const int& keyCode, PowerState currentState, PowerState powerState, const std::string& reason);
+        Core::hresult setDevicePowerState(const int& keyCode, PowerState currentState, PowerState powerState, const std::string& reason, const std::shared_ptr<PreModeChangeController>& controller = {}, const std::function<void()>& writeCompleted = {});
+        void cancelPowerModeChangeForTPS();
         inline bool isSyncStateChange(PowerState currState, PowerState newState) const;
 
         // DeepSleepController::INotification
