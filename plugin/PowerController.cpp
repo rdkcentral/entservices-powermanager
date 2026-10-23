@@ -35,7 +35,6 @@ using WakeupSrcType = WPEFramework::Exchange::IPowerManager::WakeupSrcType;
 using WakeupReason = WPEFramework::Exchange::IPowerManager::WakeupReason;
 using WakeupSourceConfig = WPEFramework::Exchange::IPowerManager::WakeupSourceConfig;
 using IPlatform = hal::power::IPlatform;
-using DefaultImpl = PowerImpl;
 using util = PowerUtils;
 
 PowerController::PowerController(DeepSleepController& deepSleep, WakeupScheduleRegister* wakeupScheduleRegister, std::unique_ptr<IPlatform> platform)

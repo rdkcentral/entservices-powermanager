@@ -40,6 +40,9 @@
 #include "RebootController.h"    // for RebootController
 #include "Settings.h"            // for Settings
 #include "hal/PowerImpl.h"       // for IPlatform, PowerImpl
+#ifdef CUSTOM_LGI
+#include "hal/PowerImplLgi.h"
+#endif
 
 namespace WPEFramework {
 namespace Core {
@@ -55,7 +58,11 @@ class PowerController {
     using WakeupSrcType = WPEFramework::Exchange::IPowerManager::WakeupSrcType;
     using WakeupReason = WPEFramework::Exchange::IPowerManager::WakeupReason;
     using IPlatform = hal::power::IPlatform;
+#ifdef CUSTOM_LGI
+    using DefaultImpl = PowerImplLgi;
+#else
     using DefaultImpl = PowerImpl;
+#endif
 
     PowerController(DeepSleepController& deepSleep, WakeupScheduleRegister* wakeupScheduleRegister, std::unique_ptr<IPlatform> platform);
 
