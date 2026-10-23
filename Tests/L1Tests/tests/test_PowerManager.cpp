@@ -824,8 +824,10 @@ TEST_F(TestPowerManager, DelayPowerModeChangeByRenegotiatesUnlimitedWithNewTrans
                 EXPECT_EQ(powerManagerImpl->PowerModeChangeAcknowledgement(ackClientId, ackTransactionId), Core::ERROR_NONE);
                 ackCompleted.Done();
             }));
-    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(::testing::_, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP))
-        .WillOnce(::testing::Invoke([&](const PowerState, const PowerState) { stateChanged.Done(); }));
+    EXPECT_CALL(*modeChangedEvent, OnPowerModeChanged(
+        ::testing::_, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState, const PowerState, const string&, const string&) { stateChanged.Done(); }));
 
     ASSERT_EQ(powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "original-renegotiation-reason"),
         Core::ERROR_NONE);
@@ -1324,8 +1326,9 @@ TEST_F(TestPowerManager, TPSKeepsSerializationThroughWriteButNotNotification)
     auto changing = changed.get_future();
     auto proceed = allowReturn.get_future();
     auto started = setterStarted.get_future();
-    EXPECT_CALL(*event, OnPowerModeChanged(::testing::_, PowerState::POWER_STATE_OFF))
-        .WillOnce(::testing::Invoke([&](PowerState, PowerState) {
+    EXPECT_CALL(*event, OnPowerModeChanged(
+        ::testing::_, PowerState::POWER_STATE_OFF, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke([&](PowerState, PowerState, const string&, const string&) {
             changed.set_value();
             proceed.wait();
         }));
@@ -1382,14 +1385,16 @@ TEST_F(TestPowerManager, TPSInlinePowerModeChangedAllowsReentrantSetters)
                 .WillOnce(::testing::Return(PWRMGR_SUCCESS));
             EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_ON))
                 .WillOnce(::testing::Return(PWRMGR_SUCCESS));
-            EXPECT_CALL(*event, OnPowerModeChanged(::testing::_, PowerState::POWER_STATE_OFF))
-                .WillOnce(::testing::Invoke([&](PowerState, PowerState) {
+            EXPECT_CALL(*event, OnPowerModeChanged(
+                ::testing::_, PowerState::POWER_STATE_OFF, ::testing::_, ::testing::_))
+                .WillOnce(::testing::Invoke([&](PowerState, PowerState, const string&, const string&) {
                     EXPECT_EQ(powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_OFF, "inline-same-state"),
                         Core::ERROR_NONE);
                     EXPECT_EQ(powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_ON, "inline-other-state"),
                         Core::ERROR_NONE);
                 }));
-            EXPECT_CALL(*event, OnPowerModeChanged(PowerState::POWER_STATE_OFF, PowerState::POWER_STATE_ON)).Times(1);
+            EXPECT_CALL(*event, OnPowerModeChanged(
+                PowerState::POWER_STATE_OFF, PowerState::POWER_STATE_ON, ::testing::_, ::testing::_)).Times(1);
             EXPECT_EQ(powerManagerImpl->Register(&(*event)), Core::ERROR_NONE);
             EXPECT_EQ(powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_OFF, "TPS"), Core::ERROR_NONE);
             PowerState current;
@@ -1414,8 +1419,9 @@ TEST_F(TestPowerManager, TPSPowerModeChangedAllowsCrossThreadSetter)
     std::future<uint32_t> setter;
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_OFF))
         .WillOnce(::testing::Return(PWRMGR_SUCCESS));
-    EXPECT_CALL(*event, OnPowerModeChanged(::testing::_, PowerState::POWER_STATE_OFF))
-        .WillOnce(::testing::Invoke([&](PowerState, PowerState) {
+    EXPECT_CALL(*event, OnPowerModeChanged(
+        ::testing::_, PowerState::POWER_STATE_OFF, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke([&](PowerState, PowerState, const string&, const string&) {
             setter = std::async(std::launch::async, [&]() {
                 return powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_OFF, "observer-same-state");
             });
@@ -1436,7 +1442,7 @@ TEST_F(TestPowerManager, TPSFailedWriteReleasesSerializationWithoutNotification)
     GTEST_SKIP() << "TPS override disabled";
 #else
     auto event = Core::ProxyType<PowerModeChangedEvent>::Create();
-    EXPECT_CALL(*event, OnPowerModeChanged(::testing::_, ::testing::_)).Times(0);
+    EXPECT_CALL(*event, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_)).Times(0);
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_OFF))
         .WillOnce(::testing::Return(PWRMGR_SET_FAILURE));
     ASSERT_EQ(powerManagerImpl->Register(&(*event)), Core::ERROR_NONE);
@@ -1456,8 +1462,8 @@ TEST_F(TestPowerManager, InlinePowerModeChangedAllowsCrossThreadApiCall)
         .Times(2).WillRepeatedly(::testing::Return(PWRMGR_SUCCESS));
     auto event = Core::ProxyType<PowerModeChangedEvent>::Create();
     std::future<uint32_t> query;
-    EXPECT_CALL(*event, OnPowerModeChanged(::testing::_, ::testing::_))
-        .Times(2).WillRepeatedly(::testing::Invoke([&](PowerState, PowerState) {
+    EXPECT_CALL(*event, OnPowerModeChanged(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .Times(2).WillRepeatedly(::testing::Invoke([&](PowerState, PowerState, const string&, const string&) {
             query = std::async(std::launch::async, [&]() {
                 PowerState current, previous;
                 return powerManagerImpl->GetPowerState(current, previous);
@@ -1513,8 +1519,9 @@ TEST_F(TestPowerManager, RenegotiationReplacementCancelsPendingRetry)
         }));
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(PWRMGR_POWERSTATE_OFF))
         .WillOnce(::testing::Return(PWRMGR_SUCCESS));
-    EXPECT_CALL(*changedEvent, OnPowerModeChanged(::testing::_, PowerState::POWER_STATE_OFF))
-        .WillOnce(::testing::Invoke([&](const PowerState, const PowerState) { changed.Done(); }));
+    EXPECT_CALL(*changedEvent, OnPowerModeChanged(
+        ::testing::_, PowerState::POWER_STATE_OFF, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke([&](const PowerState, const PowerState, const string&, const string&) { changed.Done(); }));
 
     ASSERT_EQ(powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "original"), Core::ERROR_NONE);
     deferred.Wait();
@@ -1560,8 +1567,10 @@ TEST_F(TestPowerManager, RenegotiationRejectsInvalidRequestsAndSupportsZeroDelay
             EXPECT_NE(transactionId, originalTransactionId);
             EXPECT_EQ(powerManagerImpl->PowerModePreChangeComplete(clientId, transactionId), Core::ERROR_NONE);
         }));
-    EXPECT_CALL(*changedEvent, OnPowerModeChanged(::testing::_, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP))
-        .WillOnce(::testing::Invoke([&](const PowerState, const PowerState) { changed.Done(); }));
+    EXPECT_CALL(*changedEvent, OnPowerModeChanged(
+        ::testing::_, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState, const PowerState, const string&, const string&) { changed.Done(); }));
     ASSERT_EQ(powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "zero-delay"), Core::ERROR_NONE);
     changed.Wait();
     EXPECT_EQ(powerManagerImpl->DelayPowerModeChangeAndRenegotiate(clientId, originalTransactionId, 0), Core::ERROR_INVALID_PARAMETER);
@@ -1596,8 +1605,10 @@ TEST_F(TestPowerManager, RenegotiationUsesCurrentClientsAfterRemoval)
             EXPECT_NE(transactionId, originalTransactionId);
             deferred.Done();
         }));
-    EXPECT_CALL(*changedEvent, OnPowerModeChanged(::testing::_, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP))
-        .WillOnce(::testing::Invoke([&](const PowerState, const PowerState) { changed.Done(); }));
+    EXPECT_CALL(*changedEvent, OnPowerModeChanged(
+        ::testing::_, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [&](const PowerState, const PowerState, const string&, const string&) { changed.Done(); }));
     ASSERT_EQ(powerManagerImpl->SetPowerState(0, PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP, "removed-client"), Core::ERROR_NONE);
     deferred.Wait();
     changed.Wait();
@@ -2682,21 +2693,21 @@ TEST_F(TestPowerManager, DeepSleepTimerWakeup_CustomLgi_StaysInStandby)
 
     WakeupReason wakeupReason = WakeupReason::WAKEUP_REASON_UNKNOWN;
     ASSERT_EQ(powerManagerImpl->GetLastWakeupReason(wakeupReason), Core::ERROR_NONE);
-    EXPECT_EQ(wakeupReason, WakeupReason::WAKEUP_REASON_MAINTENANCE);
+    EXPECT_EQ(wakeupReason, WakeupReason::WAKEUP_REASON_TIMER);
+
+    wakeupComplete.Wait();
 
     PowerState newState = PowerState::POWER_STATE_UNKNOWN;
     PowerState previousState = PowerState::POWER_STATE_UNKNOWN;
     ASSERT_EQ(powerManagerImpl->GetPowerState(newState, previousState), Core::ERROR_NONE);
     EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY);
-    EXPECT_TRUE(powerManagerImpl->_deepSleepController._maintenanceWakeupScheduled->load());
-
     ASSERT_EQ(0, system("rm -f /tmp/deepSleepWakeupTimer"));
     ASSERT_EQ(powerManagerImpl->Unregister(&(*modeChanged)), Core::ERROR_NONE);
 }
 
 TEST_F(TestPowerManager, GetLastWakeupReason_MaintenanceScheduledPreservesNetworkWakeSource)
 {
-    powerManagerImpl->_deepSleepController._maintenanceWakeupScheduled->store(true);
+    powerManagerImpl->_deepSleepController._lastWakeupWasMaintenance->store(true);
 
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_GetLastWakeupReason(::testing::_))
         .WillOnce(::testing::Invoke(
@@ -3761,6 +3772,81 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupInvalidRequestorWithSpace)
     TEST_LOG("<< Test passed");
 }
 
+TEST_F(TestPowerManager, ScheduleDeepSleepWakeupRejectsReservedRequestorPrefix)
+{
+    const time_t futureTime = time(nullptr) + 300;
+
+    EXPECT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime, "pwrmgr_internal"),
+              Core::ERROR_INVALID_PARAMETER);
+    EXPECT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime + 1, "pwrmgr_internal_timer"),
+              Core::ERROR_INVALID_PARAMETER);
+    EXPECT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime + 2, "pwrmgrInternal"),
+              Core::ERROR_NONE);
+}
+
+TEST_F(TestPowerManager, ScheduleDeepSleepWakeupTreatsRequestorIdsAsNormal)
+{
+    const time_t futureTime = time(nullptr) + 300;
+    const auto maintenanceTime = futureTime + 1;
+    const auto timerNamedRequestorTime = futureTime + 2;
+    ASSERT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(maintenanceTime, "maintenance"),
+              Core::ERROR_NONE);
+    ASSERT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(timerNamedRequestorTime, "deepsleeptimer"),
+              Core::ERROR_NONE);
+    EXPECT_EQ(powerManagerImpl->CancelScheduledDeepSleepWakeups(maintenanceTime, "maintenance"),
+              Core::ERROR_NONE);
+    EXPECT_EQ(powerManagerImpl->CancelScheduledDeepSleepWakeups(timerNamedRequestorTime, "deepsleeptimer"),
+              Core::ERROR_NONE);
+}
+
+#ifdef CUSTOM_LGI
+TEST_F(TestPowerManager, SetDeepSleepTimerAddsWakeupEntriesWithoutCancellingSchedules)
+{
+    if (!powerManagerImpl->_wakeupScheduleRegister) {
+        GTEST_SKIP() << "Wakeup schedule registry is not configured";
+    }
+
+    const time_t normalScheduleTime = time(nullptr) + 300;
+    ASSERT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(normalScheduleTime, "testApp"), Core::ERROR_NONE);
+
+    const time_t beforeFirstTimer = time(nullptr);
+    EXPECT_EQ(powerManagerImpl->SetDeepSleepTimer(60), Core::ERROR_NONE);
+    const auto firstTimerSchedules =
+        powerManagerImpl->_wakeupScheduleRegister->getPastAndFutureWakeupSchedules("deepsleeptimer").second;
+    ASSERT_EQ(firstTimerSchedules.size(), 1u);
+    const auto firstTimerTime = firstTimerSchedules.front().first;
+    EXPECT_GE(firstTimerTime, static_cast<unsigned int>(beforeFirstTimer + 60));
+    ASSERT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(firstTimerTime, "sameTimeApp"), Core::ERROR_NONE);
+    const auto sameTimeSchedules =
+        powerManagerImpl->_wakeupScheduleRegister->getPastAndFutureWakeupSchedules("sameTimeApp").second;
+    ASSERT_EQ(sameTimeSchedules.size(), 1u);
+    EXPECT_EQ(sameTimeSchedules.front().first, firstTimerTime);
+
+    EXPECT_EQ(powerManagerImpl->SetDeepSleepTimer(90), Core::ERROR_NONE);
+    EXPECT_FALSE(powerManagerImpl->_wakeupScheduleRegister
+                     ->getPastAndFutureWakeupSchedules("deepsleeptimer").second.empty());
+
+    EXPECT_EQ(powerManagerImpl->SetDeepSleepTimer(0), Core::ERROR_NONE);
+    const auto remainingTimerSchedules =
+        powerManagerImpl->_wakeupScheduleRegister->getPastAndFutureWakeupSchedules("deepsleeptimer").second;
+    EXPECT_NE(std::find_if(remainingTimerSchedules.begin(), remainingTimerSchedules.end(),
+                           [firstTimerTime](const auto& schedule) { return schedule.first == firstTimerTime; }),
+              remainingTimerSchedules.end());
+    const auto normalSchedules =
+        powerManagerImpl->_wakeupScheduleRegister->getPastAndFutureWakeupSchedules("sameTimeApp").second;
+    EXPECT_NE(std::find_if(normalSchedules.begin(), normalSchedules.end(),
+                           [firstTimerTime](const auto& schedule) { return schedule.first == firstTimerTime; }),
+              normalSchedules.end());
+    const auto existingSchedules =
+        powerManagerImpl->_wakeupScheduleRegister->getPastAndFutureWakeupSchedules("testApp").second;
+    EXPECT_NE(std::find_if(existingSchedules.begin(), existingSchedules.end(),
+                           [normalScheduleTime](const auto& schedule) {
+                               return schedule.first == static_cast<unsigned int>(normalScheduleTime);
+                           }),
+              existingSchedules.end());
+}
+#endif
+
 TEST_F(TestPowerManager, ScheduleDeepSleepWakeupEmptyRequestor)
 {
     TEST_LOG(">> Test: Schedule deep sleep wakeup with empty requestor");
@@ -3803,9 +3889,9 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupMultipleSchedules)
 // Verify that when the deep sleep timer expires because of a previously registered
 // ScheduleDeepSleepWakeup() schedule, the device transitions to POWER_STATE_STANDBY,
 // rather than the generic LIGHT_SLEEP fallback used when no schedule was consumed.
-TEST_F(TestPowerManager, ScheduleDeepSleepWakeupConsumedTransitionsToStandby)
+TEST_F(TestPowerManager, MaintenanceScheduleReportsMaintenanceWakeupReason)
 {
-    TEST_LOG(">> Test: Scheduled deep sleep wakeup transitions to STANDBY on timer expiry");
+    TEST_LOG(">> Test: Maintenance schedule transitions to STANDBY and reports its wakeup reason");
 
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
         .WillOnce(::testing::Invoke(
@@ -3872,11 +3958,17 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupConsumedTransitionsToStandby)
     status = powerManagerImpl->Register(&(*deepSleepTimeout));
     EXPECT_EQ(status, Core::ERROR_NONE);
 
-    // Schedule a wakeup 2 seconds in the future; ScheduleDeepSleepWakeup() internally
-    // arms the deep sleep timer to match the nearest schedule.
+    // Schedule a maintenance wakeup 2 seconds in the future.
     time_t futureTime = time(nullptr) + 2;
-    status = powerManagerImpl->ScheduleDeepSleepWakeup(futureTime, "testApp");
+    status = powerManagerImpl->ScheduleDeepSleepWakeup(futureTime, "maintenance");
     EXPECT_EQ(status, Core::ERROR_NONE);
+
+#ifndef CUSTOM_LGI
+    // The upstream timeout path uses the explicitly configured timer, not the
+    // nearest STG schedule. Keep the simulated wake short in this build.
+    status = powerManagerImpl->SetDeepSleepTimer(2);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+#endif
 
     int keyCode = 0;
     status      = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
@@ -3895,6 +3987,22 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupConsumedTransitionsToStandby)
     EXPECT_EQ(status, Core::ERROR_NONE);
     EXPECT_EQ(newState, PowerState::POWER_STATE_STANDBY);
     EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
+
+    WakeupReason wakeupReason = WakeupReason::WAKEUP_REASON_UNKNOWN;
+    EXPECT_EQ(powerManagerImpl->GetLastWakeupReason(wakeupReason), Core::ERROR_NONE);
+#ifdef CUSTOM_LGI
+    EXPECT_EQ(wakeupReason, WakeupReason::WAKEUP_REASON_MAINTENANCE);
+#ifdef OFFLINE_MAINT_REBOOT
+    EXPECT_TRUE(static_cast<bool>(
+        powerManagerImpl->_powerController._rebootController->_maintenanceReboot));
+#endif
+    wakeupReason = WakeupReason::WAKEUP_REASON_UNKNOWN;
+    EXPECT_EQ(powerManagerImpl->_deepSleepController.GetLastWakeupReason(wakeupReason),
+              Core::ERROR_NONE);
+    EXPECT_EQ(wakeupReason, WakeupReason::WAKEUP_REASON_MAINTENANCE);
+#else
+    EXPECT_EQ(wakeupReason, WakeupReason::WAKEUP_REASON_TIMER);
+#endif
 
     status = powerManagerImpl->Unregister(&(*modeChanged));
     EXPECT_EQ(status, Core::ERROR_NONE);
@@ -4010,7 +4118,7 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupSequentialConsumptionAcrossMulti
             [](const int timeout) {
                 // ~20s remaining until schedule3 (nearest of the 3).
                 EXPECT_GE(timeout, 15);
-                EXPECT_LE(timeout, 20);
+                EXPECT_LE(timeout, 21);
             }))
         .WillOnce(::testing::Invoke(
             [](const int timeout) {
@@ -4020,16 +4128,18 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupSequentialConsumptionAcrossMulti
             }))
         .WillOnce(::testing::Invoke(
             [](const int timeout) {
-                // schedule1 already expired/dropped -> deterministic fallback value we
-                // pre-armed via SetDeepSleepTimer(), not the random maintenance window.
-                EXPECT_EQ(timeout, 55);
+#ifdef CUSTOM_LGI
+                EXPECT_EQ(timeout, 0);
+#else
+                EXPECT_EQ(timeout, 2);
+#endif
             }));
 
     EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_SetDeepSleep(::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Invoke(
             [](uint32_t deep_sleep_timeout, bool* isGPIOWakeup, bool networkStandby) {
                 EXPECT_GE(deep_sleep_timeout, 15U);
-                EXPECT_LE(deep_sleep_timeout, 20U);
+                EXPECT_LE(deep_sleep_timeout, 21U);
                 EXPECT_TRUE(nullptr != isGPIOWakeup);
                 EXPECT_EQ(networkStandby, false);
                 *isGPIOWakeup = false;
@@ -4048,14 +4158,15 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupSequentialConsumptionAcrossMulti
             }))
         .WillOnce(::testing::Invoke(
             [](uint32_t deep_sleep_timeout, bool* isGPIOWakeup, bool networkStandby) {
-                // Deterministic fallback (SetDeepSleepTimer(55) armed below); schedule1
-                // has already expired and is no longer the "nearest" schedule.
-                EXPECT_EQ(deep_sleep_timeout, 55U);
+#ifdef CUSTOM_LGI
+                EXPECT_EQ(deep_sleep_timeout, 0U);
+#else
+                EXPECT_EQ(deep_sleep_timeout, 2U);
+#endif
                 EXPECT_TRUE(nullptr != isGPIOWakeup);
                 EXPECT_EQ(networkStandby, false);
                 *isGPIOWakeup = false;
-                // No real sleep here - this is just a default maintenance timer, not a
-                // scheduled wakeup, so we don't want the test to actually wait ~55s.
+
                 return DEEPSLEEPMGR_SUCCESS;
             }));
 
@@ -4075,14 +4186,6 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupSequentialConsumptionAcrossMulti
     status = powerManagerImpl->Register(&(*deepSleepTimeout));
     EXPECT_EQ(status, Core::ERROR_NONE);
 
-    // Arm a deterministic default/maintenance timeout up front. It is irrelevant while
-    // any schedule is pending (a pending schedule always takes precedence - see
-    // DeepSleepWakeupSettings::timeout()), but makes step 4's fallback path
-    // deterministic in CI instead of depending on the random maintenance-window
-    // calculation in Settings::getWakeupTime().
-    status = powerManagerImpl->SetDeepSleepTimer(55);
-    EXPECT_EQ(status, Core::ERROR_NONE);
-
     const time_t timeA = time(nullptr);
     status = powerManagerImpl->ScheduleDeepSleepWakeup(timeA + 60, "requestor1");
     EXPECT_EQ(status, Core::ERROR_NONE);
@@ -4094,6 +4197,20 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupSequentialConsumptionAcrossMulti
     int keyCode = 0;
     PowerState newState  = PowerState::POWER_STATE_UNKNOWN;
     PowerState prevState = PowerState::POWER_STATE_UNKNOWN;
+
+#ifndef CUSTOM_LGI
+    // The upstream timeout path uses the explicit timer rather than the nearest
+    // STG schedule, so arm it to expire just after the next scheduled wakeup.
+    auto armTimerForSchedule = [&](const time_t scheduleTime) {
+        int timeout = static_cast<int>(scheduleTime - time(nullptr) + 1);
+        if (timeout < 1) {
+            timeout = 1;
+        }
+        const uint32_t timerStatus = powerManagerImpl->SetDeepSleepTimer(timeout);
+        EXPECT_EQ(timerStatus, Core::ERROR_NONE);
+    };
+    armTimerForSchedule(timeA + 20);
+#endif
 
     // --- Step 1: enter deep sleep, expect wakeup for schedule3 (nearest, ~20s) ---
     wg.Add();
@@ -4107,6 +4224,9 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupSequentialConsumptionAcrossMulti
     EXPECT_EQ(prevState, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP);
 
     // --- Step 2: enter deep sleep again, expect wakeup for schedule2 (~20s remaining) ---
+#ifndef CUSTOM_LGI
+    armTimerForSchedule(timeA + 40);
+#endif
     wg.Add();
     status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
     EXPECT_EQ(status, Core::ERROR_NONE);
@@ -4125,11 +4245,17 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupSequentialConsumptionAcrossMulti
     }
     // A couple of extra seconds' buffer so schedule1 is unambiguously in the past.
     std::this_thread::sleep_for(std::chrono::seconds(2));
+    powerManagerImpl->_wakeupScheduleRegister->getNearestWakeupSchedule();
 
-    // --- Step 4: enter deep sleep once more. schedule1 already expired without being
-    // slept through, so it is dropped (not consumed) and we fall back to the default
-    // maintenance timeout (55s, armed above). Under CUSTOM_LGI this fallback wakes to
-    // STANDBY; otherwise it wakes to LIGHT_SLEEP. ---
+#ifndef CUSTOM_LGI
+    // No future STG schedule remains; use a short explicit timer for the final
+    // upstream deep-sleep wakeup.
+    status = powerManagerImpl->SetDeepSleepTimer(2);
+    EXPECT_EQ(status, Core::ERROR_NONE);
+#endif
+
+    // --- Step 4: enter deep sleep after the last future schedule expires. CUSTOM_LGI
+    // uses zero when no schedule remains; the upstream build uses the explicit timer. ---
     wg.Add();
     status = powerManagerImpl->SetPowerState(keyCode, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l1-test");
     EXPECT_EQ(status, Core::ERROR_NONE);

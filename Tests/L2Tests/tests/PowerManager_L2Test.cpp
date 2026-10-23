@@ -1625,10 +1625,17 @@ TEST_F(PowerManager_L2Test, MaintenanceWakeup_CustomLgi_ReportsMaintenanceAndAll
     EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_DeepSleepWakeup())
         .WillOnce(::testing::Return(DEEPSLEEPMGR_SUCCESS));
 
+    const uint64_t maintenanceWakeupTime = static_cast<uint64_t>(time(nullptr) + 2);
+    EXPECT_EQ(PowerManagerPlugin->ScheduleDeepSleepWakeup(maintenanceWakeupTime, "maintenance"),
+              Core::ERROR_NONE);
+
     EXPECT_EQ(PowerManagerPlugin->SetPowerState(0, PowerState::POWER_STATE_STANDBY_DEEP_SLEEP, "l2-maintenance"),
               Core::ERROR_NONE);
     EXPECT_TRUE(mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED)
                 & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+
+    std::this_thread::sleep_until(std::chrono::system_clock::from_time_t(
+        static_cast<time_t>(maintenanceWakeupTime + 1)));
 
     {
         std::lock_guard<std::mutex> lock(wakeupMutex);
@@ -2422,6 +2429,17 @@ TEST_F(PowerManager_L2Test, ScheduleDeepSleepWakeupInvalidRequestor)
                 uint32_t status = PowerManagerPlugin->ScheduleDeepSleepWakeup(futureTime, "test app");
                 TEST_LOG("ScheduleDeepSleepWakeup with space result: %u", status);
                 EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+                status = PowerManagerPlugin->ScheduleDeepSleepWakeup(futureTime + 1, "pwrmgr_internal");
+                EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+                status = PowerManagerPlugin->ScheduleDeepSleepWakeup(futureTime + 2, "pwrmgr_internal_timer");
+                EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+                const time_t maintenanceTime = futureTime + 1;
+                status = PowerManagerPlugin->ScheduleDeepSleepWakeup(maintenanceTime, "maintenance");
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                status = PowerManagerPlugin->CancelScheduledDeepSleepWakeups(maintenanceTime, "maintenance");
+                EXPECT_EQ(status, Core::ERROR_NONE);
 
                 PowerManagerPlugin->Release();
             }

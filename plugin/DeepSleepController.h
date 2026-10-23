@@ -20,6 +20,7 @@
 
 #include <map>         // for map
 #include <memory>      // for unique_ptr, operator!=
+#include <atomic>
 #include <stdint.h>    // for uint32_t
 #include <string>      // for string
 #include <type_traits> // for is_base_of
@@ -84,47 +85,27 @@ public:
     uint32_t timeout() const
     {
 #ifdef CUSTOM_LGI
-        _maintenanceWakeupSet = false ;
-#endif
-        if (_wakeupScheduleRegister != nullptr) {
-            auto nearest = _wakeupScheduleRegister->getNearestWakeupSchedule();
-            if (nearest != nullptr) {
-                const time_t nowTime = time(nullptr);
-                if (nowTime == static_cast<time_t>(-1)) {
-                    return _settings.deepSleepTimeout();
-                }
-                const auto now = static_cast<WakeupScheduleRegister::UnixTime>(nowTime);
-                const uint32_t secondsUntilWakeup = (nearest->unixTime > now)
-                    ? static_cast<uint32_t>(nearest->unixTime - now)
-                    : 1U;
-                return secondsUntilWakeup;
-            }
-        }
+        ensureMaintenanceWakeupScheduled();
 
+        const uint32_t wakeupAfterTimeout = scheduledTimeout();
+        LOGINFO("Deep Sleep timer scheduled timer returned :%d", wakeupAfterTimeout);
+        return wakeupAfterTimeout;
+#else
         if (_isDeepSleepTimeoutSet) {
             LOGINFO("Deep Sleep timer user set timer returned");
             return _settings.deepSleepTimeout();
         }
-#ifdef CUSTOM_LGI
-        if (_maintenanceConfigUpdated) {
-            LOGINFO("Deep Sleep timer custom maintenance returned");
-            _maintenanceWakeupSet = true ;
-            return getCustomMaintenanceWakeupTime();
-        }
-#endif
         LOGINFO("Deep Sleep timer upstream returned");
-
-#ifdef CUSTOM_LGI
-        _maintenanceWakeupSet = true ;
-#endif
         return getWakeupTime();
+#endif
     }
 
 #ifdef CUSTOM_LGI
-    bool isMaintenanceWakeupScheduled() const
-    {
-        return _maintenanceWakeupSet;
-    }
+    /*  Get Wakeup timeout for custom maintenance.
+        Wakeup the box to do Maintenance related activities.
+    */
+    uint32_t getCustomMaintenanceWakeupTime() const;
+    void ensureMaintenanceWakeupScheduled() const;
 #endif
 
 private:
@@ -143,14 +124,6 @@ private:
     /* Secure 32-bit random number from /dev/urandom. */
     uint32_t secure_random() const;
 
-#ifdef CUSTOM_LGI
-    /*  Get Wakeup timeout for custom maintenance.
-        Wakeup the box to do Maintenance related activities.
-    */
-    uint32_t getCustomMaintenanceWakeupTime() const;
-#endif
-
-private:
     Settings& _settings;
     WakeupScheduleRegister* _wakeupScheduleRegister;
     bool _isDeepSleepTimeoutSet;
@@ -158,9 +131,6 @@ private:
 
     /* Flags for maintenance wakeup */
     bool _maintenanceConfigUpdated = false ;
-#ifdef CUSTOM_LGI
-    mutable bool _maintenanceWakeupSet{false} ;
-#endif
     /* Maintenance window related RFC params */
     std::vector<int> _fixedStarts ;
     uint32_t _randomDelay  = 0 ;
@@ -171,6 +141,9 @@ private:
     bool fetchMaintenanceWakeupRFCValueInt(const char* key, uint32_t& param_value);
     bool fetchMaintenanceWakeupRFCValueString(const char* key, std::string& param_values);
     void updateMaintenanceWakeupConfig();
+    uint32_t secondsUntilWakeup(
+        const std::unique_ptr<WakeupScheduleRegister::NearestWakeupSchedule>& schedule) const;
+    uint32_t scheduledTimeout() const;
 };
 
 class DeepSleepController {
@@ -233,14 +206,14 @@ public:
 
     uint32_t GetLastWakeupReason(WakeupReason& wakeupReason) const;
 
+#ifdef CUSTOM_LGI
+    void SetLastWakeupWasMaintenance(const bool maintenance);
+#endif
+
     uint32_t GetLastWakeupKeyCode(int& keyCode) const;
 
     // activate deep sleep mode
-#ifdef CUSTOM_LGI
-    uint32_t Activate(uint32_t timeOut, bool nwStandbyMode, bool isMaintenanceWakeupScheduled);
-#else
     uint32_t Activate(uint32_t timeOut, bool nwStandbyMode);
-#endif
 
     // deactivate deep sleep mode
     uint32_t Deactivate();
@@ -294,10 +267,6 @@ private:
     DeepSleepState _deepSleepState;
     uint32_t _deepSleepDelaySec;         // Duration to wait before entering deep sleep mode
     uint32_t _deepSleepWakeupTimeoutSec; // Total duration for which the system remains in deep sleep mode
-#ifdef CUSTOM_LGI
-    std::shared_ptr<std::atomic<bool>> _maintenanceWakeupScheduled{std::make_shared<std::atomic<bool>>(false)};
-#endif
-
     WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> _activateJob;       // Queued Activate() -> performActivate() job
     WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> _deepSleepDelayJob; // Job to handle delay before entering deepsleep
 
@@ -312,5 +281,9 @@ private:
     bool _nwStandbyMode; // Flag to indicate if network standby mode is enabled
 
     std::shared_ptr<AbortState> _abortState;
+#ifdef CUSTOM_LGI
+    std::shared_ptr<std::atomic<bool>> _lastWakeupWasMaintenance{
+        std::make_shared<std::atomic<bool>>(false)};
+#endif
     std::shared_ptr<std::mutex> _timingMutex;
 };
