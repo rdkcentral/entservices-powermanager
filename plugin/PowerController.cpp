@@ -153,18 +153,14 @@ uint32_t PowerController::SetPowerState(const int keyCode, const PowerState powe
 uint32_t PowerController::ActivateDeepSleep()
 {
     const uint32_t timeout = _deepSleepWakeupSettings.timeout();
+    // Zero disables the timer wake source; other configured sources can still wake the device.
     uint32_t errCode = SetWakeupSourceConfig({{ WakeupSrcType::WAKEUP_SRC_TIMER, timeout != 0 }});
     if (errCode != WPEFramework::Core::ERROR_NONE) {
         LOGINFO("Failed to set TIMER wakeup source config: %u", errCode);
         return errCode;
     }
-#ifdef CUSTOM_LGI
-    return _deepSleep.Activate(timeout,
-                               _settings.nwStandbyMode(),
-                               _deepSleepWakeupSettings.isMaintenanceWakeupScheduled());
-#else
+
     return _deepSleep.Activate(timeout, _settings.nwStandbyMode());
-#endif
 }
 
 uint32_t PowerController::SetNetworkStandbyMode(const bool standbyMode)

@@ -1303,6 +1303,13 @@ class WakeupScheduleRegister
         return p != input ? result : false;
     }
 
+    static bool isValidClientRequestorId(const char* input)
+    {
+        static const char reservedPrefix[] = "pwrmgr_internal";
+        return isAlphaNumeric(input) &&
+               std::strncmp(input, reservedPrefix, sizeof(reservedPrefix) - 1) != 0;
+    }
+
   private:
     const char* powerStateToString(PowerState powerState)
     {
