@@ -3354,6 +3354,38 @@ TEST_F(TestPowerManager, DeepSleepFailure)
 }
 #endif // CUSTOM_LGI
 
+TEST_F(TestPowerManager, DefaultPlatformSelection)
+{
+#ifdef CUSTOM_LGI
+    EXPECT_EQ(typeid(*powerManagerImpl->_powerController._platform), typeid(PowerImplLgi));
+#else
+    EXPECT_EQ(typeid(*powerManagerImpl->_powerController._platform), typeid(PowerImpl));
+#endif
+}
+
+TEST_F(TestPowerManager, DefaultPlatformRebootForwardsArguments)
+{
+    ::testing::InSequence sequence;
+    EXPECT_CALL(*p_wrapsImplMock, v_secure_system(::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [](const char* command, va_list) {
+                EXPECT_STREQ(command, "echo 0 > /opt/.rebootFlag");
+                return 0;
+            }));
+    EXPECT_CALL(*p_wrapsImplMock, v_secure_system(::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke(
+            [](const char* command, va_list args) {
+                EXPECT_STREQ(command, "/lib/rdk/rebootNow.sh -s '%s' -r '%s' -o '%s'");
+                EXPECT_STREQ(va_arg(args, const char*), "L1Test");
+                EXPECT_STREQ(va_arg(args, const char*), "L1Test-custom");
+                EXPECT_STREQ(va_arg(args, const char*), "L1Test-other");
+                return 0;
+            }));
+
+    EXPECT_EQ(powerManagerImpl->_powerController._platform->Reboot("L1Test", "L1Test-custom", "L1Test-other"),
+        Core::ERROR_NONE);
+}
+
 TEST_F(TestPowerManager, Reboot)
 {
     Core::ProxyType<RebootEvent> rebootEvent = Core::ProxyType<RebootEvent>::Create();
