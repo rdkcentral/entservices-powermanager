@@ -1,0 +1,4 @@
+deepsleep:
+  command: "DEEPSLEEP_WAKEUP"
+  trigger: RCU_RF4CE
+  keycode: 8
