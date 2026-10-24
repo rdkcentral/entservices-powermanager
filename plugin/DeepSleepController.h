@@ -22,7 +22,10 @@
 #include <memory>      // for unique_ptr, operator!=
 #include <stdint.h>    // for uint32_t
 #include <string>      // for string
-#include <utility>     // for move
+#include <type_traits> // for is_base_of
+#include <utility>     // for forward, move
+#include <condition_variable>
+#include <mutex>
 
 #include <core/Proxy.h>               // for ProxyType
 #include <core/Trace.h>               // for ASSERT
@@ -118,6 +121,17 @@ class DeepSleepController {
         Completed,       /*!< Deepsleep operation completed */
     } DeepSleepState;
 
+    struct AbortState {
+        std::mutex mutex;
+        std::condition_variable cv;
+        bool requested;
+
+        AbortState()
+            : requested(false)
+        {
+        }
+    };
+
 public:
     ~DeepSleepController();
     class INotification {
@@ -182,10 +196,18 @@ public:
 
     inline std::chrono::steady_clock::duration Elapsed()
     {
-        if (_deepsleepStartTime.time_since_epoch() == std::chrono::steady_clock::duration::zero()) {
+        Timestamp deepsleepStartTime;
+
+        {
+            std::lock_guard<std::mutex> lock(*_timingMutex);
+            deepsleepStartTime = _deepsleepStartTime;
+        }
+
+        if (deepsleepStartTime.time_since_epoch() == std::chrono::steady_clock::duration::zero()) {
             return std::chrono::steady_clock::duration::zero();
         }
-        return MonotonicClock::now() - _deepsleepStartTime;
+
+        return MonotonicClock::now() - deepsleepStartTime;
     }
 
 private:
@@ -194,6 +216,10 @@ private:
     void enterDeepSleepNow();
     void deepSleepTimerWakeup();
     void performActivate(uint32_t timeOut, bool nwStandbyMode);
+    bool waitForAbortableDelay(const std::chrono::seconds& delay);
+    void requestAbortDeepSleep();
+    void clearAbortDeepSleep();
+    bool isAbortDeepSleepRequested();
 
 private:
     INotification& _parent;
@@ -207,4 +233,7 @@ private:
     WPEFramework::Core::ProxyType<WPEFramework::Core::IDispatch> _deepSleepDelayJob; // Job to handle delay before entering deepsleep
 
     bool _nwStandbyMode; // Flag to indicate if network standby mode is enabled
+
+    std::shared_ptr<AbortState> _abortState;
+    std::shared_ptr<std::mutex> _timingMutex;
 };
