@@ -430,6 +430,8 @@ uint32_t DeepSleepController::SetWakeupSrc(WakeupSrcType wakeSrcType, bool enabl
 uint32_t DeepSleepController::CacheBootReason(const std::string& bootReason)
 {
     return platform().CacheBootReason(bootReason);
+}
+
 bool DeepSleepController::waitForAbortableDelay(const std::chrono::seconds& delay)
 {
     std::unique_lock<std::mutex> lock(_abortState->mutex);
