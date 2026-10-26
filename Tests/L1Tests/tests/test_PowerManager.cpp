@@ -259,6 +259,13 @@ public:
         setupWg.Add(1);
         powerManagerImpl = Core::ProxyType<Plugin::PowerManagerImplementation>::Create();
 
+#ifndef CUSTOM_LGI
+        // Exercise the upstream build's no-schedule configuration even when CI
+        // passes a schedules-file path to the shared build.
+        powerManagerImpl->_powerController._deepSleepWakeupSettings._wakeupScheduleRegister = nullptr;
+        powerManagerImpl->_wakeupScheduleRegister.reset();
+#endif
+
         TEST_LOG("MIL: Await mfrGetTemperature to start testCase");
         setupWg.Wait();
 
@@ -3748,6 +3755,21 @@ TEST_F(TestPowerManager, OverTemperatureGraceInterval)
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
 }
 
+#ifndef CUSTOM_LGI
+TEST_F(TestPowerManager, WakeupScheduleApisUnavailableWithoutCustomLgi)
+{
+    ASSERT_EQ(powerManagerImpl->_wakeupScheduleRegister, nullptr);
+
+    const time_t futureTime = time(nullptr) + 300;
+    EXPECT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime, "testApp"),
+              Core::ERROR_UNAVAILABLE);
+    EXPECT_EQ(powerManagerImpl->CancelScheduledDeepSleepWakeups(futureTime, "testApp"),
+              Core::ERROR_UNAVAILABLE);
+
+    EXPECT_EQ(powerManagerImpl->SetDeepSleepTimer(10), Core::ERROR_NONE);
+    EXPECT_EQ(powerManagerImpl->_powerController._deepSleepWakeupSettings.timeout(), 10u);
+}
+#else
 TEST_F(TestPowerManager, ScheduleDeepSleepWakeupValid)
 {
     TEST_LOG(">> Test: Schedule deep sleep wakeup with valid requestor");
@@ -3885,7 +3907,9 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupMultipleSchedules)
     EXPECT_EQ(status2, Core::ERROR_NONE);
     TEST_LOG("<< Test passed");
 }
+#endif
 
+#ifdef CUSTOM_LGI
 // Verify that when the deep sleep timer expires because of a previously registered
 // ScheduleDeepSleepWakeup() schedule, the device transitions to POWER_STATE_STANDBY,
 // rather than the generic LIGHT_SLEEP fallback used when no schedule was consumed.
@@ -4012,7 +4036,9 @@ TEST_F(TestPowerManager, MaintenanceScheduleReportsMaintenanceWakeupReason)
 
     TEST_LOG("<< Test passed");
 }
+#endif
 
+#ifdef CUSTOM_LGI
 // Verify that when multiple wakeup schedules are pending, the device wakes
 // for each one in nearest-first order and consumes it (-> STANDBY), and once the last
 // registered schedule has *already expired* without the device sleeping through it,
@@ -4274,9 +4300,11 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupSequentialConsumptionAcrossMulti
 
     TEST_LOG("<< Test passed");
 }
+#endif
 
 // ---- CancelScheduledDeepSleepWakeups ----
 
+#ifdef CUSTOM_LGI
 TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsExactMatch)
 {
     TEST_LOG(">> Test: Cancel exact schedule (unixTime + requestorId both given)");
@@ -4392,6 +4420,7 @@ TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsExpiredSchedule)
 
     TEST_LOG("<< Test passed");
 }
+#endif
 
 TEST_F(TestPowerManager, RemoveAllWakeupSchedulesEmptyRegister)
 {
@@ -4412,7 +4441,7 @@ TEST_F(TestPowerManager, RemoveAllWakeupSchedulesClearsFutureAndPastSchedules)
         WakeupScheduleRegister::Successful);
     ASSERT_EQ(schedules.addWakeupSchedule(futureTime, WakeupScheduleRegister::ActiveStandby, "future"),
         WakeupScheduleRegister::Successful);
-    ASSERT_TRUE(schedules.getMostRecentlyExpiredWakeupSchedule());
+    ASSERT_TRUE(schedules.getEarliestExpiredWakeupSchedule());
     ASSERT_TRUE(schedules.anyPastScheduleMatches(expiredTime, "expired"));
 
     EXPECT_EQ(schedules.removeAllWakeupSchedules(), WakeupScheduleRegister::Successful);
@@ -4420,6 +4449,28 @@ TEST_F(TestPowerManager, RemoveAllWakeupSchedulesClearsFutureAndPastSchedules)
     EXPECT_EQ(schedules.removeWakeupSchedule(futureTime, WakeupScheduleRegister::ActiveStandby, "future"),
         WakeupScheduleRegister::Failed);
     EXPECT_EQ(schedules.removeAllWakeupSchedules(), WakeupScheduleRegister::Successful);
+}
+
+TEST_F(TestPowerManager, EarliestExpiredWakeupSchedulePreservesScheduleThatArmedWake)
+{
+    const auto now = static_cast<WakeupScheduleRegister::UnixTime>(time(nullptr));
+    const auto maintenanceTime = now - 2;
+    const auto appTime = now - 1;
+
+    WakeupScheduleRegister schedules;
+    ASSERT_EQ(schedules.addWakeupSchedule(
+        maintenanceTime, WakeupScheduleRegister::ActiveStandby, "maintenance"),
+        WakeupScheduleRegister::Successful);
+    ASSERT_EQ(schedules.addWakeupSchedule(
+        appTime, WakeupScheduleRegister::ActiveStandby, "app"),
+        WakeupScheduleRegister::Successful);
+
+    const auto expiredSchedule = schedules.getEarliestExpiredWakeupSchedule();
+    ASSERT_TRUE(expiredSchedule);
+    EXPECT_EQ(expiredSchedule->unixTime, maintenanceTime);
+    ASSERT_EQ(expiredSchedule->requestorIds.size(), 1u);
+    EXPECT_EQ(expiredSchedule->requestorIds.front(), "maintenance");
+    EXPECT_TRUE(schedules.anyPastScheduleMatches(appTime, "app"));
 }
 
 TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsPersistsAcrossReload)
@@ -4507,6 +4558,7 @@ TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsNoMatchPreservesPastSche
     remove(path.c_str());
 }
 
+#ifdef CUSTOM_LGI
 TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsInvalidRequestor)
 {
     TEST_LOG(">> Test: Cancel with invalid (non-alphanumeric) requestorId returns ERROR_INVALID_PARAMETER");
@@ -4536,3 +4588,4 @@ TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsUnixTimeOutOfRange)
 
     TEST_LOG("<< Test passed");
 }
+#endif

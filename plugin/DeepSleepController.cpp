@@ -370,8 +370,7 @@ void DeepSleepWakeupSettings::ensureMaintenanceWakeupScheduled() const
         return;
     }
 
-    if (POWERMANAGER_SCHEDULES_FILE == nullptr || POWERMANAGER_SCHEDULES_FILE[0] == '\0' ||
-        _wakeupScheduleRegister->storeWakeupSchedulesToFile(POWERMANAGER_SCHEDULES_FILE)
+    if (_wakeupScheduleRegister->storeWakeupSchedulesToFile(POWERMANAGER_SCHEDULES_FILE)
                                         != WakeupScheduleRegister::Successful) {
         _wakeupScheduleRegister->removeWakeupSchedule(
                                         unixTime, WakeupScheduleRegister::ActiveStandby, "maintenance");
@@ -929,22 +928,23 @@ uint32_t DeepSleepWakeupSettings::secondsUntilWakeup(
                                     : 1U;
 }
 
-uint32_t DeepSleepWakeupSettings::scheduledTimeout() const
+ bool DeepSleepWakeupSettings::scheduledTimeout(uint32_t* value) const
 {
     if (_wakeupScheduleRegister == nullptr) {
-        return 0;
+        return false;
     }
 
     auto nearest = _wakeupScheduleRegister->getNearestWakeupSchedule();
     if (nearest != nullptr)
     {
-        return secondsUntilWakeup(nearest);
+        *value = secondsUntilWakeup(nearest);
     }
     else
     {
         LOGINFO("No schedule available to be scheduled");
-        return 0;
+        *value = 0;
     }
+    return true ;
 }
 
 bool DeepSleepController::waitForAbortableDelay(const std::chrono::seconds& delay)

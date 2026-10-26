@@ -379,7 +379,7 @@ namespace Plugin {
          if (prevState != newState &&
              (newState == PowerState::POWER_STATE_ON ||
               newState == PowerState::POWER_STATE_STANDBY_DEEP_SLEEP)) {
-            LOGINFO("Cancel pending maintenance reboot before powering ON");
+            LOGINFO("Cancel pending maintenance reboot before state change to :%s",util::str(newState));
             _powerController.ClearMaintenanceReboot();
         }
 #endif
@@ -731,38 +731,36 @@ namespace Plugin {
 
     Core::hresult PowerManagerImplementation::SetDeepSleepTimer(const int timeOut)
     {
+        uint32_t errorCode = Core::ERROR_NONE;
         LOGINFO(">> timeOut: %d", timeOut);
 
         int timeOutVal = timeOut > 86400 ? 0 : timeOut;
 
-#ifdef CUSTOM_LGI
-        if (!_wakeupScheduleRegister) {
-            LOGERR("Cannot set deep-sleep timer without wakeup-schedule support");
-            return Core::ERROR_UNAVAILABLE;
-        }
+        if (_wakeupScheduleRegister) {
+            if (timeOutVal > 0) {
+                const time_t now = time(nullptr);
+                if (now == static_cast<time_t>(-1) ||
+                    static_cast<uint64_t>(now) + static_cast<uint32_t>(timeOutVal) > UINT32_MAX) {
+                    LOGERR("Cannot calculate a valid STG time for deep-sleep timer");
+                    return Core::ERROR_GENERAL;
+                }
+                const uint64_t newScheduleTime =
+                        static_cast<uint64_t>(now) + static_cast<uint32_t>(timeOutVal);
 
-        if (timeOutVal > 0) {
-            const time_t now = time(nullptr);
-            if (now == static_cast<time_t>(-1) ||
-                static_cast<uint64_t>(now) + static_cast<uint32_t>(timeOutVal) > UINT32_MAX) {
-                LOGERR("Cannot calculate a valid STG time for deep-sleep timer");
-                return Core::ERROR_GENERAL;
-            }
-            const uint64_t newScheduleTime =
-                static_cast<uint64_t>(now) + static_cast<uint32_t>(timeOutVal);
+                const uint32_t scheduleStatus =
+                        ScheduleDeepSleepWakeup(newScheduleTime, "deepsleeptimer");
 
-            const uint32_t scheduleStatus =
-                ScheduleDeepSleepWakeup(newScheduleTime, "deepsleeptimer");
-            if (scheduleStatus != Core::ERROR_NONE) {
-                LOGERR("Failed to add deep-sleep timer to STG, errorCode: %u", scheduleStatus);
-                return scheduleStatus;
+                if (scheduleStatus != Core::ERROR_NONE) {
+                    LOGERR("Failed to add deep-sleep timer to STG, errorCode: %u", scheduleStatus);
+                    return scheduleStatus;
+                }
             }
+            return errorCode ;
         }
-#endif
 
         _apiLock.Lock();
 
-        uint32_t errorCode = _powerController.SetDeepSleepTimer(timeOutVal);
+        errorCode = _powerController.SetDeepSleepTimer(timeOutVal);
 
         _apiLock.Unlock();
 
@@ -1644,7 +1642,7 @@ namespace Plugin {
         // Wakeup-schedule feature is optional; nothing to consume/persist when it's disabled.
         if (_wakeupScheduleRegister)
         {
-            auto schedule = timerWakeup ? _wakeupScheduleRegister->getMostRecentlyExpiredWakeupSchedule() : nullptr;
+            auto schedule = timerWakeup ? _wakeupScheduleRegister->getEarliestExpiredWakeupSchedule() : nullptr;
             scheduleConsumed = (schedule != nullptr);
 
             if (schedule != nullptr)

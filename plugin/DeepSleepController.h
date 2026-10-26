@@ -86,18 +86,20 @@ public:
     {
 #ifdef CUSTOM_LGI
         ensureMaintenanceWakeupScheduled();
+#endif
+        uint32_t wakeupAfterTimeout ;
+        if(scheduledTimeout(&wakeupAfterTimeout))
+        {
+            LOGINFO("Deep Sleep timer scheduled timer returned :%d", wakeupAfterTimeout);
+            return wakeupAfterTimeout ;
+        }
 
-        const uint32_t wakeupAfterTimeout = scheduledTimeout();
-        LOGINFO("Deep Sleep timer scheduled timer returned :%d", wakeupAfterTimeout);
-        return wakeupAfterTimeout;
-#else
         if (_isDeepSleepTimeoutSet) {
             LOGINFO("Deep Sleep timer user set timer returned");
             return _settings.deepSleepTimeout();
         }
         LOGINFO("Deep Sleep timer upstream returned");
         return getWakeupTime();
-#endif
     }
 
 #ifdef CUSTOM_LGI
@@ -143,7 +145,7 @@ private:
     void updateMaintenanceWakeupConfig();
     uint32_t secondsUntilWakeup(
         const std::unique_ptr<WakeupScheduleRegister::NearestWakeupSchedule>& schedule) const;
-    uint32_t scheduledTimeout() const;
+    bool scheduledTimeout(uint32_t* value) const;
 };
 
 class DeepSleepController {

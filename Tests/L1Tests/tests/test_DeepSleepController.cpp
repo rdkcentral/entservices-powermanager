@@ -253,6 +253,7 @@ TEST_F(TestDeepSleepWakeupSettings, ConfigUpdateIsIdempotentOnceSucceeded)
  * legacy upstream calculation.
  * ------------------------------------------------------------------------ */
 
+#ifdef CUSTOM_LGI
 TEST_F(TestDeepSleepWakeupSettings, Timeout_UsesNearestScheduleRegardlessOfRequestor)
 {
     Settings settings = makeSettings();
@@ -269,23 +270,18 @@ TEST_F(TestDeepSleepWakeupSettings, Timeout_UsesNearestScheduleRegardlessOfReque
 
     scheduledSettings.SetTimeout(1234);
 
-#ifdef CUSTOM_LGI
     EXPECT_NEAR(scheduledSettings.timeout(), 10u, 2u);
-#else
-    EXPECT_EQ(scheduledSettings.timeout(), 1234u);
-#endif
 }
+#endif
 
 #ifdef CUSTOM_LGI
 TEST_F(TestDeepSleepWakeupSettings, Timeout_ReturnsZeroWhenNoScheduleIsAvailable)
 {
     Settings settings = makeSettings();
-    DeepSleepWakeupSettings dsws(settings);
     WakeupScheduleRegister schedules;
     DeepSleepWakeupSettings withEmptyScheduleRegistry(settings, &schedules);
 
     EXPECT_EQ(withEmptyScheduleRegistry.timeout(), 0u);
-    EXPECT_EQ(dsws.timeout(), 0u);
 }
 
 TEST_F(TestDeepSleepWakeupSettings, Timeout_ReturnsZeroWhenMaintenanceScheduleCannotBeCreated)
