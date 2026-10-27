@@ -379,7 +379,7 @@ namespace Plugin {
          if (prevState != newState &&
              (newState == PowerState::POWER_STATE_ON ||
               newState == PowerState::POWER_STATE_STANDBY_DEEP_SLEEP)) {
-            LOGINFO("Cancel pending maintenance reboot before powering ON");
+            LOGINFO("Cancel pending maintenance reboot before state change to :%s",util::str(newState));
             _powerController.ClearMaintenanceReboot();
         }
 #endif
@@ -731,13 +731,36 @@ namespace Plugin {
 
     Core::hresult PowerManagerImplementation::SetDeepSleepTimer(const int timeOut)
     {
+        uint32_t errorCode = Core::ERROR_NONE;
         LOGINFO(">> timeOut: %d", timeOut);
 
         int timeOutVal = timeOut > 86400 ? 0 : timeOut;
 
+        if (_wakeupScheduleRegister) {
+            if (timeOutVal > 0) {
+                const time_t now = time(nullptr);
+                if (now == static_cast<time_t>(-1) ||
+                    static_cast<uint64_t>(now) + static_cast<uint32_t>(timeOutVal) > UINT32_MAX) {
+                    LOGERR("Cannot calculate a valid STG time for deep-sleep timer");
+                    return Core::ERROR_GENERAL;
+                }
+                const uint64_t newScheduleTime =
+                        static_cast<uint64_t>(now) + static_cast<uint32_t>(timeOutVal);
+
+                const uint32_t scheduleStatus =
+                        ScheduleDeepSleepWakeup(newScheduleTime, "deepsleeptimer");
+
+                if (scheduleStatus != Core::ERROR_NONE) {
+                    LOGERR("Failed to add deep-sleep timer to STG, errorCode: %u", scheduleStatus);
+                    return scheduleStatus;
+                }
+            }
+            return errorCode ;
+        }
+
         _apiLock.Lock();
 
-        uint32_t errorCode = _powerController.SetDeepSleepTimer(timeOutVal);
+        errorCode = _powerController.SetDeepSleepTimer(timeOutVal);
 
         _apiLock.Unlock();
 
@@ -763,8 +786,9 @@ namespace Plugin {
 
         if (!requestorId.empty())
         {
-            if (!_wakeupScheduleRegister->isAlphaNumeric(requestorId.c_str())) {
-                LOGERR("requestorId contains invalid characters: '%s'", requestorId.c_str());
+            if (!WakeupScheduleRegister::isValidClientRequestorId(requestorId.c_str())) {
+                LOGERR("requestorId is invalid or uses the reserved pwrmgr_internal prefix: '%s'",
+                    requestorId.c_str());
                 _apiLock.Unlock();
                 LOGINFO("<< errorCode: %u", errorCode);
                 return errorCode;
@@ -1200,23 +1224,37 @@ namespace Plugin {
         }
         _modeChangeController = controller;
         const int transactionId = controller->TransactionId();
-        const uint32_t timeOut = isSyncStateChange(currentState, newState) ? 0 : POWER_MODE_PRECHANGE_TIMEOUT_SEC;
+        const bool synchronous = isSyncStateChange(currentState, newState);
+        const uint32_t timeOut = synchronous ? 0 : POWER_MODE_PRECHANGE_TIMEOUT_SEC;
         AddRef();
 
-        return [this, keyCode, currentState, newState, reason, finished, controller, transactionId, timeOut]() {
-            submitPowerModePreChangeEvent(currentState, newState, transactionId, timeOut);
+        return [this, keyCode, currentState, newState, reason, finished, controller,
+                transactionId, timeOut, synchronous]() {
             const std::weak_ptr<PreModeChangeController> weakController(controller);
-            _apiLock.Lock();
-            auto completion = controller->Arm(static_cast<uint64_t>(timeOut) * 1000,
-                [this, keyCode, currentState, newState, reason, finished, weakController](bool, bool aborted) {
-                    const bool restarted = !aborted && powerModePreChangeCompletionHandler(
-                        keyCode, currentState, newState, reason, weakController, finished);
-                    if (!restarted && finished) {
-                        finished();
-                    }
-                    Release();
-                });
-            _apiLock.Unlock();
+            std::function<void()> completion;
+            const auto armController = [&]() {
+                _apiLock.Lock();
+                completion = controller->Arm(static_cast<uint64_t>(timeOut) * 1000,
+                    [this, keyCode, currentState, newState, reason, finished, weakController](bool, bool aborted) {
+                        const bool restarted = !aborted && powerModePreChangeCompletionHandler(
+                            keyCode, currentState, newState, reason, weakController, finished);
+                        if (!restarted && finished) {
+                            finished();
+                        }
+                        Release();
+                    });
+                _apiLock.Unlock();
+            };
+
+            if (synchronous) {
+                // Submit callbacks before arming a zero-timeout synchronous round.
+                submitPowerModePreChangeEvent(currentState, newState, transactionId, timeOut);
+                armController();
+            } else {
+                armController();
+                submitPowerModePreChangeEvent(currentState, newState, transactionId, timeOut);
+            }
+
             if (completion) {
                 completion();
             }
@@ -1589,20 +1627,6 @@ namespace Plugin {
 
         LOGINFO(">> Woken up from deep sleep with reason: %d", wakeupReason);
 
-#ifdef CUSTOM_LGI
-        const bool isMaintenanceWakeup = ( wakeupReason == WakeupReason::WAKEUP_REASON_MAINTENANCE );
-        if(isMaintenanceWakeup)
-        {
-            _powerController.HandleRebootOnMaintenance([this](
-                const std::shared_ptr<RebootController::MaintenanceRebootGuard>& maintenanceGuard) {
-                rebootForMaintenance(maintenanceGuard);
-            });
-        } else {
-            /* Clearing for any pending maintenance reboot callback,
-               when the box wakeup is not due to maintenance */
-            _powerController.ClearMaintenanceReboot();
-        }
-#endif
         // DeepSleepController::deepSleepTimerWakeup() fires this callback for every non-user wake
         // (including LAN/WiFi/etc.), not only genuine timer expiry. Only consume a wakeup schedule
         // when the platform actually reported a TIMER wakeup, otherwise an unrelated wake occurring
@@ -1610,12 +1634,15 @@ namespace Plugin {
         const bool timerWakeup = (wakeupReason == WakeupReason::WAKEUP_REASON_TIMER);
 
         bool scheduleConsumed = false;
+#ifdef CUSTOM_LGI
+        bool maintenanceScheduleConsumed = false;
+#endif
         string requestors;
 
         // Wakeup-schedule feature is optional; nothing to consume/persist when it's disabled.
         if (_wakeupScheduleRegister)
         {
-            auto schedule = timerWakeup ? _wakeupScheduleRegister->getMostRecentlyExpiredWakeupSchedule() : nullptr;
+            auto schedule = timerWakeup ? _wakeupScheduleRegister->getEarliestExpiredWakeupSchedule() : nullptr;
             scheduleConsumed = (schedule != nullptr);
 
             if (schedule != nullptr)
@@ -1623,6 +1650,10 @@ namespace Plugin {
                 for (const auto& requestor : schedule->requestorIds)
                 {
                     requestors += requestors.empty() ? requestor : " " + requestor;
+#ifdef CUSTOM_LGI
+                    maintenanceScheduleConsumed =
+                        maintenanceScheduleConsumed || requestor == "maintenance";
+#endif
                 }
             }
 
@@ -1631,6 +1662,23 @@ namespace Plugin {
                 LOGERR("Failed to persist wakeup schedules to '%s' after consuming schedule", POWERMANAGER_SCHEDULES_FILE);
             }
         }
+
+#ifdef CUSTOM_LGI
+        if (maintenanceScheduleConsumed) {
+            wakeupReason = WakeupReason::WAKEUP_REASON_MAINTENANCE;
+        }
+        _deepSleepController.SetLastWakeupWasMaintenance(
+            wakeupReason == WakeupReason::WAKEUP_REASON_MAINTENANCE);
+        if (wakeupReason == WakeupReason::WAKEUP_REASON_MAINTENANCE) {
+            LOGINFO("Handle the reboot on maintenance");
+            _powerController.HandleRebootOnMaintenance([this](
+                const std::shared_ptr<RebootController::MaintenanceRebootGuard>& maintenanceGuard) {
+                rebootForMaintenance(maintenanceGuard);
+            });
+        } else {
+            _powerController.ClearMaintenanceReboot();
+        }
+#endif
 
         _apiLock.Lock();
         _pendingRequestors = requestors;
@@ -1660,6 +1708,7 @@ namespace Plugin {
     void PowerManagerImplementation::onDeepSleepUserWakeup(const bool userWakeup)
     {
 #ifdef CUSTOM_LGI
+        _deepSleepController.SetLastWakeupWasMaintenance(false);
         if (userWakeup) {
             LOGINFO("Clear the maintenance reboot callback as defensive action on user wakeup");
             _powerController.ClearMaintenanceReboot();

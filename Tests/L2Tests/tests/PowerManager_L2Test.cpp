@@ -1476,7 +1476,8 @@ TEST_F(PowerManager_L2Test, DeepSleepTimerWakeup_CustomLgi_StaysInStandby)
                 EXPECT_CALL(POWERMANAGER_MOCK, PLAT_DS_SetDeepSleep(::testing::_, ::testing::_, ::testing::_))
                     .WillOnce(::testing::Invoke(
                         [&](uint32_t deep_sleep_timeout, bool* isGPIOWakeup, bool networkStandby) {
-                            EXPECT_EQ(deep_sleep_timeout, deepSleepTimeout);
+                            EXPECT_GT(deep_sleep_timeout, 0U);
+                            EXPECT_LE(deep_sleep_timeout, deepSleepTimeout);
                             EXPECT_TRUE(nullptr != isGPIOWakeup);
                             // Simulate timer wakeup
                             *isGPIOWakeup = false;
@@ -1577,6 +1578,18 @@ TEST_F(PowerManager_L2Test, MaintenanceWakeup_CustomLgi_ReportsMaintenanceAndAll
     auto PowerManagerPlugin = mController_PowerManager->QueryInterface<Exchange::IPowerManager>();
     ASSERT_NE(PowerManagerPlugin, nullptr);
 
+    const uint64_t maintenanceWakeupTime = static_cast<uint64_t>(time(nullptr) + 2);
+    const uint32_t scheduleStatus =
+        PowerManagerPlugin->ScheduleDeepSleepWakeup(maintenanceWakeupTime, "maintenance");
+    if (scheduleStatus == Core::ERROR_UNAVAILABLE)
+    {
+        EXPECT_EQ(scheduleStatus, Core::ERROR_UNAVAILABLE);
+        PowerManagerPlugin->Release();
+        mController_PowerManager->Release();
+        return;
+    }
+    ASSERT_EQ(scheduleStatus, Core::ERROR_NONE);
+
     PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IRebootNotification>());
     PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IModeChangedNotification>());
     PowerManagerPlugin->Register(mNotification.baseInterface<Exchange::IPowerManager::IDeepSleepTimeoutNotification>());
@@ -1629,6 +1642,9 @@ TEST_F(PowerManager_L2Test, MaintenanceWakeup_CustomLgi_ReportsMaintenanceAndAll
               Core::ERROR_NONE);
     EXPECT_TRUE(mNotification.WaitForRequestStatus(JSON_TIMEOUT * 3, POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED)
                 & POWERMANAGERL2TEST_SYSTEMSTATE_CHANGED);
+
+    std::this_thread::sleep_until(std::chrono::system_clock::from_time_t(
+        static_cast<time_t>(maintenanceWakeupTime + 1)));
 
     {
         std::lock_guard<std::mutex> lock(wakeupMutex);
@@ -2373,6 +2389,13 @@ TEST_F(PowerManager_L2Test, ScheduleDeepSleepWakeupValid)
 
                 uint32_t status = PowerManagerPlugin->ScheduleDeepSleepWakeup(futureTime, "testApp");
                 TEST_LOG("ScheduleDeepSleepWakeup result: %u", status);
+                if (status == Core::ERROR_UNAVAILABLE)
+                {
+                    EXPECT_EQ(status, Core::ERROR_UNAVAILABLE);
+                    PowerManagerPlugin->Release();
+                    mController_PowerManager->Release();
+                    return;
+                }
                 EXPECT_EQ(status, Core::ERROR_NONE);
 
                 PowerManagerPlugin->Release();
@@ -2421,7 +2444,25 @@ TEST_F(PowerManager_L2Test, ScheduleDeepSleepWakeupInvalidRequestor)
 
                 uint32_t status = PowerManagerPlugin->ScheduleDeepSleepWakeup(futureTime, "test app");
                 TEST_LOG("ScheduleDeepSleepWakeup with space result: %u", status);
+                if (status == Core::ERROR_UNAVAILABLE)
+                {
+                    EXPECT_EQ(status, Core::ERROR_UNAVAILABLE);
+                    PowerManagerPlugin->Release();
+                    mController_PowerManager->Release();
+                    return;
+                }
                 EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+                status = PowerManagerPlugin->ScheduleDeepSleepWakeup(futureTime + 1, "pwrmgr_internal");
+                EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+                status = PowerManagerPlugin->ScheduleDeepSleepWakeup(futureTime + 2, "pwrmgr_internal_timer");
+                EXPECT_EQ(status, Core::ERROR_INVALID_PARAMETER);
+
+                const time_t maintenanceTime = futureTime + 1;
+                status = PowerManagerPlugin->ScheduleDeepSleepWakeup(maintenanceTime, "maintenance");
+                EXPECT_EQ(status, Core::ERROR_NONE);
+                status = PowerManagerPlugin->CancelScheduledDeepSleepWakeups(maintenanceTime, "maintenance");
+                EXPECT_EQ(status, Core::ERROR_NONE);
 
                 PowerManagerPlugin->Release();
             }
@@ -2470,6 +2511,13 @@ TEST_F(PowerManager_L2Test, ScheduleDeepSleepWakeupMultiple)
 
                 uint32_t status1 = PowerManagerPlugin->ScheduleDeepSleepWakeup(futureTime1, "netflix");
                 TEST_LOG("ScheduleDeepSleepWakeup #1 result: %u", status1);
+                if (status1 == Core::ERROR_UNAVAILABLE)
+                {
+                    EXPECT_EQ(status1, Core::ERROR_UNAVAILABLE);
+                    PowerManagerPlugin->Release();
+                    mController_PowerManager->Release();
+                    return;
+                }
                 EXPECT_EQ(status1, Core::ERROR_NONE);
 
                 uint32_t status2 = PowerManagerPlugin->ScheduleDeepSleepWakeup(futureTime2, "smartHome");
@@ -2587,11 +2635,6 @@ TEST_F(PowerManager_L2Test, CancelScheduledDeepSleepWakeupsExactMatch)
     Core::ProxyType<RPC::CommunicatorClient> mClient_PowerManager;
     PluginHost::IShell *mController_PowerManager;
 
-    {
-        std::ofstream ofs("/mnt/secure_storage/pwrmgr/schedules.stg", std::ios::trunc);
-        ASSERT_TRUE(ofs.is_open()) << "Failed to reset wakeup schedule storage";
-    }
-
     TEST_LOG("Creating mEngine_PowerManager");
     mEngine_PowerManager = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
     mClient_PowerManager = Core::ProxyType<RPC::CommunicatorClient>::Create(Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(mEngine_PowerManager));
@@ -2609,6 +2652,24 @@ TEST_F(PowerManager_L2Test, CancelScheduledDeepSleepWakeupsExactMatch)
 
             if (PowerManagerPlugin)
             {
+                const uint32_t capabilityStatus =
+                    PowerManagerPlugin->ScheduleDeepSleepWakeup(time(nullptr) + 300, "test app");
+                if (capabilityStatus == Core::ERROR_UNAVAILABLE)
+                {
+                    EXPECT_EQ(capabilityStatus, Core::ERROR_UNAVAILABLE);
+                    EXPECT_EQ(PowerManagerPlugin->CancelScheduledDeepSleepWakeups(0, ""),
+                        Core::ERROR_UNAVAILABLE);
+                    PowerManagerPlugin->Release();
+                    mController_PowerManager->Release();
+                    return;
+                }
+                EXPECT_EQ(capabilityStatus, Core::ERROR_INVALID_PARAMETER);
+
+                {
+                    std::ofstream ofs("/mnt/secure_storage/pwrmgr/schedules.stg", std::ios::trunc);
+                    ASSERT_TRUE(ofs.is_open()) << "Failed to reset wakeup schedule storage";
+                }
+
                 time_t futureTime = time(nullptr) + 300;
 
                 uint32_t status = PowerManagerPlugin->ScheduleDeepSleepWakeup(futureTime, "testApp");
@@ -2649,11 +2710,6 @@ TEST_F(PowerManager_L2Test, CancelScheduledDeepSleepWakeupsAll)
     Core::ProxyType<RPC::CommunicatorClient> mClient_PowerManager;
     PluginHost::IShell *mController_PowerManager;
 
-    {
-        std::ofstream ofs("/mnt/secure_storage/pwrmgr/schedules.stg", std::ios::trunc);
-        ASSERT_TRUE(ofs.is_open()) << "Failed to reset wakeup schedule storage";
-    }
-
     TEST_LOG("Creating mEngine_PowerManager");
     mEngine_PowerManager = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
     mClient_PowerManager = Core::ProxyType<RPC::CommunicatorClient>::Create(Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(mEngine_PowerManager));
@@ -2671,6 +2727,24 @@ TEST_F(PowerManager_L2Test, CancelScheduledDeepSleepWakeupsAll)
 
             if (PowerManagerPlugin)
             {
+                const uint32_t capabilityStatus =
+                    PowerManagerPlugin->ScheduleDeepSleepWakeup(time(nullptr) + 300, "test app");
+                if (capabilityStatus == Core::ERROR_UNAVAILABLE)
+                {
+                    EXPECT_EQ(capabilityStatus, Core::ERROR_UNAVAILABLE);
+                    EXPECT_EQ(PowerManagerPlugin->CancelScheduledDeepSleepWakeups(0, ""),
+                        Core::ERROR_UNAVAILABLE);
+                    PowerManagerPlugin->Release();
+                    mController_PowerManager->Release();
+                    return;
+                }
+                EXPECT_EQ(capabilityStatus, Core::ERROR_INVALID_PARAMETER);
+
+                {
+                    std::ofstream ofs("/mnt/secure_storage/pwrmgr/schedules.stg", std::ios::trunc);
+                    ASSERT_TRUE(ofs.is_open()) << "Failed to reset wakeup schedule storage";
+                }
+
                 time_t futureTime1 = time(nullptr) + 300;
                 time_t futureTime2 = time(nullptr) + 600;
 

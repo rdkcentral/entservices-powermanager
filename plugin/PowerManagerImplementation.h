@@ -137,6 +137,7 @@ namespace Plugin {
         Core::hresult SetOvertempGraceInterval(const int graceInterval) override;
         Core::hresult GetThermalState(float& temperature) const override;
         Core::hresult SetDeepSleepTimer(const int timeOut) override;
+        // Client requestor IDs must be alphanumeric and must not start with "pwrmgr_internal".
         Core::hresult ScheduleDeepSleepWakeup(const uint64_t unixTime, const string& requestorId) override;
         Core::hresult CancelScheduledDeepSleepWakeups(const uint64_t unixTime, const string& requestorId) override;
         Core::hresult GetLastWakeupReason(WakeupReason& wakeupReason) const override;

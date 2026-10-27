@@ -239,6 +239,10 @@ uint32_t DeepSleepWakeupSettings::getWakeupTime() const
 */
 uint32_t DeepSleepWakeupSettings::getCustomMaintenanceWakeupTime() const
 {
+    if (!_maintenanceConfigUpdated) {
+        return 0;
+    }
+
     time_t now = 0, wakeup = 0;
     time_t wakeupTime     = 0;
     uint32_t wakeupTimeInSec = 0;
@@ -323,12 +327,55 @@ uint32_t DeepSleepWakeupSettings::getCustomMaintenanceWakeupTime() const
         const time_t minimumWakeup = now + static_cast<time_t>(minWakeupTime);
         wakeupTimeInSec = static_cast<uint32_t>(difftime(std::max(wakeupTime, minimumWakeup), now));
         LOGINFO("wakeupTime in sec :%d, now:%ld, minimumWakeup:%ld", wakeupTimeInSec, (long)now, (long)minimumWakeup);
+        //return 30;
         return wakeupTimeInSec;
     }
 
     LOGERR("Failed to get local time");
 
     return 0;
+}
+
+void DeepSleepWakeupSettings::ensureMaintenanceWakeupScheduled() const
+{
+    if (!_maintenanceConfigUpdated || _wakeupScheduleRegister == nullptr) {
+        return;
+    }
+
+    const auto schedules = _wakeupScheduleRegister->getPastAndFutureWakeupSchedules("maintenance");
+    /* Query the future schedules with maintenance as the user */
+    if (!schedules.second.empty()) {
+        LOGINFO("Schedule STG file has maintenance schedule");
+        return;
+    }
+
+    const time_t nowTime = time(nullptr);
+    if (nowTime == static_cast<time_t>(-1)) {
+        LOGERR("Failed to read current time while scheduling maintenance wakeup");
+        return;
+    }
+
+    const uint32_t delay = getCustomMaintenanceWakeupTime();
+    if (delay == 0 || static_cast<uint64_t>(nowTime) + delay > UINT32_MAX) {
+        LOGERR("Invalid custom maintenance wakeup time");
+        return;
+    }
+
+    const auto unixTime = static_cast<WakeupScheduleRegister::UnixTime>(
+                                        static_cast<uint64_t>(nowTime) + delay);
+    const auto status = _wakeupScheduleRegister->addWakeupSchedule(
+                                        unixTime, WakeupScheduleRegister::ActiveStandby, "maintenance");
+    if (status != WakeupScheduleRegister::Successful) {
+        LOGERR("Failed to add custom maintenance wakeup schedule");
+        return;
+    }
+
+    if (_wakeupScheduleRegister->storeWakeupSchedulesToFile(POWERMANAGER_SCHEDULES_FILE)
+                                        != WakeupScheduleRegister::Successful) {
+        _wakeupScheduleRegister->removeWakeupSchedule(
+                                        unixTime, WakeupScheduleRegister::ActiveStandby, "maintenance");
+        LOGERR("Failed to persist custom maintenance wakeup schedule");
+    }
 }
 #endif
 
@@ -376,18 +423,25 @@ void DeepSleepController::Shutdown()
 
 uint32_t DeepSleepController::GetLastWakeupReason(WakeupReason& wakeupReason) const
 {
-    const uint32_t errorCode = platform().GetLastWakeupReason(wakeupReason);
 #ifdef CUSTOM_LGI
-    /* When maintenance schedule is set and platform reports a timer wakeup,
-       override to maintenance wakeup reason*/
-    if (WPEFramework::Core::ERROR_NONE == errorCode
-        && _maintenanceWakeupScheduled->load()
-        && wakeupReason == WakeupReason::WAKEUP_REASON_TIMER) {
+    const uint32_t errorCode = platform().GetLastWakeupReason(wakeupReason);
+    if (errorCode == WPEFramework::Core::ERROR_NONE &&
+        _lastWakeupWasMaintenance->load() &&
+        wakeupReason == WakeupReason::WAKEUP_REASON_TIMER) {
         wakeupReason = WakeupReason::WAKEUP_REASON_MAINTENANCE;
     }
-#endif
     return errorCode;
+#else
+    return platform().GetLastWakeupReason(wakeupReason);
+#endif
 }
+
+#ifdef CUSTOM_LGI
+void DeepSleepController::SetLastWakeupWasMaintenance(const bool maintenance)
+{
+    _lastWakeupWasMaintenance->store(maintenance);
+}
+#endif
 
 uint32_t DeepSleepController::GetLastWakeupKeyCode(int& keyCode) const
 {
@@ -395,23 +449,15 @@ uint32_t DeepSleepController::GetLastWakeupKeyCode(int& keyCode) const
 }
 
 // activate deep sleep mode
-#ifdef CUSTOM_LGI
-uint32_t DeepSleepController::Activate(uint32_t timeOut, bool nwStandbyMode, bool isMaintenanceWakeupScheduled)
-{
-    LOGINFO("timeOut: %u, nwStandbyMode: %s, isMaintenanceWakeupScheduled: %s",
-            timeOut,(nwStandbyMode ? "Enabled" : "Disabled"),
-                (isMaintenanceWakeupScheduled ? "true" : "false"));
-    _maintenanceWakeupScheduled->store(isMaintenanceWakeupScheduled);
-    return submitActivation(timeOut, nwStandbyMode);
-}
-#else
 uint32_t DeepSleepController::Activate(uint32_t timeOut, bool nwStandbyMode)
 {
     LOGINFO("timeOut: %u, nwStandbyMode: %s", timeOut, (nwStandbyMode ? "Enabled" : "Disabled"));
 
+#ifdef CUSTOM_LGI
+    _lastWakeupWasMaintenance->store(false);
+#endif
     return submitActivation(timeOut, nwStandbyMode);
 }
-#endif
 
 uint32_t DeepSleepController::submitActivation(uint32_t timeOut, bool nwStandbyMode)
 {
@@ -609,9 +655,6 @@ void DeepSleepController::enterDeepSleepNow()
     }
 
     if (failed) {
-#ifdef CUSTOM_LGI
-        _maintenanceWakeupScheduled->store(false);
-#endif
         LOGERR("Failed to enter deep sleep mode error code: %u", errorCode);
         _parent.onDeepSleepFailed();
         return;
@@ -619,9 +662,6 @@ void DeepSleepController::enterDeepSleepNow()
     LOGINFO("DeepSleep success; performing wakeup action");
 
     if (userWakeup) {
-#ifdef CUSTOM_LGI
-        _maintenanceWakeupScheduled->store(false);
-#endif
         LOGINFO("DeepSleep wakeupReason: user action");
         _parent.onDeepSleepUserWakeup(userWakeup);
     } else {
@@ -870,6 +910,41 @@ void DeepSleepWakeupSettings::updateMaintenanceWakeupConfig()
     {
         LOGINFO("DeepSleep maintenance wakeup configuration retrieval failed");
     }
+}
+
+uint32_t DeepSleepWakeupSettings::secondsUntilWakeup(
+    const std::unique_ptr<WakeupScheduleRegister::NearestWakeupSchedule>& latestWakeupSchedule) const
+{
+    const time_t nowTime = time(nullptr);
+    if (nowTime == static_cast<time_t>(-1))
+    {
+        LOGINFO("Not able to retrieve the current time!");
+        return 0 ;
+    }
+
+    const auto now = static_cast<WakeupScheduleRegister::UnixTime>(nowTime);
+    return (latestWakeupSchedule->unixTime > now)
+                                    ? static_cast<uint32_t>(latestWakeupSchedule->unixTime - now)
+                                    : 1U;
+}
+
+ bool DeepSleepWakeupSettings::scheduledTimeout(uint32_t* value) const
+{
+    if (_wakeupScheduleRegister == nullptr) {
+        return false;
+    }
+
+    auto nearest = _wakeupScheduleRegister->getNearestWakeupSchedule();
+    if (nearest != nullptr)
+    {
+        *value = secondsUntilWakeup(nearest);
+    }
+    else
+    {
+        LOGINFO("No schedule available to be scheduled");
+        *value = 0;
+    }
+    return true ;
 }
 
 bool DeepSleepController::waitForAbortableDelay(const std::chrono::seconds& delay)

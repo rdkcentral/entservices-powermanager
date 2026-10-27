@@ -222,13 +222,9 @@ class WakeupScheduleRegister
         return peekNearestWakeupScheduleUnsafe();
     }
 
-    /* Moves any schedule(s) whose unixTime has already elapsed from the future list into the
-       past list (same expiry rule as removeExpiredSchedules()), and returns an aggregated view
-       of the schedule that most recently expired (i.e. the one that caused the current wakeup),
-       or NULL if none expired. This is distinct from getNearestWakeupSchedule(), which only
-       ever looks at the future list and therefore can never observe a schedule that just fired,
-       since removeExpiredSchedules() has, by definition, already moved it out of that list. */
-    std::unique_ptr<NearestWakeupSchedule> getMostRecentlyExpiredWakeupSchedule()
+    /* Moves all expired schedules from the future list into the past list and returns the
+       earliest one, which is the schedule that armed the wakeup. */
+    std::unique_ptr<NearestWakeupSchedule> getEarliestExpiredWakeupSchedule()
     {
         std::lock_guard<std::mutex> lock(_mutex);
         std::unique_ptr<NearestWakeupSchedule> result;
@@ -240,13 +236,21 @@ class WakeupScheduleRegister
         }
 
         const UnixTime currentUnixTime = static_cast<UnixTime>(now);
-        Schedule* expiredSchedule = NULL;
+        Schedule expiredSchedule;
+        bool foundExpiredSchedule = false;
 
         static const size_t kMaxPastWakeupSchedules = 128;
         while (!wakeupSchedules.empty() && wakeupSchedules[0]->unixTime <= currentUnixTime)
         {
-            expiredSchedule = *wakeupSchedules.begin();
-            pastWakeupSchedules.push_back(expiredSchedule);
+            Schedule* currentSchedule = *wakeupSchedules.begin();
+            if (!foundExpiredSchedule)
+            {
+                expiredSchedule.unixTime = currentSchedule->unixTime;
+                expiredSchedule.powerStates = currentSchedule->powerStates;
+                expiredSchedule.requestorIds = currentSchedule->requestorIds;
+                foundExpiredSchedule = true;
+            }
+            pastWakeupSchedules.push_back(currentSchedule);
             if (pastWakeupSchedules.size() > kMaxPastWakeupSchedules) {
                 delete pastWakeupSchedules.front();
                 pastWakeupSchedules.erase(pastWakeupSchedules.begin());
@@ -254,27 +258,27 @@ class WakeupScheduleRegister
             wakeupSchedules.erase(wakeupSchedules.begin());
         }
 
-        if (expiredSchedule && !expiredSchedule->powerStates.empty())
+        if (foundExpiredSchedule && !expiredSchedule.powerStates.empty())
         {
             const PowerState priority[] = {Operational, ActiveStandby};
 
             for (unsigned int i = 0; i < sizeof(priority) / sizeof(priority[0]) ; i++)
             {
-                std::vector<PowerState>::iterator it = std::find(expiredSchedule->powerStates.begin(),
-                    expiredSchedule->powerStates.end(), priority[i]);
+                std::vector<PowerState>::iterator it = std::find(expiredSchedule.powerStates.begin(),
+                    expiredSchedule.powerStates.end(), priority[i]);
 
-                if (it != expiredSchedule->powerStates.end())
+                if (it != expiredSchedule.powerStates.end())
                 {
                     result = std::unique_ptr<NearestWakeupSchedule>(new NearestWakeupSchedule());
 
                     if (result)
                     {
-                        std::vector<std::string>::const_iterator rIt = expiredSchedule->requestorIds.begin();
-                        std::vector<PowerState>::const_iterator pIt = expiredSchedule->powerStates.begin();
-                        result->unixTime = expiredSchedule->unixTime;
+                        std::vector<std::string>::const_iterator rIt = expiredSchedule.requestorIds.begin();
+                        std::vector<PowerState>::const_iterator pIt = expiredSchedule.powerStates.begin();
+                        result->unixTime = expiredSchedule.unixTime;
                         result->powerState = *it;
 
-                        for (; rIt != expiredSchedule->requestorIds.end() && pIt != expiredSchedule->powerStates.end(); rIt++, pIt++)
+                        for (; rIt != expiredSchedule.requestorIds.end() && pIt != expiredSchedule.powerStates.end(); rIt++, pIt++)
                         {
                             if (*pIt == *it)
                             {
@@ -1301,6 +1305,13 @@ class WakeupScheduleRegister
         }
 
         return p != input ? result : false;
+    }
+
+    static bool isValidClientRequestorId(const char* input)
+    {
+        static const char reservedPrefix[] = "pwrmgr_internal";
+        return isAlphaNumeric(input) &&
+               std::strncmp(input, reservedPrefix, sizeof(reservedPrefix) - 1) != 0;
     }
 
   private:

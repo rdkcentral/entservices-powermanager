@@ -253,46 +253,38 @@ TEST_F(TestDeepSleepWakeupSettings, ConfigUpdateIsIdempotentOnceSucceeded)
  * legacy upstream calculation.
  * ------------------------------------------------------------------------ */
 
-TEST_F(TestDeepSleepWakeupSettings, Timeout_UserSetTimerTakesPriorityOverMaintenance)
-{
-    setDefaultValidValues();
-
-    Settings settings = makeSettings();
-    DeepSleepWakeupSettings dsws(settings);
-    ASSERT_TRUE(dsws._maintenanceConfigUpdated);
-
-    dsws.SetTimeout(1234);
-
-    EXPECT_EQ(dsws.timeout(), 1234u);
 #ifdef CUSTOM_LGI
-    EXPECT_FALSE(dsws.isMaintenanceWakeupScheduled());
+TEST_F(TestDeepSleepWakeupSettings, Timeout_UsesNearestScheduleRegardlessOfRequestor)
+{
+    Settings settings = makeSettings();
+    WakeupScheduleRegister schedules;
+    DeepSleepWakeupSettings scheduledSettings(settings, &schedules);
+    const auto earlierSchedule = static_cast<WakeupScheduleRegister::UnixTime>(time(nullptr) + 10);
+    const auto laterSchedule = static_cast<WakeupScheduleRegister::UnixTime>(time(nullptr) + 30);
+    ASSERT_EQ(schedules.addWakeupSchedule(
+                  earlierSchedule, WakeupScheduleRegister::ActiveStandby, "testApp"),
+              WakeupScheduleRegister::Successful);
+    ASSERT_EQ(schedules.addWakeupSchedule(
+                  laterSchedule, WakeupScheduleRegister::ActiveStandby, "deepsleeptimer"),
+              WakeupScheduleRegister::Successful);
+
+    scheduledSettings.SetTimeout(1234);
+
+    EXPECT_NEAR(scheduledSettings.timeout(), 10u, 2u);
+}
 #endif
-}
 
 #ifdef CUSTOM_LGI
-TEST_F(TestDeepSleepWakeupSettings, Timeout_UsesCustomMaintenanceCalculationWhenMaintenanceConfigUpdated)
+TEST_F(TestDeepSleepWakeupSettings, Timeout_ReturnsZeroWhenNoScheduleIsAvailable)
 {
-    setDefaultValidValues();
-    /* getCustomMaintenanceWakeupTime() adds a random jitter of up to _randomDelay * 60
-       seconds; comparing two independent calls (this one and dsws.timeout()
-       below) would be flaky if that jitter is non-zero, since each call
-       re-randomizes independently. Zero it out here so the two calls are
-       deterministic and comparable; random-jitter behavior itself is
-       covered separately by GetCustomMaintenanceWakeupTime_RandomDelayAddsWithinExpectedBounds. */
-    _rfcValues[kRandomDelay] = "0";
-
     Settings settings = makeSettings();
-    DeepSleepWakeupSettings dsws(settings);
-    ASSERT_TRUE(dsws._maintenanceConfigUpdated);
+    WakeupScheduleRegister schedules;
+    DeepSleepWakeupSettings withEmptyScheduleRegistry(settings, &schedules);
 
-    // Compare against a fresh call to getCustomMaintenanceWakeupTime(); both are evaluated
-    // moments apart so allow a small tolerance for clock drift between the calls.
-    uint32_t expected = dsws.getCustomMaintenanceWakeupTime();
-    EXPECT_NEAR(dsws.timeout(), expected, 2u);
-    EXPECT_TRUE(dsws.isMaintenanceWakeupScheduled());
+    EXPECT_EQ(withEmptyScheduleRegistry.timeout(), 0u);
 }
 
-TEST_F(TestDeepSleepWakeupSettings, Timeout_FallsBackToUpstreamWhenMaintenanceConfigNotUpdated)
+TEST_F(TestDeepSleepWakeupSettings, Timeout_ReturnsZeroWhenMaintenanceScheduleCannotBeCreated)
 {
     /* Under OR semantics, _maintenanceConfigUpdated only stays false when ALL
        3 RFC params fail to parse. */
@@ -301,18 +293,13 @@ TEST_F(TestDeepSleepWakeupSettings, Timeout_FallsBackToUpstreamWhenMaintenanceCo
     _rfcValues[kInactivityTimeout] = "";
 
     Settings settings = makeSettings();
-    DeepSleepWakeupSettings dsws(settings);
+    WakeupScheduleRegister schedules;
+    DeepSleepWakeupSettings dsws(settings, &schedules);
     ASSERT_FALSE(dsws._maintenanceConfigUpdated);
 
-    // getWakeupTime() (the legacy path) otherwise computes TZ offset via a real
-    // (unmocked in this fixture) IARM_Bus_Call, which is unsafe to invoke here.
-    // Use the existing /tmp/deepSleepWakeupTimer override (already supported by
-    // production code) to make it return deterministically without touching IARM.
-    ASSERT_EQ(0, system("echo 2 > /tmp/deepSleepWakeupTimer"));
-    uint32_t expected = dsws.getWakeupTime();
-    EXPECT_NEAR(dsws.timeout(), expected, 2u);
-    EXPECT_TRUE(dsws.isMaintenanceWakeupScheduled());
-    ASSERT_EQ(0, system("rm -f /tmp/deepSleepWakeupTimer"));
+    EXPECT_EQ(dsws.getCustomMaintenanceWakeupTime(), 0u);
+    EXPECT_EQ(dsws.timeout(), 0u);
+    EXPECT_TRUE(schedules.getPastAndFutureWakeupSchedules("maintenance").second.empty());
 }
 #else
 TEST_F(TestDeepSleepWakeupSettings, Timeout_AlwaysUsesUpstreamWhenCustomLgiDisabled)
@@ -330,6 +317,21 @@ TEST_F(TestDeepSleepWakeupSettings, Timeout_AlwaysUsesUpstreamWhenCustomLgiDisab
     uint32_t expected = dsws.getWakeupTime();
     EXPECT_NEAR(dsws.timeout(), expected, 2u);
     ASSERT_EQ(0, system("rm -f /tmp/deepSleepWakeupTimer"));
+}
+#endif
+
+#ifdef CUSTOM_LGI
+TEST_F(TestDeepSleepWakeupSettings, Timeout_UsesNearestScheduledWakeupAsRelativeSeconds)
+{
+    Settings settings = makeSettings();
+    WakeupScheduleRegister schedules;
+    DeepSleepWakeupSettings dsws(settings, &schedules);
+    const auto scheduledTime = static_cast<WakeupScheduleRegister::UnixTime>(time(nullptr) + 60);
+
+    ASSERT_EQ(schedules.addWakeupSchedule(
+                  scheduledTime, WakeupScheduleRegister::ActiveStandby, "testApp"),
+              WakeupScheduleRegister::Successful);
+    EXPECT_NEAR(dsws.timeout(), 60u, 2u);
 }
 #endif
 
