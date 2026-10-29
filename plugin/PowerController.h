@@ -184,6 +184,9 @@ private:
 #endif
 
     const std::string m_settingsFile = "/opt/uimgr_settings.bin";
+#ifdef CUSTOM_LGI
+    static constexpr const char* kThermalRebootReason = "TPS";
+#endif
     std::unique_ptr<IPlatform> _platform;
     PowerState _powerStateBeforeReboot;
     PowerState _lastKnownPowerState;

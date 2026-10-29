@@ -74,6 +74,14 @@ void PowerController::init()
     // settings already loaded in constructor
     _lastKnownPowerState = _settings.powerState();
 
+#ifdef CUSTOM_LGI
+    // After a thermal (TPS) reboot, boot into active standby instead of the persisted state.
+    if ((_settings.rebootReason() == kThermalRebootReason) && (_settings.powerState() != PowerState::POWER_STATE_STANDBY)) {
+        LOGINFO("Previous reboot was caused by thermal protection, entering %s", util::str(PowerState::POWER_STATE_STANDBY));
+        _settings.SetPowerState(PowerState::POWER_STATE_STANDBY);
+        _settings.Save(m_settingsFile);
+    }
+#endif
     do {
         // Sync power state with platform
         PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
