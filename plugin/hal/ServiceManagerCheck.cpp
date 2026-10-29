@@ -31,8 +31,9 @@
 #include <unistd.h>
 #include <linux/android/binder.h>
 
+#include "Module.h"
+#include "UtilsLogging.h"
 #include "ServiceManagerCheck.h"
-#include "ccec/Util.hpp"
 
 // --- Internal implementation details ---
 namespace {
