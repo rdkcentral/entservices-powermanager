@@ -135,6 +135,7 @@ The plugin employs a specialized controller pattern with four distinct controlle
 ### State Consistency
 - Atomic power state transitions with rollback capability
 - Persistent state storage for recovery across reboots
+- In `CUSTOM_LGI` builds, PowerController initialization overrides a non-STANDBY persisted power state with `POWER_STATE_STANDBY` when the stored reboot reason is `TPS` (thermal protection), saves the setting, and then synchronizes the power state with the platform
 - Validation of power state prerequisites before transitions
 - Synchronization mechanisms for concurrent operations
 

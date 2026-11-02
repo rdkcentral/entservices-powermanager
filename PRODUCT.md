@@ -88,7 +88,7 @@ The PowerManager plugin is an enterprise-grade power management solution designe
 ### Enterprise-Grade Reliability
 - **Fault Tolerant Design**: Comprehensive error handling with graceful degradation capabilities
 - **Automatic Recovery**: Self-healing mechanisms for temporary hardware or communication failures
-- **State Persistence**: Reliable state storage and recovery across system reboots
+- **State Persistence**: Reliable state storage and recovery across system reboots; in `CUSTOM_LGI` builds, startup selects active standby (STANDBY) after a thermal protection reboot (stored reason `TPS`) instead of restoring a different persisted power state
 - **Watchdog Integration**: Integration with system watchdog for critical failure detection
 
 ### Robust Error Handling
