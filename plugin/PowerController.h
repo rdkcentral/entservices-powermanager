@@ -54,6 +54,7 @@ namespace Core {
 class WakeupScheduleRegister;
 
 class PowerController {
+private:
     using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
     using WakeupSrcType = WPEFramework::Exchange::IPowerManager::WakeupSrcType;
     using WakeupReason = WPEFramework::Exchange::IPowerManager::WakeupReason;

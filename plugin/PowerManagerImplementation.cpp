@@ -474,7 +474,7 @@ namespace Plugin {
         uint32_t lockStatus = Core::ERROR_NONE;
         for (;;) {
 #ifdef OVERRIDE_NEGOTIATION_ON_TPS
-            if (reason == "TPS") {
+            if (reason == PowerUtils::kThermalRebootReason) {
                 // A synchronous renegotiation owns selfLock until its final
                 // completion. Cancel that owner, never unlock on its behalf.
                 cancelPowerModeChangeForTPS();
@@ -501,7 +501,7 @@ namespace Plugin {
         LOGINFO("selfLock Acquired");
 
 #ifdef OVERRIDE_NEGOTIATION_ON_TPS
-        if (reason == "TPS") {
+        if (reason == PowerUtils::kThermalRebootReason) {
             // A different caller may have acquired selfLock before us.
             cancelPowerModeChangeForTPS();
         }
@@ -526,8 +526,8 @@ namespace Plugin {
             // Thermal Protection Shutdown (TPS): the hardware may be at risk, so skip both the
             // pre-change and acknowledgement negotiation phases entirely and switch power state
             // immediately, instead of waiting on registered clients to negotiate/acknowledge.
-            if (reason == "TPS") {
-                LOGWARN("reason is 'TPS' - bypassing negotiation phases, switching to %s immediately to protect hardware", util::str(newState));
+            if (reason == PowerUtils::kThermalRebootReason) {
+                LOGWARN("reason is '%s' - bypassing negotiation phases, switching to %s immediately to protect hardware", PowerUtils::kThermalRebootReason, util::str(newState));
 
                 errorCode = setDevicePowerState(keyCode, currState, newState, reason, {}, []() {
                     selfLock.Unlock();
