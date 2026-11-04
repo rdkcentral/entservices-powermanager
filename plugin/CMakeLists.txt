@@ -102,6 +102,12 @@ if(CUSTOM_LGI)
                                  OFFLINE_MAINT_REBOOT)
 endif()
 
+if(DISABLE_DECLOCKING_LOGIC)
+   target_compile_definitions(${PLUGIN_IMPLEMENTATION}
+                              PRIVATE
+                                DISABLE_DECLOCKING_LOGIC)
+endif()
+
 target_compile_definitions(${PLUGIN_IMPLEMENTATION}
                            PRIVATE
                              POWERMANAGER_SCHEDULES_FILE=\"${PLUGIN_POWERMANAGER_SCHEDULES_FILE}\")
