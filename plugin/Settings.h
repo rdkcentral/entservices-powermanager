@@ -38,6 +38,7 @@ class Settings {
     static constexpr const char* kRamSettingsFilePath = "/tmp/uimgr_settings.bin";
     static constexpr const int kDeepSleepTimeoutSec = 8 * 60 * 60; // 8 hours
     static constexpr const size_t REBOOT_REASON_MAX_LEN = 64;
+    static constexpr const char* kUnknownRebootReason = "Unknown";
 
     // Common header across all settings versions
     typedef struct _header_t {
@@ -56,12 +57,14 @@ class Settings {
         , _nwStandbyMode(false)
         , _lastUpdateTime(MonotonicClock::now())
         , _rebootReason()
+        , _persistRebootReason(false)
     {
     }
 
 public:
     enum Version {
-        V1 = 1, // Current version
+        V1 = 1, // Without rebootReason, load only
+        V2 = 2, // Current version
     };
     static Settings Load(const std::string& path = kSettingsFilePath);
     bool Save(const std::string& path = kSettingsFilePath);
@@ -89,6 +92,7 @@ public:
     inline void SetRebootReason(const std::string& reason)
     {
         _rebootReason = reason.substr(0, REBOOT_REASON_MAX_LEN - 1);
+        _persistRebootReason = true;
     }
 
     inline uint32_t magic() const { return _magic; }
@@ -115,6 +119,8 @@ private:
     bool _nwStandbyMode;                // Network standby mode, true if enabled, false if disabled
     Timestamp _lastUpdateTime;          // Timestamp when power state was updated, used for calculating inactive duration
     std::string _rebootReason;          // Reason of the most recent reboot executed via PowerManager
+    bool _persistRebootReason;          // True only once the reason is set in this run; a value loaded from file is not written back
 
     friend class SettingsV1;
+    friend class SettingsV2;
 };

@@ -30,7 +30,7 @@
 using util = PowerUtils;
 
 class SettingsV1 {
-
+protected:
     using PowerState = WPEFramework::Exchange::IPowerManager::PowerState;
 
     static constexpr const uint32_t UIMGR_SETTINGS_MAGIC = 0xFEBEEFAC;
@@ -50,7 +50,6 @@ class SettingsV1 {
         PWRMgr_LED_Settings_t ledSettings;
         uint32_t deep_sleep_timeout;
         bool nwStandbyMode;
-        char rebootReason[Settings::REBOOT_REASON_MAX_LEN];
         char padding[PADDING_SIZE];
     } PWRMgr_Settings_t;
 
@@ -130,6 +129,62 @@ public:
                 settings._powerState       = conv(pwrSettings.powerState);
                 settings._deepSleepTimeout = pwrSettings.deep_sleep_timeout;
                 settings._nwStandbyMode    = pwrSettings.nwStandbyMode;
+
+                ok = true;
+            }
+        } else {
+            LOGERR("Invalid header size expected: %zu, actual: %u", Size(), header.length);
+        }
+
+        return ok;
+    }
+};
+
+// V1 plus rebootReason. This is the version always written back to file.
+class SettingsV2 : public SettingsV1 {
+
+    typedef struct _PWRMgr_Settings_t {
+        uint32_t magic;
+        uint32_t version;
+        uint32_t length;
+        volatile PWRMgr_PowerState_t powerState;
+        PWRMgr_LED_Settings_t ledSettings;
+        uint32_t deep_sleep_timeout;
+        bool nwStandbyMode;
+        char rebootReason[Settings::REBOOT_REASON_MAX_LEN];
+        char padding[PADDING_SIZE];
+    } PWRMgr_Settings_t;
+
+public:
+    inline static constexpr size_t Size()
+    {
+        return sizeof(PWRMgr_Settings_t) - PADDING_SIZE;
+    }
+
+    static bool Load(int fd, const Settings::Header& header, Settings& settings)
+    {
+        bool ok                       = false;
+        PWRMgr_Settings_t pwrSettings = {};
+        const auto expected_size      = Size();
+
+        if (header.length == expected_size) {
+
+            off_t ret = lseek(fd, 0, SEEK_SET);
+            if (ret == (off_t)-1) {
+                LOGERR("Failed to reset seek offset %s", strerror(errno));
+                return false;
+            }
+
+            const auto read_size = read(fd, &pwrSettings, expected_size);
+            if (read_size != expected_size) {
+                // failure
+                LOGERR("Unable to read full length expected: %zu, actual %zu", expected_size, read_size);
+            } else {
+                settings._magic            = pwrSettings.magic;
+                settings._version          = pwrSettings.version;
+                settings._powerState       = conv(pwrSettings.powerState);
+                settings._deepSleepTimeout = pwrSettings.deep_sleep_timeout;
+                settings._nwStandbyMode    = pwrSettings.nwStandbyMode;
                 settings._rebootReason     = std::string(pwrSettings.rebootReason, strnlen(pwrSettings.rebootReason, Settings::REBOOT_REASON_MAX_LEN));
 
                 ok = true;
@@ -145,8 +200,8 @@ public:
     {
         PWRMgr_Settings_t pwrSettings = {
             .magic       = settings.magic(),
-            .version     = settings.version(),
-            .length      = Size(), // fixed for V1
+            .version     = static_cast<uint32_t>(Settings::Version::V2), // always the latest version
+            .length      = Size(),
             .powerState  = conv(settings.powerState()),
             .ledSettings = {
                 .brightness = 0, // unused, maintained for compatibility
@@ -158,7 +213,9 @@ public:
             .padding            = { 0 }
         };
 
-        strncpy(pwrSettings.rebootReason, settings.rebootReason().c_str(), Settings::REBOOT_REASON_MAX_LEN - 1);
+        // A reason loaded from file describes the previous boot, so it must not be persisted again
+        const std::string reason = settings._persistRebootReason ? settings.rebootReason() : std::string(Settings::kUnknownRebootReason);
+        strncpy(pwrSettings.rebootReason, reason.c_str(), Settings::REBOOT_REASON_MAX_LEN - 1);
 
         off_t ret = lseek(fd, 0, SEEK_SET);
         if (ret == (off_t)-1) {
@@ -176,13 +233,13 @@ public:
 
     static void initDefaults(Settings& settings)
     {
-        LOGINFO("Initial creation of SettingsV1");
+        LOGINFO("Initial creation of SettingsV2");
         settings._magic   = UIMGR_SETTINGS_MAGIC;
-        settings._version = static_cast<uint32_t>(Settings::Version::V1);
+        settings._version = static_cast<uint32_t>(Settings::Version::V2);
     }
 };
 
-using DefaultSettingsVersion = SettingsV1;
+using DefaultSettingsVersion = SettingsV2;
 
 // Create initial settings
 void Settings::initDefaults()
@@ -208,7 +265,12 @@ Settings Settings::Load(const std::string& path)
         if (nbytes == read_size) {
             switch (header.version) {
             case Version::V1:
-                ok = SettingsV1::Load(fd, header, settings);
+                ok = (header.length == SettingsV2::Size())
+                    ? SettingsV2::Load(fd, header, settings)
+                    : SettingsV1::Load(fd, header, settings);
+                break;
+            case Version::V2:
+                ok = SettingsV2::Load(fd, header, settings);
                 break;
             default:
                 LOGERR("Invalid version %d", header.version);
@@ -222,6 +284,16 @@ Settings Settings::Load(const std::string& path)
             // failed to read settings file, init default settings
             settings.initDefaults();
             settings.save(fd);
+        } else if (path != kRamSettingsFilePath) {
+            const bool upgrade = (header.version != Version::V2);
+            const bool stale   = !settings._rebootReason.empty() && (settings._rebootReason != kUnknownRebootReason);
+
+            // Always store the latest version; the reboot reason is consumed once so a later restart
+            // does not report it again. The loaded value is still returned to callers.
+            if (upgrade || stale) {
+                settings._version = static_cast<uint32_t>(Version::V2);
+                settings.save(fd);
+            }
         }
 
         fsync(fd);

@@ -116,6 +116,78 @@ TEST_F(TestPowerManagerSettings, RebootReasonPersistence)
 
     Settings reloaded = Settings::Load(_settingsFile);
     EXPECT_EQ(reloaded.rebootReason(), "MAINTENANCE_REBOOT");
+
+    // The reason is consumed by the first load; a later restart or power cut must not report it again
+    reloaded.SetPowerState(PowerState::POWER_STATE_STANDBY);
+    reloaded.SetDeepSleepTimeout(1234);
+    Settings consumed = Settings::Load(_settingsFile);
+    EXPECT_EQ(consumed.rebootReason(), "Unknown");
+}
+
+TEST_F(TestPowerManagerSettings, LoadedRebootReasonNotWrittenBackOnSave)
+{
+    Settings settings = Settings::Load(_settingsFile);
+    settings.SetRebootReason("TPS");
+    settings.Save(_settingsFile);
+
+    Settings loaded = Settings::Load(_settingsFile);
+    EXPECT_EQ(loaded.rebootReason(), "TPS");
+
+    // Unrelated save after load must not resurrect the previous boot's reason
+    loaded.SetDeepSleepTimeout(4321);
+    loaded.Save(_settingsFile);
+
+    Settings next = Settings::Load(_settingsFile);
+    EXPECT_EQ(next.rebootReason(), "Unknown");
+    EXPECT_EQ(next.deepSleepTimeout(), 4321U);
+}
+
+TEST_F(TestPowerManagerSettings, LegacyV1FileLoadsAndUpgradesToV2)
+{
+    // Layout of the V1 settings file written before rebootReason existed
+    struct LegacyV1 {
+        uint32_t magic;
+        uint32_t version;
+        uint32_t length;
+        int32_t powerState;
+        uint32_t ledBrightness;
+        uint32_t ledColor;
+        uint32_t deepSleepTimeout;
+        bool nwStandbyMode;
+    } legacy = {};
+
+    legacy.magic            = 0xFEBEEFAC;
+    legacy.version          = 1;
+    legacy.length           = sizeof(legacy);
+    legacy.powerState       = PWRMGR_POWERSTATE_ON;
+    legacy.deepSleepTimeout = 1234;
+    legacy.nwStandbyMode    = true;
+
+    FILE* fp = fopen(_settingsFile.c_str(), "wb");
+    ASSERT_NE(fp, nullptr);
+    ASSERT_EQ(fwrite(&legacy, sizeof(legacy), 1, fp), 1U);
+    fclose(fp);
+
+    // Avoid the PLATCO_BOOTTO_STANDBY override so the persisted state is observable
+    if (0 != system("touch /tmp/pwrmgr_restarted")) { /* do nothing */ }
+
+    Settings settings = Settings::Load(_settingsFile);
+    EXPECT_EQ(settings.powerState(), PowerState::POWER_STATE_ON);
+    EXPECT_EQ(settings.deepSleepTimeout(), 1234U);
+    EXPECT_TRUE(settings.nwStandbyMode());
+    EXPECT_EQ(settings.rebootReason(), "");
+
+    // File must have been rewritten as the latest version
+    uint32_t header[3] = {};
+    fp = fopen(_settingsFile.c_str(), "rb");
+    ASSERT_NE(fp, nullptr);
+    ASSERT_EQ(fread(header, sizeof(header), 1, fp), 1U);
+    fclose(fp);
+    EXPECT_EQ(header[1], static_cast<uint32_t>(Settings::Version::V2));
+
+    Settings again = Settings::Load(_settingsFile);
+    EXPECT_EQ(again.deepSleepTimeout(), 1234U);
+    EXPECT_TRUE(again.nwStandbyMode());
 }
 
 TEST_P(TestPowerManagerSettings, AllTests)
