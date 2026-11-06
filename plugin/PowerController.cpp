@@ -74,6 +74,17 @@ void PowerController::init()
     // settings already loaded in constructor
     _lastKnownPowerState = _settings.powerState();
 
+    // Desired startup state; settings are updated only once the platform confirms or applies it.
+    PowerState targetState = _settings.powerState();
+
+#ifdef CUSTOM_LGI
+    // After a thermal (TPS) reboot, boot into active standby instead of the persisted state.
+    if ((_settings.rebootReason() == PowerUtils::kThermalRebootReason) && (targetState != PowerState::POWER_STATE_STANDBY)) {
+        LOGINFO("Previous reboot was caused by thermal protection, entering %s", util::str(PowerState::POWER_STATE_STANDBY));
+        targetState = PowerState::POWER_STATE_STANDBY;
+    }
+#endif
+
     do {
         // Sync power state with platform
         PowerState currentState = PowerState::POWER_STATE_UNKNOWN;
@@ -85,15 +96,19 @@ void PowerController::init()
             break;
         }
 
-        if (_settings.powerState() == currentState) {
+        if (targetState == currentState) {
             LOGINFO("Bootup powerState is already in sync with hardware: %s", util::str(currentState));
+            if (_settings.powerState() != currentState) {
+                _settings.SetPowerState(currentState);
+                _settings.Save(m_settingsFile);
+            }
             break;
         }
 
-        errorCode = SetPowerState(0, _settings.powerState(), "Initialization");
+        errorCode = SetPowerState(0, targetState, "Initialization");
 
         if (WPEFramework::Core::ERROR_NONE == errorCode) {
-            LOGINFO("Successfull at syncing powerState %s with hardware", util::str(_settings.powerState()));
+            LOGINFO("Successfull at syncing powerState %s with hardware", util::str(targetState));
             break;
         }
 

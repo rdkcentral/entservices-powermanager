@@ -22,6 +22,7 @@
 #include <future>
 #include <bitset>
 #include <atomic>
+#include <vector>
 #include <unistd.h>
 
 #include "gmock/gmock.h"
@@ -40,6 +41,7 @@
 #define protected public
 #include "PowerManagerImplementation.h"
 #include "LambdaJob.h"
+#include "PowerUtils.h"
 #undef private
 #undef protected
 #include "WorkerPoolImplementation.h"
@@ -4589,3 +4591,73 @@ TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsUnixTimeOutOfRange)
     TEST_LOG("<< Test passed");
 }
 #endif
+
+namespace {
+// Runs PowerController::init() against a persisted power state / reboot reason and a
+// simulated hardware state, returning the states the controller applied to the HAL.
+std::vector<PWRMgr_PowerState_t> bootWith(PowerManagerHalMock& hal, Plugin::PowerManagerImplementation& impl,
+    PowerState persistedState, const std::string& rebootReason, PWRMgr_PowerState_t hwState)
+{
+    std::vector<PWRMgr_PowerState_t> applied;
+
+    EXPECT_CALL(hal, PLAT_API_GetPowerState(::testing::_))
+        .WillRepeatedly(::testing::Invoke([hwState](PWRMgr_PowerState_t* powerState) {
+            *powerState = hwState;
+            return PWRMGR_SUCCESS;
+        }));
+
+    EXPECT_CALL(hal, PLAT_API_SetPowerState(::testing::_))
+        .WillRepeatedly(::testing::Invoke([&applied](PWRMgr_PowerState_t powerState) {
+            applied.push_back(powerState);
+            return PWRMGR_SUCCESS;
+        }));
+
+    impl._powerController._settings.SetPowerState(persistedState);
+    impl._powerController._settings.SetRebootReason(rebootReason);
+    impl._powerController.init();
+
+    return applied;
+}
+}
+
+#ifdef CUSTOM_LGI
+TEST_F(TestPowerManager, ThermalRebootBootsIntoStandby)
+{
+    auto applied = bootWith(*p_powerManagerHalMock, *powerManagerImpl, PowerState::POWER_STATE_ON,
+        PowerUtils::kThermalRebootReason, PWRMGR_POWERSTATE_OFF);
+
+    ASSERT_EQ(applied.size(), 1u);
+    EXPECT_EQ(applied[0], PWRMGR_POWERSTATE_STANDBY);
+    EXPECT_EQ(powerManagerImpl->_powerController._settings.powerState(), PowerState::POWER_STATE_STANDBY);
+}
+
+TEST_F(TestPowerManager, ThermalRebootAlreadyInStandbyPersistsStandby)
+{
+    auto applied = bootWith(*p_powerManagerHalMock, *powerManagerImpl, PowerState::POWER_STATE_ON,
+        PowerUtils::kThermalRebootReason, PWRMGR_POWERSTATE_STANDBY);
+
+    // Hardware already matches the thermal target, so no HAL call but the settings must follow it.
+    EXPECT_TRUE(applied.empty());
+    EXPECT_EQ(powerManagerImpl->_powerController._settings.powerState(), PowerState::POWER_STATE_STANDBY);
+    EXPECT_EQ(Settings::Load().powerState(), PowerState::POWER_STATE_STANDBY);
+}
+#else
+TEST_F(TestPowerManager, ThermalRebootReasonIgnoredWithoutCustomLgi)
+{
+    auto applied = bootWith(*p_powerManagerHalMock, *powerManagerImpl, PowerState::POWER_STATE_ON,
+        PowerUtils::kThermalRebootReason, PWRMGR_POWERSTATE_OFF);
+
+    ASSERT_EQ(applied.size(), 1u);
+    EXPECT_EQ(applied[0], PWRMGR_POWERSTATE_ON);
+}
+#endif
+
+TEST_F(TestPowerManager, NonThermalRebootBootsIntoPersistedState)
+{
+    auto applied = bootWith(*p_powerManagerHalMock, *powerManagerImpl, PowerState::POWER_STATE_ON,
+        "MAINTENANCE_REBOOT", PWRMGR_POWERSTATE_OFF);
+
+    ASSERT_EQ(applied.size(), 1u);
+    EXPECT_EQ(applied[0], PWRMGR_POWERSTATE_ON);
+    EXPECT_EQ(powerManagerImpl->_powerController._settings.powerState(), PowerState::POWER_STATE_ON);
+}

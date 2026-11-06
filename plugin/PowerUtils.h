@@ -23,6 +23,9 @@
 
 class PowerUtils {
 public:
+    // Reason used for Thermal Protection Shutdown (TPS) reboots and power state changes
+    static constexpr const char* kThermalRebootReason = "TPS";
+
     static const char* str(const WPEFramework::Exchange::IPowerManager::WakeupReason reason);
     static const char* str(const WPEFramework::Exchange::IPowerManager::PowerState state);
     static const char* str(const WPEFramework::Exchange::IPowerManager::WakeupSrcType wakeupSrc);
