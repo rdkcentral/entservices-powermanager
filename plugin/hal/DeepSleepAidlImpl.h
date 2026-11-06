@@ -91,7 +91,11 @@ public:
             bool result = false;
             android::binder::Status st = _deepsleep->setWakeUpTimer(static_cast<int32_t>(deepSleepTime), &result);
             if (!st.isOk() || !result) {
-                LOGERR("IDeepSleep::setWakeUpTimer failed. Removing TIMER trigger from wakeup triggers.");
+                LOGERR("IDeepSleep::setWakeUpTimer failed: seconds=%u, status=%s, result=%s. "
+                       "Removing TIMER trigger from wakeup triggers.",
+                    deepSleepTime,
+                    st.toString8().string(),
+                    st.isOk() ? (result ? "true" : "false") : "unavailable");
                 triggers.erase(itTimerTrigger);
             }
         }
@@ -109,10 +113,16 @@ public:
         std::optional<com::rdk::hal::deepsleep::KeyCode> keyCode;
         bool success = false;
 
+        for (const auto& trigger : triggers) {
+            LOGINFO("IDeepSleep::enterDeepSleep requested trigger=%d",
+                static_cast<int>(trigger));
+        }
+
         LOGINFO("Entering deep sleep for %u seconds with %zu wakeup triggers", deepSleepTime, triggers.size());
         android::binder::Status st = _deepsleep->enterDeepSleep(triggers, &wokeUpByTriggers, &keyCode, &success);
         if (!st.isOk()) {
-            LOGERR("IDeepSleep::enterDeepSleep failed");
+            LOGERR("IDeepSleep::enterDeepSleep failed: status=%s",
+                st.toString8().string());
             return WPEFramework::Core::ERROR_GENERAL;
         }
 
