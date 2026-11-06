@@ -48,6 +48,7 @@ uint32_t WPEFramework::Plugin::PowerManagerImplementation::_nextClientId        
 // 1. As per PowerManager PowerState is DEEP_SLEEP, but then SoC is not in deepsleep
 // 2. SoC woke-up from deep sleep even before schedule timeout
 static constexpr int kTransientDeepsleepThresholdSec = 5;
+static constexpr int kMaximumDeepSleepTimeoutSec = 2 * 24 * 60 * 60;
 
 using namespace std;
 
@@ -580,7 +581,7 @@ namespace Plugin {
     {
         LOGINFO(">> timeOut: %d", timeOut);
 
-        int timeOutVal = timeOut > 86400 ? 0 : timeOut;
+        int timeOutVal = timeOut > kMaximumDeepSleepTimeoutSec ? 0 : timeOut;
 
         _apiLock.Lock();
 
