@@ -55,6 +55,12 @@ if(PLUGIN_POWERMANAGER)
     add_subdirectory(plugin)
 endif()
 
+# PowerManager plugin client library (libWPEFrameworkPowerController.so),
+# previously delivered as a patch on top of wpeframework-clientlibraries.
+if(POWERCONTROLLER)
+    add_subdirectory(powercontroller)
+endif()
+
 if(WPEFRAMEWORK_CREATE_IPKG_TARGETS)
     set(CPACK_GENERATOR "DEB")
     set(CPACK_DEB_COMPONENT_INSTALL ON)
