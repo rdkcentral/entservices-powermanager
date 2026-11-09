@@ -18,6 +18,7 @@
  */
 #pragma once
 
+#include "Module.h"
 #include <chrono>
 #include <cstdint>
 
