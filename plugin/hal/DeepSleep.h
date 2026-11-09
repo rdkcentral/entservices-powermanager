@@ -20,15 +20,15 @@
 #pragma once
 
 #include <stdint.h> // for uint32_t
-
+#include <string>
 
 #include <core/Portability.h>         // for ErrorCodes
 #include <interfaces/IPowerManager.h> // for IPowerManager
 
+using WakeupSrcType = WPEFramework::Exchange::IPowerManager::WakeupSrcType;
 
 namespace hal {
 namespace deepsleep {
-
     class IPlatform {
         using WakeupReason = WPEFramework::Exchange::IPowerManager::WakeupReason;
 
@@ -39,6 +39,27 @@ namespace deepsleep {
         virtual uint32_t DeepSleepWakeup(void) = 0;
         virtual uint32_t GetLastWakeupReason(WakeupReason& wakeupReason) const = 0;
         virtual uint32_t GetLastWakeupKeyCode(int& wakeupKeyCode) const = 0;
+
+        /*
+        * SetWakeupSrc: Enable/Disable the wakeup source
+        *               DeepSleep platform implementation caches the wakeup triggers to be used during
+        *               the next deep sleep entry.
+        *               The wakeup source configuration is not persisted across reboots.
+        * @param wakeSrcType: Wakeup source type to be enabled/disabled
+        * @param enabled: true to enable, false to disable
+        * @return: WPEFramework::Core::ERROR_NONE on success, error code otherwise
+        */
+        virtual uint32_t SetWakeupSrc(WakeupSrcType wakeSrcType, bool enabled) = 0;
+
+        /*
+        * CacheBootReason: Cache the boot reason as the value to be returned by GetLastWakeupReason()
+                           till first deepsleep.
+        *                  The boot reason is used to determine the wakeup reason after the device wakes up
+        *                  from deep sleep.
+        * @param bootReason: Boot reason string to be cached
+        * @return: WPEFramework::Core::ERROR_NONE on success, error code otherwise
+        */
+        virtual uint32_t CacheBootReason(const std::string& bootReason) = 0;
     };
 }
 }

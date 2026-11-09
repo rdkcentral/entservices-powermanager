@@ -19,6 +19,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #include <core/Portability.h>
 #include <interfaces/IPowerManager.h>
@@ -37,6 +38,20 @@ namespace power {
         virtual uint32_t GetPowerState(PowerState& state) = 0;
         virtual uint32_t SetWakeupSrc(WakeupSrcType wakeSrcType, bool enabled, bool& supported) = 0;
         virtual uint32_t GetWakeupSrc(WakeupSrcType wakeSrcType, bool& enabled, bool& supported) const = 0;
+        /*
+        * GetBootReason: Get the boot reason from the platform implementation.
+        * @param bootReason: Boot reason string to be returned
+        * @return: WPEFramework::Core::ERROR_NONE on success, error code otherwise
+        */
+        virtual uint32_t GetBootReason(std::string& bootReason) const = 0;
+        /*
+        * Reboot: Invoking reboot via platform implementation.
+        * @param requestor: The entity requesting the reboot
+        * @param reasonCustom: Custom reason for the reboot
+        * @param reasonOther: Other reason for the reboot
+        * @return: WPEFramework::Core::ERROR_NONE on success, error code otherwise
+        */
+        virtual uint32_t Reboot(const std::string& requestor, const std::string& reasonCustom, const std::string& reasonOther) = 0;
     };
 } // namespace power
 } // namespace hal

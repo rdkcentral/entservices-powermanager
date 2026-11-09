@@ -40,6 +40,7 @@
 #include "LambdaJob.h"      // for LambdaJob
 #include "PowerUtils.h"     // for WakeupReason string
 #include "UtilsLogging.h"   // for LOGINFO, LOGERR
+#include "hal/PowerManagerFactory.h"
 #include "libIARM.h"        // for _IARM_Result_t, IARM_Result_t
 #include "libIBus.h"        // for IARM_Bus_Call
 #include "secure_wrapper.h" // for v_secure_system
@@ -203,6 +204,13 @@ DeepSleepController::~DeepSleepController()
         LOGINFO("Deepsleep delayed job cancelled");
     }
     LOGINFO("<< DTOR");
+}
+
+DeepSleepController DeepSleepController::Create(INotification& parent)
+{
+    auto impl = PowerManagerFactory::CreateDeepSleepPlatform();
+    ASSERT(impl != nullptr);
+    return DeepSleepController(parent, std::move(impl));
 }
 
 uint32_t DeepSleepController::GetLastWakeupReason(WakeupReason& wakeupReason) const
@@ -412,6 +420,16 @@ void DeepSleepController::performActivate(uint32_t timeOut, bool nwStandbyMode)
     } else {
         LOGERR("Deep sleep operation is already in progress");
     }
+}
+
+uint32_t DeepSleepController::SetWakeupSrc(WakeupSrcType wakeSrcType, bool enabled)
+{
+    return platform().SetWakeupSrc(wakeSrcType, enabled);
+}
+
+uint32_t DeepSleepController::CacheBootReason(const std::string& bootReason)
+{
+    return platform().CacheBootReason(bootReason);
 }
 
 bool DeepSleepController::waitForAbortableDelay(const std::chrono::seconds& delay)
