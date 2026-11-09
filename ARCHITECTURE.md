@@ -40,7 +40,7 @@ The plugin employs a specialized controller pattern with four distinct controlle
    - Integration with system services for coordinated shutdowns
 
 #### Support Layer
-- **AckController**: Pre-change acknowledgment system for power state transitions
+- **AckController**: Acknowledgment support for pre-change negotiation and the separate power mode change acknowledgment phase
 - **Settings**: Configuration management for power states and plugin behavior
 - **PowerUtils**: Utility functions for power state conversions and logging
 
@@ -68,11 +68,12 @@ The plugin employs a specialized controller pattern with four distinct controlle
 ### Power State Change Flow
 1. **Request Initiation**: Client requests power state change through IPowerManager interface
 2. **Pre-Change Notification**: AckController notifies registered clients for acknowledgment
-3. **Acknowledgment Collection**: System waits for client acknowledgments within timeout
-4. **Validation**: PowerController validates target power state and prerequisites
-5. **HAL Execution**: Platform-specific power state change through IPlatform interface
-6. **State Persistence**: Settings controller updates configuration persistence
-7. **Post-Change Notification**: Broadcast power state change notifications to all subscribers
+3. **Pre-Change Acknowledgment Collection**: System waits for pre-change client acknowledgments within timeout
+4. **Power Mode Change Acknowledgment**: After pre-change negotiation completes, emit `OnPowerModeChangeAcknowledgementRequested` with the current state, target state, transaction ID and reason, and wait for registered acknowledgment clients. Skip this phase when no acknowledgment clients are registered. Apply the change after all clients acknowledge or the timeout expires (10 seconds by default); on timeout, log unresponsive clients and proceed.
+5. **Validation**: PowerController validates target power state and prerequisites
+6. **HAL Execution**: Platform-specific power state change through IPlatform interface
+7. **State Persistence**: Settings controller updates configuration persistence
+8. **Post-Change Notification**: Broadcast power state change notifications to all subscribers
 
 ### Thermal Management Flow
 1. **Continuous Monitoring**: ThermalController polls temperature through MFR HAL
@@ -104,6 +105,8 @@ The plugin employs a specialized controller pattern with four distinct controlle
 - **JSON-RPC API**: RESTful API for power management operations
 - **Event Notifications**: Asynchronous notifications for state changes
 - **Client Registration**: Support for multiple client subscriptions
+- **Acknowledgment Clients**: Register with `AddPowerModeChangeAcknowledgementClient`, respond with `PowerModeChangeAcknowledgement` using the returned acknowledgment client ID and the acknowledgment-requested event's transaction ID, and unregister with `RemovePowerModeChangeAcknowledgementClient`. Removing a client during a round satisfies its pending acknowledgment.
+- **Transition Arbitration**: `SetPowerState` requests during an active acknowledgment round are rejected with `Core::ERROR_ILLEGAL_STATE`.
 
 ## Dependencies and Interfaces
 
