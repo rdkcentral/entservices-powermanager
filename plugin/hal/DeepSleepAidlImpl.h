@@ -55,7 +55,6 @@ public:
         _wakeupTriggers = {
             com::rdk::hal::deepsleep::WakeUpTrigger::RCU_IR,
             com::rdk::hal::deepsleep::WakeUpTrigger::RCU_BT,
-            com::rdk::hal::deepsleep::WakeUpTrigger::RCU_RF4CE,
             com::rdk::hal::deepsleep::WakeUpTrigger::TIMER
         };
 
@@ -228,6 +227,10 @@ public:
             trigger = com::rdk::hal::deepsleep::WakeUpTrigger::LAN;
             break;
         case WakeupSrcType::WAKEUP_SRC_RF4CE:
+            if (enabled) {
+                LOGERR("Cannot enable RF4CE wakeup: RF4CE is disabled in this AIDL client configuration");
+                return WPEFramework::Core::ERROR_UNAVAILABLE;
+            }
             trigger = com::rdk::hal::deepsleep::WakeUpTrigger::RCU_RF4CE;
             break;
         default:
