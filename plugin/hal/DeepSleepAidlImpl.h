@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -37,6 +38,7 @@
 #include <binder/ProcessState.h>
 #include <utils/StrongPointer.h>
 
+#include <com/rdk/hal/deepsleep/Capabilities.h>
 #include <com/rdk/hal/deepsleep/IDeepSleep.h>
 #include <com/rdk/hal/deepsleep/KeyCode.h>
 #include <com/rdk/hal/deepsleep/WakeUpTrigger.h>
@@ -113,9 +115,34 @@ public:
         std::optional<com::rdk::hal::deepsleep::KeyCode> keyCode;
         bool success = false;
 
+        com::rdk::hal::deepsleep::Capabilities capabilities;
+        const android::binder::Status capabilityStatus = _deepsleep->getCapabilities(&capabilities);
+        if (!capabilityStatus.isOk()) {
+            LOGERR("IDeepSleep::getCapabilities failed: status=%s. "
+                   "Trigger support is unknown; continuing with the original sleep request.",
+                capabilityStatus.toString8().string());
+        } else {
+            LOGINFO("IDeepSleep::getCapabilities supported trigger count=%zu",
+                capabilities.supportedTriggers.size());
+            for (const auto& trigger : capabilities.supportedTriggers) {
+                LOGINFO("IDeepSleep::getCapabilities supported trigger=%d",
+                    static_cast<int>(trigger));
+            }
+        }
+
         for (const auto& trigger : triggers) {
-            LOGINFO("IDeepSleep::enterDeepSleep requested trigger=%d",
-                static_cast<int>(trigger));
+            const char* supported = "unknown";
+            if (capabilityStatus.isOk()) {
+                supported = (std::find(capabilities.supportedTriggers.begin(),
+                                 capabilities.supportedTriggers.end(), trigger)
+                                != capabilities.supportedTriggers.end())
+                    ? "true"
+                    : "false";
+            }
+            LOGINFO("IDeepSleep::enterDeepSleep requested trigger=%d%s, supported=%s",
+                static_cast<int>(trigger),
+                trigger == com::rdk::hal::deepsleep::WakeUpTrigger::RCU_RF4CE ? " (RCU_RF4CE)" : "",
+                supported);
         }
 
         LOGINFO("Entering deep sleep for %u seconds with %zu wakeup triggers", deepSleepTime, triggers.size());
@@ -127,7 +154,12 @@ public:
         }
 
         if (!success) {
-            LOGERR("IDeepSleep::enterDeepSleep reported failure");
+            LOGERR("IDeepSleep::enterDeepSleep reported failure: success=false, returnedWakeupTriggerCount=%zu",
+                wokeUpByTriggers.size());
+            for (const auto& trigger : wokeUpByTriggers) {
+                LOGINFO("IDeepSleep::enterDeepSleep failure returned wakeup trigger=%d",
+                    static_cast<int>(trigger));
+            }
             return WPEFramework::Core::ERROR_ABORTED;
         }
 
