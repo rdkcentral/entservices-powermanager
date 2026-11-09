@@ -121,6 +121,8 @@ namespace Plugin {
         virtual Core::hresult Unregister(const Exchange::IPowerManager::INetworkStandbyModeChangedNotification* notification) override;
         virtual Core::hresult Register(Exchange::IPowerManager::IThermalModeChangedNotification* notification) override;
         virtual Core::hresult Unregister(const Exchange::IPowerManager::IThermalModeChangedNotification* notification) override;
+        virtual Core::hresult Register(Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested* notification) override;
+        virtual Core::hresult Unregister(const Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested* notification) override;
 
         Core::hresult GetPowerState(PowerState& currentState, PowerState& prevState) const override;
         Core::hresult SetPowerState(const int keyCode, const PowerState powerState, const string& standbyReason) override;
@@ -143,6 +145,9 @@ namespace Plugin {
         Core::hresult DelayPowerModeChangeBy(const uint32_t clientId, const int transactionId, const int delayPeriod) override;
         Core::hresult AddPowerModePreChangeClient(const string& clientName, uint32_t& clientId) override;
         Core::hresult RemovePowerModePreChangeClient(const uint32_t clientId) override;
+        Core::hresult PowerModeChangeAcknowledgement(const uint32_t acknowledgeClientId, const int transactionId) override;
+        Core::hresult AddPowerModeChangeAcknowledgementClient(const string& clientName, uint32_t& acknowledgeClientId) override;
+        Core::hresult RemovePowerModeChangeAcknowledgementClient(const uint32_t acknowledgeClientId) override;
 
         static PowerManagerImplementation* _instance;
 
@@ -166,8 +171,11 @@ namespace Plugin {
         std::list<Exchange::IPowerManager::IDeepSleepTimeoutNotification*> _deepSleepTimeoutNotifications;
         std::list<Exchange::IPowerManager::INetworkStandbyModeChangedNotification*> _networkStandbyModeChangedNotifications;
         std::list<Exchange::IPowerManager::IThermalModeChangedNotification*> _thermalModeChangedNotifications;
+        std::list<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested*> _modeChangeAckNotifications;
         std::shared_ptr<PreModeChangeController> _modeChangeController;
         std::unordered_map<uint32_t, std::string> _modeChangeClients;
+        std::shared_ptr<PreModeChangeController> _modeChangeAckController;
+        std::unordered_map<uint32_t, std::string> _modeChangeAckClients;
 
         void dispatchPowerModeChangedEvent(const PowerState& currentState, const PowerState& newState);
         void dispatchDeepSleepTimeoutEvent(const uint32_t& timeout);
@@ -177,6 +185,10 @@ namespace Plugin {
 
         void submitPowerModePreChangeEvent(const PowerState currentState, const PowerState newState, const int transactionId, const int timeOut);
         void powerModePreChangeCompletionHandler(const int keyCode, PowerState currentState, PowerState powerState, const std::string& reason);
+        void startPowerModeChangeAcknowledgement(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason);
+        void submitPowerModeChangeAcknowledgementRequestedEvent(const PowerState currentState, const PowerState newState, const int transactionId, const string& reason);
+        void powerModeChangeAcknowledgementCompletionHandler(const int keyCode, PowerState currentState, PowerState newState, const std::string& reason);
+        void logUnresponsiveAckClients(const std::shared_ptr<PreModeChangeController>& ackController);
         Core::hresult setDevicePowerState(const int& keyCode, PowerState currentState, PowerState powerState, const std::string& reason);
         inline bool isSyncStateChange(PowerState currState, PowerState newState) const;
 
@@ -198,6 +210,7 @@ namespace Plugin {
         Core::hresult getWakeupSourceConfig(std::list<WakeupSourceConfig>& configs) const;
 
         static uint32_t _nextClientId; // static counter for unique client ID generation.
+        static uint32_t _nextAckClientId; // static counter for unique acknowledgement client ID generation.
 
         // maintain this last
         DeepSleepController _deepSleepController;
