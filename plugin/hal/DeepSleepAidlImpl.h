@@ -82,8 +82,8 @@ public:
                             }
                             triggers += WakeupTriggerName(trigger);
                         }
-                        return triggers.c_str();
-                    }());
+                        return triggers;
+                    }().c_str());
                     
                     _enabledWakeupTriggers.erase(std::remove_if(_enabledWakeupTriggers.begin(), _enabledWakeupTriggers.end(),
                         [this](const auto& trigger) {
@@ -155,8 +155,8 @@ public:
                 }
                 triggerNames += WakeupTriggerName(trigger);
             }
-            return triggerNames.c_str();
-        }());
+            return triggerNames;
+        }().c_str());
         
         android::binder::Status st = _deepsleep->enterDeepSleep(triggers, &wokeUpByTriggers, &keyCode, &success);
         if (!st.isOk()) {
