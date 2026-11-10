@@ -17,6 +17,7 @@
  * limitations under the License.
  */
 
+#include "Module.h"
 #include <functional> // for function
 #include <unistd.h>   // for access, F_OK
 
