@@ -227,7 +227,7 @@ uint32_t PowerController::GetWakeupSourceConfig(std::list<WPEFramework::Exchange
         //      Keeping the redundancy till then.
         uint32_t result = _deepSleep.GetWakeupSrc(wakeupSrc, enabled, supported);
 
-        if (WPEFramework::Core::ERROR_NOT_IMPLEMENTED == result) {
+        if (WPEFramework::Core::ERROR_NOT_SUPPORTED == result) {
             result = platform().GetWakeupSrc(wakeupSrc, enabled, supported);
         }
 
