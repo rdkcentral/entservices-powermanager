@@ -204,11 +204,6 @@ public:
         return retCode;
     }
 
-    virtual uint32_t SetWakeupSrc(WakeupSrcType wakeSrcType, bool enabled) override
-    {
-        return WPEFramework::Core::ERROR_NONE;
-    }
-
     virtual uint32_t CacheBootReason(const std::string& bootReason) override
     {
         return WPEFramework::Core::ERROR_NONE;

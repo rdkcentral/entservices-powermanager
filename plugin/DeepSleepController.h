@@ -166,6 +166,15 @@ public:
     uint32_t SetWakeupSrc(WakeupSrcType wakeSrcType, bool enabled);
 
     /*
+    * GetWakeupSrc: Retrieve the status of the wakeup source
+    * @param wakeSrcType: Wakeup source type to be queried
+    * @param enabled: true if the wakeup source is enabled, false otherwise
+    * @param supported: true if the wakeup source is supported, false otherwise
+    * @return: WPEFramework::Core::ERROR_NONE on success, error code otherwise
+    */
+    uint32_t GetWakeupSrc(WakeupSrcType wakeSrcType, bool& enabled, bool& supported);
+
+    /*
     * CacheBootReason: Cache the boot reason as the value to be returned by GetLastWakeupReason()
                         till first deepsleep.
     *                  The boot reason is used to determine the wakeup reason after the device wakes up

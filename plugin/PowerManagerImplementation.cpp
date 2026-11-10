@@ -715,7 +715,7 @@ namespace Plugin {
 
     Core::hresult PowerManagerImplementation::setWakeupSourceConfig(const std::list<WakeupSourceConfig>& configs)
     {
-        LOGINFO(">>");
+        LOGINFO(">> Total wakeup sources to configure: %zu", configs.size());
 
         _apiLock.Lock();
 

@@ -44,13 +44,6 @@ public:
         : _boot(nullptr)
         , _powerState(PowerState::POWER_STATE_ON)
     {
-        _wakeupSources = {
-            {WakeupSrcType::WAKEUP_SRC_IR, true},
-            {WakeupSrcType::WAKEUP_SRC_BLUETOOTH, true},
-            {WakeupSrcType::WAKEUP_SRC_RF4CE, true},
-            {WakeupSrcType::WAKEUP_SRC_TIMER, true},
-        };
-
         try {
             android::ProcessState::self()->startThreadPool();
             android::sp<android::IBinder> binderSvc = android::defaultServiceManager()->getService(
@@ -92,17 +85,12 @@ public:
 
     uint32_t SetWakeupSrc(WakeupSrcType wakeSrcType, bool enabled, bool& supported) override
     {
-        supported = true;
-        _wakeupSources[wakeSrcType] = enabled;
-        return WPEFramework::Core::ERROR_NONE;
+        return WPEFramework::Core::ERROR_NOT_SUPPORTED;
     }
 
     uint32_t GetWakeupSrc(WakeupSrcType wakeSrcType, bool& enabled, bool& supported) const override
     {
-        supported = true;
-        auto it = _wakeupSources.find(wakeSrcType);
-        enabled = (it != _wakeupSources.end()) ? it->second : false;
-        return WPEFramework::Core::ERROR_NONE;
+        return WPEFramework::Core::ERROR_NOT_SUPPORTED;
     }
 
     virtual uint32_t GetBootReason(std::string& bootReasonStr) const  override
@@ -178,5 +166,4 @@ private:
 private:
     android::sp<IBoot> _boot;
     PowerState _powerState;
-    std::map<WakeupSrcType, bool> _wakeupSources;
 };

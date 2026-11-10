@@ -399,6 +399,11 @@ uint32_t DeepSleepController::SetWakeupSrc(WakeupSrcType wakeSrcType, bool enabl
     return platform().SetWakeupSrc(wakeSrcType, enabled);
 }
 
+uint32_t DeepSleepController::GetWakeupSrc(WakeupSrcType wakeSrcType, bool& enabled, bool& supported)
+{
+    return platform().GetWakeupSrc(wakeSrcType, enabled, supported);
+}
+
 uint32_t DeepSleepController::CacheBootReason(const std::string& bootReason)
 {
     return platform().CacheBootReason(bootReason);
