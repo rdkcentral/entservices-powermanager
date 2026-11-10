@@ -74,7 +74,17 @@ public:
                 if (!st.isOk()) {
                     LOGERR("Failed to get DeepSleep capabilities");
                 } else {
-                    LOGINFO("DeepSleep capabilities acquired successfully");
+                    LOGINFO("DeepSleep capabilities acquired successfully. Vendor layer supported triggers: %s", [&]() {
+                        std::string triggers;
+                        for (const auto& trigger : _halCapabilities.supportedTriggers) {
+                            if (!triggers.empty()) {
+                                triggers += ", ";
+                            }
+                            triggers += WakeupTriggerName(trigger);
+                        }
+                        return triggers;
+                    }().c_str());
+                    
                     _enabledWakeupTriggers.erase(std::remove_if(_enabledWakeupTriggers.begin(), _enabledWakeupTriggers.end(),
                         [this](const auto& trigger) {
                             return std::find(_halCapabilities.supportedTriggers.begin(),
@@ -89,6 +99,22 @@ public:
             LOGERR("Exception caught while initializing AIDL DeepSleep service");
         }
     }
+
+    const std::string& WakeupTriggerName(com::rdk::hal::deepsleep::WakeUpTrigger wakeupTrigger)
+    {
+        static std::string name;
+        switch (wakeupTrigger) {
+            case com::rdk::hal::deepsleep::WakeUpTrigger::RCU_IR: name = "RCU_IR"; break;
+            case com::rdk::hal::deepsleep::WakeUpTrigger::RCU_BT: name = "RCU_BT"; break;
+            case com::rdk::hal::deepsleep::WakeUpTrigger::RCU_RF4CE: name = "RCU_RF4CE"; break;
+            case com::rdk::hal::deepsleep::WakeUpTrigger::TIMER: name = "TIMER"; break;
+            case com::rdk::hal::deepsleep::WakeUpTrigger::LAN: name = "LAN"; break;
+            case com::rdk::hal::deepsleep::WakeUpTrigger::WLAN: name = "WLAN"; break;
+            default: name = "UNKNOWN"; break;
+        }
+        return name;
+    }
+ 
 
     uint32_t SetDeepSleep(uint32_t deepSleepTime, bool& isGPIOWakeup, bool networkStandby) override
     {
@@ -121,7 +147,17 @@ public:
         std::optional<com::rdk::hal::deepsleep::KeyCode> keyCode;
         bool success = false;
 
-        LOGINFO("Entering deep sleep for %u seconds with %zu wakeup triggers", deepSleepTime, triggers.size());
+        LOGINFO("Entering deep sleep for %u seconds with %zu wakeup triggers : %s", deepSleepTime, triggers.size(), [&]() {
+            std::string triggerNames;
+            for (const auto& trigger : triggers) {
+                if (!triggerNames.empty()) {
+                    triggerNames += ", ";
+                }
+                triggerNames += WakeupTriggerName(trigger);
+            }
+            return triggerNames.c_str();
+        }().c_str());
+        
         android::binder::Status st = _deepsleep->enterDeepSleep(triggers, &wokeUpByTriggers, &keyCode, &success);
         if (!st.isOk()) {
             LOGERR("IDeepSleep::enterDeepSleep failed");
