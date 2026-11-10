@@ -185,7 +185,7 @@ public:
             return com::rdk::hal::deepsleep::WakeUpTrigger::RCU_RF4CE;
         default:
             LOGERR("Unknown wakeup source type: %d", wakeSrcType);
-            return com::rdk::hal::deepsleep::WakeUpTrigger::UNKNOWN;
+            return com::rdk::hal::deepsleep::WakeUpTrigger::ERROR_UNKNOWN;
         }
     }
 
@@ -197,7 +197,7 @@ public:
 
         com::rdk::hal::deepsleep::WakeUpTrigger trigger = wakeSrcTypeToWakeUpTrigger(wakeSrcType);
 
-        if (trigger == com::rdk::hal::deepsleep::WakeUpTrigger::UNKNOWN) {
+        if (trigger == com::rdk::hal::deepsleep::WakeUpTrigger::ERROR_UNKNOWN) {
             return WPEFramework::Core::ERROR_INVALID_PARAMETER;
         }
 
@@ -226,7 +226,7 @@ public:
         }
 
         com::rdk::hal::deepsleep::WakeUpTrigger trigger = wakeSrcTypeToWakeUpTrigger(wakeSrcType);
-        if (trigger == com::rdk::hal::deepsleep::WakeUpTrigger::UNKNOWN) {
+        if (trigger == com::rdk::hal::deepsleep::WakeUpTrigger::ERROR_UNKNOWN) {
             return WPEFramework::Core::ERROR_INVALID_PARAMETER;
         }
 
