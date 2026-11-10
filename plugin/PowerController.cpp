@@ -225,7 +225,11 @@ uint32_t PowerController::GetWakeupSourceConfig(std::list<WPEFramework::Exchange
 
         //TODO: DeepSleep platform will be the source of truth for wakeup source configuration, after RDKV HAL is removed.
         //      Keeping the redundancy till then.
-        uint32_t result = platform().GetWakeupSrc(wakeupSrc, enabled, supported);
+        uint32_t result = _deepSleep.GetWakeupSrc(wakeupSrc, enabled, supported);
+
+        if (WPEFramework::Core::ERROR_NOT_IMPLEMENTED == result) {
+            result = platform().GetWakeupSrc(wakeupSrc, enabled, supported);
+        }
 
         if (WPEFramework::Core::ERROR_NONE == result) {
             configs.push_back({ wakeupSrc, enabled });
