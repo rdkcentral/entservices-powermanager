@@ -42,7 +42,6 @@ cmake -G Ninja -S "$GITHUB_WORKSPACE" -B build/entservices-powermanager \
 -DCMAKE_DISABLE_FIND_PACKAGE_Telemetry=ON \
 -DCOMCAST_CONFIG=OFF \
 -DRDK_SERVICES_COVERITY=ON \
--DRDK_SERVICES_L1_TEST=ON \
 -DDS_FOUND=ON \
 -DPLUGIN_POWERMANAGER=ON \
 -DCMAKE_CXX_FLAGS="-DEXCEPTIONS_ENABLE=ON \
@@ -71,13 +70,13 @@ cmake -G Ninja -S "$GITHUB_WORKSPACE" -B build/entservices-powermanager \
 -include ${GITHUB_WORKSPACE}/entservices-testframework/Tests/mocks/wpa_ctrl_mock.h \
 -include ${GITHUB_WORKSPACE}/entservices-testframework/Tests/mocks/secure_wrappermock.h \
 -include ${GITHUB_WORKSPACE}/entservices-testframework/Tests/mocks/readprocMockInterface.h \
--Wall -Werror -Wno-error=format \
+-Wall -Werror -Wno-error=format -Wno-error=unused-function \
 -Wl,-wrap,system -Wl,-wrap,popen -Wl,-wrap,syslog \
 -DENABLE_TELEMETRY_LOGGING -DUSE_IARMBUS \
 -DENABLE_DEEP_SLEEP \
 -DENABLE_SET_WAKEUP_SRC_CONFIG -DENABLE_THERMAL_PROTECTION \
 -DHAS_API_SYSTEM -DHAS_API_POWERSTATE \
--DHAS_RBUS -DDISABLE_SECURITY_TOKEN -DUSE_THUNDER_R4=ON -DTHUNDER_VERSION=4 -DTHUNDER_VERSION_MAJOR=4 -DTHUNDER_VERSION_MINOR=4" \
+-DHAS_RBUS -DDISABLE_SECURITY_TOKEN  -DTHUNDER_VERSION=4 -DTHUNDER_VERSION_MAJOR=4 -DTHUNDER_VERSION_MINOR=4" \
 
 cmake --build build/entservices-powermanager --target install
 echo "======================================================================================"

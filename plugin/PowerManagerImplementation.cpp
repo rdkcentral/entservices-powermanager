@@ -345,6 +345,7 @@ namespace Plugin {
     Core::hresult PowerManagerImplementation::SetPowerState(const int keyCode, const PowerState newState, const string& reason)
     {
         static WPEFramework::Core::BinairySemaphore selfLock{ 1, 1 };
+        static constexpr uint32_t kSelfLockRetryIntervalMs = 1000;
 
         PowerState currState = POWER_STATE_UNKNOWN;
         PowerState prevState = POWER_STATE_UNKNOWN;
@@ -354,7 +355,21 @@ namespace Plugin {
 
         LOGINFO(">> newState: %s, reason %s", util::str(newState), reason.c_str());
 
-        selfLock.Lock();
+        uint32_t lockStatus = Core::ERROR_NONE;
+        while ((lockStatus = selfLock.Lock(kSelfLockRetryIntervalMs)) != Core::ERROR_NONE) {
+            PowerState inProgressState = POWER_STATE_UNKNOWN;
+            bool hasInProgressState = false;
+
+            _apiLock.Lock();
+            if (_modeChangeController) {
+                inProgressState = _modeChangeController->powerState();
+                hasInProgressState = true;
+            }
+            _apiLock.Unlock();
+
+            LOGINFO("selfLock busy. current request is waiting, newState: %s, inProgressState: %s, reason: %s, lockStatus: %u",
+                util::str(newState), hasInProgressState ? util::str(inProgressState) : "na", reason.c_str(), lockStatus);
+        }
 
         LOGINFO("selfLock Acquired");
 
@@ -378,13 +393,13 @@ namespace Plugin {
             isSync = isSyncStateChange(currState, newState);
 
             if (POWER_STATE_STANDBY_DEEP_SLEEP == currState) {
+                auto elapsed = _deepSleepController.Elapsed();
                 if (_deepSleepController.IsDeepSleepInProgress()
-                    && (_deepSleepController.Elapsed() < std::chrono::seconds(kTransientDeepsleepThresholdSec))) {
+                    && (elapsed < std::chrono::seconds(kTransientDeepsleepThresholdSec))) {
 
                     LOGINFO("deepsleep in  progress  ignoring %s request, elapsed: %" PRId64 " sec",
-                            util::str(newState), std::chrono::duration_cast<std::chrono::seconds>(_deepSleepController.Elapsed()).count());
+                            util::str(newState), std::chrono::duration_cast<std::chrono::seconds>(elapsed).count());
                     t2_event_d((char*)"SYST_ERR_SetPwrStateFail", 1);
- 
 
                     selfLock.Unlock();
                     LOGINFO("selfLock Released isSync: na");

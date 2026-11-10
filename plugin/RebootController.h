@@ -20,6 +20,7 @@
 
 #include "UtilsLogging.h"
 #include <core/WorkerPool.h>
+#include <ctime>
 
 #include "Settings.h"
 
@@ -28,7 +29,14 @@ class RebootController {
     template <typename T>
     static inline typename T::rep now()
     {
-        return std::chrono::duration_cast<T>(std::chrono::steady_clock::now().time_since_epoch()).count();
+#ifdef CLOCK_BOOTTIME
+        struct timespec bootTime{};
+        if (clock_gettime(CLOCK_BOOTTIME, &bootTime) == 0) {
+            const auto elapsed = std::chrono::seconds(bootTime.tv_sec) + std::chrono::nanoseconds(bootTime.tv_nsec);
+            return std::chrono::duration_cast<T>(elapsed).count();
+        }
+#endif
+	return std::chrono::duration_cast<T>(std::chrono::steady_clock::now().time_since_epoch()).count();
     }
 
     class Threshold {

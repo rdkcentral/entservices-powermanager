@@ -10,7 +10,8 @@ on:
 
 env:
   BUILD_TYPE: Debug
-  THUNDER_REF: "R4.4.1"
+  THUNDER_TOOLS_COMMIT_SHA: "d5dd83c7c19c49c7f25c558c126500bd2d64f7a4"
+  THUNDER_COMMIT_SHA: "2c0fcc5529e7da734be558ca6efa05d934dcce31"
   INTERFACES_REF: "develop"
   AUTOMATICS_UNAME: ${{ secrets.AUTOMATICS_UNAME}}
   AUTOMATICS_PASSCODE: ${{ secrets. AUTOMATICS_PASSCODE}}
@@ -80,7 +81,7 @@ jobs:
         with:
           repository: rdkcentral/Thunder
           path: Thunder
-          ref: ${{env.THUNDER_REF}}
+          ref: ${{env.THUNDER_COMMIT_SHA}}
 
       - name: Checkout googletest
         if: steps.cache.outputs.cache-hit != 'true'
@@ -95,14 +96,14 @@ jobs:
         with:
           repository: rdkcentral/ThunderTools
           path: ThunderTools
-          ref: R4.4.3
+          ref: ${{env.THUNDER_TOOLS_COMMIT_SHA}}
 
       - name: Checkout entservices-testframework
         uses: actions/checkout@v3
         with:
           repository: rdkcentral/entservices-testframework
           path: entservices-testframework
-          ref: 1.0.17
+          ref: 2.0.0
 
       - name: Checkout entservices-powermanager
         if: ${{ inputs.caller_source == 'local' }}
@@ -117,12 +118,6 @@ jobs:
           repository: rdkcentral/entservices-powermanager
           path: entservices-powermanager
           ref: develop
-
-      - name: Apply patches ThunderTools
-        run: |
-          cd $GITHUB_WORKSPACE/ThunderTools
-          patch -p1 < $GITHUB_WORKSPACE/entservices-testframework/patches/00010-R4.4-Add-support-for-project-dir.patch
-          cd -
 
       - name: Build ThunderTools
         run: >
@@ -141,13 +136,10 @@ jobs:
       - name: Apply patches Thunder
         run: |
           cd $GITHUB_WORKSPACE/Thunder
-          patch -p1 < $GITHUB_WORKSPACE/entservices-testframework/patches/Use_Legact_Alt_Based_On_ThunderTools_R4.4.3.patch
-          patch -p1 < $GITHUB_WORKSPACE/entservices-testframework/patches/error_code_R4_4.patch
-          patch -p1 < $GITHUB_WORKSPACE/entservices-testframework/patches/1004-Add-support-for-project-dir.patch
-          patch -p1 < $GITHUB_WORKSPACE/entservices-testframework/patches/RDKEMW-733-Add-ENTOS-IDS.patch
-          patch -p1 < $GITHUB_WORKSPACE/entservices-testframework/patches/Jsonrpc_dynamic_error_handling.patch
-          patch -p1 < $GITHUB_WORKSPACE/entservices-testframework/patches/Increase_Timout_For_L2Tests_Plugin.patch
+          patch -p1 < $GITHUB_WORKSPACE/entservices-testframework/patches/Increase_Timout_For_L2Tests_Plugin_R4_4-RDK.patch
+          patch -p1 < $GITHUB_WORKSPACE/entservices-testframework/patches/LockFixedBuffer_compat_R4.4.6.patch
           cd -
+
       - name: Build Thunder
         run: >
           cmake
@@ -161,6 +153,7 @@ jobs:
           -DBINDING=127.0.0.1
           -DPORT=9998
           -DEXCEPTIONS_ENABLE=ON
+          -DCONFIG_PATH="$GITHUB_WORKSPACE/install/etc/WPEFramework/plugins"
           &&
           cmake --build build/Thunder -j8
           &&
@@ -375,7 +368,6 @@ jobs:
           -DEXCEPTIONS_ENABLE=ON
           -fprofile-arcs
           -ftest-coverage
-          -DUSE_THUNDER_R4=ON
           -DTHUNDER_VERSION=4
           -DTHUNDER_VERSION_MAJOR=4
           -DTHUNDER_VERSION_MINOR=4
@@ -413,7 +405,7 @@ jobs:
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/tvSettingsODM.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/tvTypes.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/essos-resmgr.h
-          -Werror -Wall -Wno-unused-result -Wno-deprecated-declarations -Wno-error=format=
+          -Werror -Wall -Wno-unused-result -Wno-deprecated-declarations -Wno-error=format= -Wno-error=unused-function
           -Wl,-wrap,system -Wl,-wrap,popen -Wl,-wrap,syslog -Wl,-wrap,v_secure_system -Wl,-wrap,v_secure_popen -Wl,-wrap,v_secure_pclose -Wl,-wrap,unlink
           -DUSE_IARMBUS
           -DRDK_SERVICE_L2_TEST
@@ -428,6 +420,7 @@ jobs:
           -DCMAKE_DISABLE_FIND_PACKAGE_RFC=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_RBus=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_Telemetry=ON
+          -DPOWERCONTROLLER=ON
           -DPLUGIN_POWERMANAGER=ON
           -DPLUGIN_POWERMANAGER_MODE="Local"
           -DUSE_THUNDER_R4=ON
@@ -454,7 +447,6 @@ jobs:
           -DEXCEPTIONS_ENABLE=ON
           -fprofile-arcs
           -ftest-coverage
-          -DUSE_THUNDER_R4=ON
           -DTHUNDER_VERSION=4
           -DTHUNDER_VERSION_MAJOR=4
           -DTHUNDER_VERSION_MINOR=4
