@@ -51,7 +51,7 @@ namespace deepsleep {
         */
         virtual uint32_t SetWakeupSrc(WakeupSrcType wakeSrcType, bool enabled) = 0;
         virtual uint32_t GetWakeupSrc(WakeupSrcType wakeSrcType, bool& enabled, bool& supported) {
-            return WPEFramework::Core::ERROR_NOT_IMPLEMENTED; // Placeholder implementation
+            return WPEFramework::Core::ERROR_NOT_SUPPORTED; // Placeholder implementation
         }
         /*
         * CacheBootReason: Cache the boot reason as the value to be returned by GetLastWakeupReason()
