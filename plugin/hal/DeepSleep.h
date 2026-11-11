@@ -49,7 +49,9 @@ namespace deepsleep {
         * @param enabled: true to enable, false to disable
         * @return: WPEFramework::Core::ERROR_NONE on success, error code otherwise
         */
-        virtual uint32_t SetWakeupSrc(WakeupSrcType wakeSrcType, bool enabled) = 0;
+        virtual uint32_t SetWakeupSrc(WakeupSrcType wakeSrcType, bool enabled) {
+            return WPEFramework::Core::ERROR_NOT_SUPPORTED; // Placeholder implementation
+        }
 
         virtual uint32_t GetWakeupSrc(WakeupSrcType wakeSrcType, bool& enabled, bool& supported) {
             return WPEFramework::Core::ERROR_NOT_SUPPORTED; // Placeholder implementation
