@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>
 #include <cerrno>
 #include <vector>
 #include <fcntl.h>
@@ -32,7 +33,6 @@
 
 #include "Module.h"
 #include "UtilsLogging.h"
-
 #include "ServiceManagerCheck.h"
 
 // --- Internal implementation details ---
@@ -82,9 +82,7 @@ constexpr uint32_t BR_OK_V7             = 0x7205;
 constexpr uint32_t PING_TRANSACTION     = 0x5F504E47; // '_PNG'
 
 // Macro definitions for internal use
-#ifndef BINDER_VERSION
 #define BINDER_VERSION       _IOWR('b', 9, struct binder_version)
-#endif
 #define BINDER_WRITE_READ_V7 _IOWR('b', 1, struct binder_write_read_v7)
 #define BC_TRANSACTION_V7    _IOW('c', 0, struct binder_transaction_data_v7)
 
@@ -118,10 +116,17 @@ static BinderTransaction prepare_v7_transaction() {
 }
 
 // Helper: Generates v8 (Current System Context) structural packets
+// Explicitly pack the structure to guarantee 0 compiler padding between command and struct
+struct __attribute__((packed)) AlignedWritePayload {
+    uint32_t cmd;
+    struct binder_transaction_data txn;
+};
+
 static BinderTransaction prepare_v8_transaction() {
     BinderTransaction tx;
     tx.ioctl_command = BINDER_WRITE_READ;
 
+    // Initialize transaction data
     struct binder_transaction_data txn{};
     std::memset(&txn, 0, sizeof(txn));
     txn.target.handle = 0;          
@@ -130,12 +135,18 @@ static BinderTransaction prepare_v8_transaction() {
     txn.data_size = 0;              
     txn.offsets_size = 0;
 
-    const size_t tx_words = sizeof(txn) / sizeof(uint32_t);
-    tx.write_payload.reserve(1 + tx_words);
-    tx.write_payload.push_back(BC_TRANSACTION);
+    // Pack both the command and txn sequentially into our aligned type
+    AlignedWritePayload payload{};
+    payload.cmd = BC_TRANSACTION;
+    payload.txn = txn;
 
-    tx.write_payload.resize(1 + tx_words);
-    std::memcpy(tx.write_payload.data() + 1, &txn, sizeof(txn));
+    // Resize the payload vector to the exact byte size of the packed struct
+    tx.write_payload.resize(sizeof(payload));
+
+    // Copy the entire packed layout directly into the vector's contiguous buffer
+    std::memcpy(tx.write_payload.data(), &payload, sizeof(payload));
+
+    // Allocate the space for the read payload buffer
     tx.read_payload.resize(256, 0);
     return tx;
 }
@@ -160,25 +171,26 @@ static bool execute_binder_ping(const int binder_fd, const int protocol_version)
 
         const unsigned long ioctl_cmd = tx.ioctl_command;
         if (ioctl(binder_fd, ioctl_cmd, &bwr) < 0) {
-            LOGERR("[-] ioctl execution map allocation failed\n");
+            LOGERR( "[-] ioctl execution map allocation failed\n");
             return false;
         }
         bytes_consumed = bwr.read_consumed;
     } else {
         struct binder_write_read bwr{};
         std::memset(&bwr, 0, sizeof(bwr));
-        const size_t write_size = tx.write_payload.size() * sizeof(uint32_t);
-        const size_t read_size = tx.read_payload.size() * sizeof(uint32_t);
-        bwr.write_size = write_size;
+
+        // Total size is the byte length of the vector container
+        bwr.write_size = tx.write_payload.size();
         bwr.write_consumed = 0;
         bwr.write_buffer = reinterpret_cast<binder_uintptr_t>(tx.write_payload.data());
-        bwr.read_size = read_size;
+
+        bwr.read_size = tx.read_payload.size() * sizeof(uint32_t);
         bwr.read_consumed = 0;
         bwr.read_buffer = reinterpret_cast<binder_uintptr_t>(tx.read_payload.data());
 
-        const unsigned long ioctl_cmd = tx.ioctl_command;
-        if (ioctl(binder_fd, ioctl_cmd, &bwr) < 0) {
-            LOGERR("[-] ioctl execution map allocation failed: %s\n", std::strerror(errno));
+        // 3. Execute the ioctl
+        if (ioctl(binder_fd, tx.ioctl_command, &bwr) < 0) {
+            LOGERR( "[-] ioctl execution map allocation failed: %s\n", std::strerror(errno));
             return false;
         }
         bytes_consumed = bwr.read_consumed;
@@ -201,7 +213,7 @@ static bool execute_binder_ping(const int binder_fd, const int protocol_version)
             break; 
         } 
         if (token == BR_DEAD_REPLY || token == BR_FAILED_REPLY) {
-            LOGERR("[-] Driver faulted payload execution target. Status: 0x%x\n", token);
+            LOGERR( "[-] Driver faulted payload execution target. Status: 0x%x\n", token);
             break;
         } 
         if (token == BR_TRANSACTION_COMPLETE || token == BR_TRANSACTION_COMPLETE_V7) {
@@ -213,11 +225,34 @@ static bool execute_binder_ping(const int binder_fd, const int protocol_version)
         } 
         
         // Safety Fallback for unexpected or structural multi-word response components
-        LOGWARN("[!] Structural bound reached or unhandled response code. Breaking parsing thread loop.\n");
+        LOGWARN( "[!] Structural bound reached or unhandled response code. Breaking parsing thread loop.\n");
         break;
     }
 
     return service_manager_alive;
+}
+
+static bool is_systemd_service_active(const char* service_name) {
+    if (service_name == nullptr || *service_name == '\0') {
+        return false;
+    }
+
+    char command[256] = {0};
+    const int written = std::snprintf(command, sizeof(command),
+                                      "systemctl is-active --quiet %s", service_name);
+    if (written <= 0 || static_cast<size_t>(written) >= sizeof(command)) {
+        LOGERR( "[-] Failed to build systemctl command for service check\n");
+        return false;
+    }
+
+    const int status = std::system(command);
+    if (status == 0) {
+        LOGINFO( "[+] %s is active\n", service_name);
+        return true;
+    }
+
+    LOGWARN( "[!] %s is not active (systemctl rc=%d)\n", service_name, status);
+    return false;
 }
 
 }  // namespace
@@ -227,32 +262,44 @@ bool isServiceManagerAvailable() {
 
     const int binder_fd = open("/dev/binder", O_RDWR | O_CLOEXEC);
     if (binder_fd < 0) {
-        LOGERR("[-] Failed to open /dev/binder\n");
+        LOGERR( "[-] Failed to open /dev/binder\n");
         return service_manager_alive;
     }
     LOGINFO( "[+] Successfully opened /dev/binder\n");
 
     binder_version version{};
     if (ioctl(binder_fd, BINDER_VERSION, &version) < 0) {
-        LOGERR("[-] Failed to extract device driver protocol revision metadata\n");
+        LOGERR( "[-] Failed to extract device driver protocol revision metadata\n");
         close(binder_fd);
         return service_manager_alive;
     }
     LOGINFO( "[+] Binder protocol version detected: %d\n", version.protocol_version);
 
+    #if 0
     const size_t binder_map_size = (version.protocol_version == 7) ? BINDER_MMAP_SIZE_V7 : BINDER_MMAP_SIZE_V8;
+    LOGINFO( "[+] Allocating %zu bytes of shared memory. binder_fd = %d\n", binder_map_size, binder_fd);
     void* const mapped_mem = mmap(nullptr, binder_map_size, PROT_READ, MAP_PRIVATE, binder_fd, 0);
     if (mapped_mem == MAP_FAILED) {
-        LOGERR("[-] Shared address space context instantiation failed\n");
+        LOGERR( "[-] Shared address space context instantiation failed\n");
         close(binder_fd);
         return service_manager_alive;
     }
     LOGINFO( "[+] Memory mapped successfully\n");
 
     const bool ping_result = execute_binder_ping(binder_fd, version.protocol_version);
-    service_manager_alive = ping_result;
-
+    if (!ping_result) {
+        LOGWARN( "[!] Binder ping to ServiceManager failed\n");
+    }
     munmap(mapped_mem, binder_map_size);
+    #endif
+    
+    service_manager_alive = is_systemd_service_active("servicemanager.service");
+
+    if (!service_manager_alive) {
+        LOGWARN( "[!] servicemanager.service is not started\n");
+    }
+	
+	LOGINFO( "[+] service_manager_alive: %d \n",service_manager_alive);
     close(binder_fd);
     return service_manager_alive;
 }
