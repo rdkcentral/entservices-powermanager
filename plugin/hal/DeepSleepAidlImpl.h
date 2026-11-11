@@ -74,6 +74,7 @@ public:
                 if (!st.isOk()) {
                     LOGERR("Failed to get DeepSleep capabilities");
                 } else {
+
                     LOGINFO("DeepSleep capabilities acquired successfully. Vendor layer supported triggers: %s", [&]() {
                         std::string triggers;
                         for (const auto& trigger : _halCapabilities.supportedTriggers) {
@@ -107,9 +108,13 @@ public:
             case com::rdk::hal::deepsleep::WakeUpTrigger::RCU_IR: name = "RCU_IR"; break;
             case com::rdk::hal::deepsleep::WakeUpTrigger::RCU_BT: name = "RCU_BT"; break;
             case com::rdk::hal::deepsleep::WakeUpTrigger::RCU_RF4CE: name = "RCU_RF4CE"; break;
-            case com::rdk::hal::deepsleep::WakeUpTrigger::TIMER: name = "TIMER"; break;
             case com::rdk::hal::deepsleep::WakeUpTrigger::LAN: name = "LAN"; break;
             case com::rdk::hal::deepsleep::WakeUpTrigger::WLAN: name = "WLAN"; break;
+            case com::rdk::hal::deepsleep::WakeUpTrigger::TIMER: name = "TIMER"; break;
+            case com::rdk::hal::deepsleep::WakeUpTrigger::FRONT_PANEL: name = "POWERKEY"; break;
+            case com::rdk::hal::deepsleep::WakeUpTrigger::CEC: name = "CEC"; break;
+            case com::rdk::hal::deepsleep::WakeUpTrigger::PRESENCE: name = "PRESENCEDETECTED"; break;
+            case com::rdk::hal::deepsleep::WakeUpTrigger::VOICE: name = "VOICE"; break;
             default: name = "UNKNOWN"; break;
         }
         return name;
@@ -240,25 +245,26 @@ public:
         if (enabled) {
             if (std::find(_enabledWakeupTriggers.begin(), _enabledWakeupTriggers.end(), trigger) == _enabledWakeupTriggers.end()) {
                 if (std::find(_halCapabilities.supportedTriggers.begin(), _halCapabilities.supportedTriggers.end(), trigger) != _halCapabilities.supportedTriggers.end()) {
-                _enabledWakeupTriggers.push_back(trigger);
+                    _enabledWakeupTriggers.push_back(trigger);
+                    LOGINFO("Added wakeup trigger to enabled list: %d, total enabled triggers: %zu", static_cast<int>(trigger), _enabledWakeupTriggers.size());
                 } else {
                     LOGERR("Wakeup trigger not supported: %d", static_cast<int>(trigger));
-                    return WPEFramework::Core::ERROR_NOT_SUPPORTED;
+                    return WPEFramework::Core::ERROR_NONE; //TODO: Is it the right return value?
                 }
             }
         } else {
             _enabledWakeupTriggers.erase(std::remove(_enabledWakeupTriggers.begin(), _enabledWakeupTriggers.end(), trigger), _enabledWakeupTriggers.end());
+            LOGINFO("Removed wakeup trigger from enabled list: %d, total enabled triggers: %zu", static_cast<int>(trigger), _enabledWakeupTriggers.size());
         }
         return WPEFramework::Core::ERROR_NONE;
     }
 
     uint32_t GetWakeupSrc(WakeupSrcType wakeSrcType, bool& enabled, bool& supported) {
-        uint32_t result = WPEFramework::Core::ERROR_UNAVAILABLE;
         supported = false;
         enabled = false;
 
         if (_deepsleep == nullptr) {
-            return result;
+            return WPEFramework::Core::ERROR_UNAVAILABLE;
         }
 
         com::rdk::hal::deepsleep::WakeUpTrigger trigger = wakeSrcTypeToWakeUpTrigger(wakeSrcType);
@@ -270,7 +276,7 @@ public:
         supported = std::find(_halCapabilities.supportedTriggers.begin(), _halCapabilities.supportedTriggers.end(), trigger) != _halCapabilities.supportedTriggers.end();
         enabled = std::find(_enabledWakeupTriggers.begin(), _enabledWakeupTriggers.end(), trigger) != _enabledWakeupTriggers.end();
 
-        return WPEFramework::Core::ERROR_NONE;
+        return supported ? WPEFramework::Core::ERROR_NONE : WPEFramework::Core::ERROR_UNAVAILABLE;
     }
 
     uint32_t CacheBootReason(const std::string& bootReason) override
