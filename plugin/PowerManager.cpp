@@ -91,6 +91,7 @@ namespace Plugin {
             _powerManager->Register(_powermanagersNotification.baseInterface<Exchange::IPowerManager::IPowerModeChangeAcknowledgementRequested>());
             // Invoking Plugin API register to wpeframework
             Exchange::JPowerManager::Register(*this, _powerManager);
+            RegisterCancellationHandler();
         } else {
             SYSLOG(Logging::Startup, (_T("PowerManager::Initialize: Failed to initialise PowerManager plugin")));
             message = _T("PowerManager plugin could not be initialised");
@@ -101,6 +102,58 @@ namespace Plugin {
         }
 
         return message;
+    }
+
+    void PowerManager::RegisterCancellationHandler()
+    {
+        // The typed adapter loses JSON types and may invoke cancellation after a parse failure.
+        PluginHost::JSONRPC::Unregister(_T("cancelScheduledDeepSleepWakeups"));
+        PluginHost::JSONRPC::Register(_T("cancelScheduledDeepSleepWakeups"),
+            Core::JSONRPC::InvokeFunction([this](const Core::JSONRPC::Context&, const string&,
+                const string& parameters, string&) -> uint32_t {
+                return CancelScheduledDeepSleepWakeups(parameters);
+            }));
+    }
+
+    uint32_t PowerManager::CancelScheduledDeepSleepWakeups(const string& parameters)
+    {
+        Core::JSON::VariantContainer params;
+        const auto start = parameters.find_first_not_of(" \t\r\n");
+        if (start != string::npos
+            && (parameters[start] != '{' || !params.FromString(parameters))) {
+            return Core::ERROR_INVALID_PARAMETER;
+        }
+
+        uint64_t unixTime = 0;
+        if (params.HasLabel(_T("unixTime"))) {
+            const auto& value = params[_T("unixTime")];
+            if (value.IsNull() || value.Content() != Core::JSON::Variant::type::NUMBER) {
+                return Core::ERROR_INVALID_PARAMETER;
+            }
+            // Validate the token, not Number(), which can truncate fractional values.
+            const string token = value.String();
+            if (token.empty() || (token.size() > 1 && token[0] == '0')) {
+                return Core::ERROR_INVALID_PARAMETER;
+            }
+            for (const char digit : token) {
+                if (digit < '0' || digit > '9'
+                    || unixTime > (UINT32_MAX - static_cast<uint64_t>(digit - '0')) / 10) {
+                    return Core::ERROR_INVALID_PARAMETER;
+                }
+                unixTime = unixTime * 10 + static_cast<uint64_t>(digit - '0');
+            }
+        }
+
+        string requestorId;
+        if (params.HasLabel(_T("requestorId"))) {
+            const auto& value = params[_T("requestorId")];
+            if (value.IsNull() || value.Content() != Core::JSON::Variant::type::STRING) {
+                return Core::ERROR_INVALID_PARAMETER;
+            }
+            requestorId = value.String();
+        }
+
+        return _powerManager->CancelScheduledDeepSleepWakeups(unixTime, requestorId);
     }
 
     void PowerManager::Deinitialize(PluginHost::IShell* service)
