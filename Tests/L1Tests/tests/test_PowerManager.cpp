@@ -16,6 +16,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#ifndef MODULE_NAME
+#define MODULE_NAME Plugin_PowerManager
+#endif
+
 #include <chrono>
 #include <condition_variable>
 #include <thread>
@@ -23,6 +27,8 @@
 #include <bitset>
 #include <atomic>
 #include <vector>
+#include <fstream>
+#include <iterator>
 #include <unistd.h>
 
 #include "gmock/gmock.h"
@@ -40,6 +46,7 @@
 #define private public
 #define protected public
 #include "PowerManagerImplementation.h"
+#include "PowerManager.h"
 #include "LambdaJob.h"
 #include "PowerUtils.h"
 #undef private
@@ -4307,6 +4314,96 @@ TEST_F(TestPowerManager, ScheduleDeepSleepWakeupSequentialConsumptionAcrossMulti
 // ---- CancelScheduledDeepSleepWakeups ----
 
 #ifdef CUSTOM_LGI
+TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsRejectsInvalidJsonParameters)
+{
+    const uint64_t futureTime = time(nullptr) + 600;
+    ASSERT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime, "appB"), Core::ERROR_NONE);
+    ASSERT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime + 300, "appC"), Core::ERROR_NONE);
+    auto readStore = []() {
+        std::ifstream file("/mnt/secure_storage/pwrmgr/schedules.stg");
+        return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    };
+    const string before = readStore();
+    ASSERT_FALSE(before.empty());
+
+    auto wrapper = Core::ProxyType<Plugin::PowerManager>::Create();
+    wrapper->_powerManager = powerManagerImpl.operator->();
+    Exchange::JPowerManager::Register(*wrapper, wrapper->_powerManager);
+    wrapper->RegisterCancellationHandler();
+    auto* handler = wrapper->GetHandler(1);
+    ASSERT_NE(handler, nullptr);
+    string response;
+    const char* invalid[] = {
+        "{\"unixTime\":\"abc\",\"requestorId\":\"appB\"}",
+        "{\"unixTime\":\"123\",\"requestorId\":\"appB\"}",
+        "{\"unixTime\":null}", "{\"unixTime\":true}", "{\"unixTime\":[]}",
+        "{\"unixTime\":{}}", "{\"unixTime\":1.5}", "{\"unixTime\":1e2}",
+        "{\"unixTime\":-1}", "{\"unixTime\":4294967296}",
+        "{\"unixTime\":18446744073709551616}",
+        "{\"requestorId\":123}", "{\"requestorId\":null}",
+        "{\"requestorId\":false}", "{\"requestorId\":[]}",
+        "{\"unixTime\":", "[]", "null"
+    };
+    for (const auto* parameters : invalid) {
+        SCOPED_TRACE(parameters);
+        EXPECT_EQ(handler->Invoke(Core::JSONRPC::Context(), "cancelScheduledDeepSleepWakeups",
+                      parameters, response),
+            Core::ERROR_INVALID_PARAMETER);
+        EXPECT_EQ(readStore(), before);
+    }
+    // Both entries must also remain in memory after all rejected requests.
+    EXPECT_EQ(powerManagerImpl->CancelScheduledDeepSleepWakeups(futureTime, "appB"), Core::ERROR_NONE);
+    EXPECT_EQ(powerManagerImpl->CancelScheduledDeepSleepWakeups(futureTime + 300, "appC"), Core::ERROR_NONE);
+    Exchange::JPowerManager::Unregister(*wrapper);
+    wrapper->_powerManager = nullptr;
+}
+
+TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsJsonPreservesOptionalFilters)
+{
+    const uint64_t futureTime = time(nullptr) + 600;
+    auto wrapper = Core::ProxyType<Plugin::PowerManager>::Create();
+    wrapper->_powerManager = powerManagerImpl.operator->();
+    Exchange::JPowerManager::Register(*wrapper, wrapper->_powerManager);
+    wrapper->RegisterCancellationHandler();
+    auto* handler = wrapper->GetHandler(1);
+    ASSERT_NE(handler, nullptr);
+    const string timestamp = std::to_string(futureTime);
+    const struct {
+        string parameters;
+        bool sameTimeOtherRequestorSurvives;
+        bool otherTimeSameRequestorSurvives;
+        bool otherTimeOtherRequestorSurvives;
+    } valid[] = {
+        {"{\"unixTime\":" + timestamp + ",\"requestorId\":\"appB\"}", true, true, true},
+        {"{\"requestorId\":\"appB\"}", true, false, true},
+        {"{\"unixTime\":" + timestamp + "}", false, true, true},
+        {"{\"unixTime\":0,\"requestorId\":\"\"}", false, false, false},
+        {"{}", false, false, false},
+        {"", false, false, false}
+    };
+    string response;
+    for (const auto& testCase : valid) {
+        SCOPED_TRACE(testCase.parameters);
+        ASSERT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime, "appB"), Core::ERROR_NONE);
+        ASSERT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime, "appC"), Core::ERROR_NONE);
+        ASSERT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime + 300, "appB"), Core::ERROR_NONE);
+        ASSERT_EQ(powerManagerImpl->ScheduleDeepSleepWakeup(futureTime + 300, "appC"), Core::ERROR_NONE);
+        EXPECT_EQ(handler->Invoke(Core::JSONRPC::Context(), "cancelScheduledDeepSleepWakeups",
+                      testCase.parameters, response),
+            Core::ERROR_NONE);
+        EXPECT_EQ(powerManagerImpl->CancelScheduledDeepSleepWakeups(futureTime, "appB"),
+            Core::ERROR_INVALID_PARAMETER);
+        EXPECT_EQ(powerManagerImpl->CancelScheduledDeepSleepWakeups(futureTime, "appC"),
+            testCase.sameTimeOtherRequestorSurvives ? Core::ERROR_NONE : Core::ERROR_INVALID_PARAMETER);
+        EXPECT_EQ(powerManagerImpl->CancelScheduledDeepSleepWakeups(futureTime + 300, "appB"),
+            testCase.otherTimeSameRequestorSurvives ? Core::ERROR_NONE : Core::ERROR_INVALID_PARAMETER);
+        EXPECT_EQ(powerManagerImpl->CancelScheduledDeepSleepWakeups(futureTime + 300, "appC"),
+            testCase.otherTimeOtherRequestorSurvives ? Core::ERROR_NONE : Core::ERROR_INVALID_PARAMETER);
+    }
+    Exchange::JPowerManager::Unregister(*wrapper);
+    wrapper->_powerManager = nullptr;
+}
+
 TEST_F(TestPowerManager, CancelScheduledDeepSleepWakeupsExactMatch)
 {
     TEST_LOG(">> Test: Cancel exact schedule (unixTime + requestorId both given)");

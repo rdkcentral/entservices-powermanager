@@ -165,6 +165,8 @@ namespace Plugin {
         string Information() const override;
 
     private:
+        void RegisterCancellationHandler();
+        uint32_t CancelScheduledDeepSleepWakeups(const string& parameters);
         void Deactivated(RPC::IRemoteConnection* connection);
         void CallbackRevoked(const Core::IUnknown* remote, const uint32_t interfaceId);
 
