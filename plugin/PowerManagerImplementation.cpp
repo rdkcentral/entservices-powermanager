@@ -924,12 +924,15 @@ namespace Plugin {
 
         _apiLock.Lock();
 
-        // If there are no clients engaged in the acknowledgement negotiation stage, skip the
-        // whole new ack-phase mechanism entirely and apply the power state change directly.
-        if (_modeChangeAckClients.empty()) {
+        // Skip the acknowledgement stage and apply the power state change directly if
+        //  - there are no clients engaged in the acknowledgement negotiation stage, or
+        //  - this is a sync state change (see `isSyncStateChange`): `SetPowerState` holds `selfLock` until the
+        //    change is applied, so it must not be deferred to an asynchronous acknowledgement round.
+        //    Such transitions are explicitly exempt from the acknowledgement stage (like pre-change, which uses timeout `0`).
+        if (isSyncStateChange(currentState, newState) || _modeChangeAckClients.empty()) {
             _apiLock.Unlock();
 
-            LOGINFO("No acknowledgement clients registered, skipping acknowledgement-stage negotiation");
+            LOGINFO("Skipping acknowledgement-stage negotiation (sync state change or no acknowledgement clients registered)");
             setDevicePowerState(keyCode, currentState, newState, reason);
 
             LOGINFO("<<");
@@ -962,6 +965,7 @@ namespace Plugin {
 
         // Preserve the same sync-state-change carve-out as the pre-change round (see `isSyncStateChange`),
         // so `SetPowerState`'s `selfLock` ordering guarantee is not affected by this additional round.
+        // (Sync state changes never reach here, see `powerModePreChangeCompletionHandler`.)
 
         const uint32_t timeOut =  POWER_MODE_CHANGE_ACK_TIMEOUT_SEC;
 
