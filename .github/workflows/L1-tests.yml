@@ -474,6 +474,7 @@ jobs:
           -DRDK_SERVICES_L1_TEST=ON
           -DUSE_THUNDER_R4=ON
           -DHIDE_NON_EXTERNAL_SYMBOLS=OFF
+          -DPOWERCONTROLLER=ON
           -DPLUGIN_POWERMANAGER=ON
           &&
           cmake --build build/entservices-powermanager
