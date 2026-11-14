@@ -21,6 +21,8 @@
 #include "ThermalController.h"
 #include "rfcapi.h"
 
+#include <exception>
+
 ThermalController::ThermalController (INotification& parent, std::shared_ptr<IPlatform> platform)
     : _platform(std::move(platform))
     ,_therm_mutex(std::make_shared<std::mutex>())
@@ -166,11 +168,13 @@ void ThermalController::initializeThermalProtection()
             LOGINFO("*****Critical*** Fails to set temperature thresholds.. ");
         }
 
-        thermalThreadId = new std::thread(&ThermalController::pollThermalLevels, this);
-
-        if (nullptr == thermalThreadId )
+        try
         {
-            LOGINFO("*****Critical*** Fails to Create temperature monitor thread ");
+            thermalThreadId = new std::thread(&ThermalController::pollThermalLevels, this);
+        }
+        catch (const std::exception& error)
+        {
+            LOGERR("Failed to create temperature monitor thread: %s", error.what());
         }
     }
     else

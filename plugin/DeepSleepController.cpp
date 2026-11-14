@@ -139,10 +139,9 @@ uint32_t DeepSleepWakeupSettings::getWakeupTime() const
 
     /* wakeup time */
     time(&wakeup);
-    auto* res = localtime(&wakeup);
+    auto* res = localtime_r(&wakeup, &wakeupTime);
 
     if (nullptr != res) {
-        wakeupTime = *res;
         if (wakeupTime.tm_hour >= 0 && wakeupTime.tm_hour < 2) {
             /*Calculate the wakeup time till 2 AM..*/
             wakeupTime.tm_hour = 2;
