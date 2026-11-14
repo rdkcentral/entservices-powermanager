@@ -22,7 +22,7 @@ The PowerManager plugin is an enterprise-grade power management solution designe
 - **Flexible Deep Sleep Control**: Programmable deep sleep timers with network-aware coordination
 - **Network Standby Integration**: Intelligent coordination between deep sleep and network availability requirements
 - **Graceful Sleep Transitions**: Smooth transitions to low-power states with proper system preparation
-- **Multi-Source Wakeup Support**: Configurable wakeup sources including timers, network activity, and hardware events
+- **Multi-Source Wakeup Support**: Configurable wakeup sources including timers, network activity, and hardware events, subject to platform-specific HAL support
 
 ### System Reboot and Maintenance
 - **Coordinated System Restart**: Graceful system reboot with proper service shutdown coordination
