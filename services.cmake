@@ -32,8 +32,6 @@ add_definitions (-DUSE_TR_69)
 add_definitions (-DHAS_API_SYSTEM)
 add_definitions (-DHAS_API_POWERSTATE)
 
-add_definitions (-DUSE_DS)
-
 # PowerManager specific options
 option(PLUGIN_POWERMANAGER "PLUGIN_POWERMANAGER" ON)
 
