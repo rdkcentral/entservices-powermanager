@@ -13,7 +13,10 @@ without timing: python3 SuiteManager.py powermanager
 Default Actions:
 Plugin activation is done by default before suite execution:
 - powermanager -> Controller.1.activate(callsign=org.rdk.PowerManager)
+- The suite waits until getPowerState confirms the plugin is ready.
 - Init_PowerManager_Populate is run to establish a known baseline.
+- The plugin uses a per-suite lifecycle and is deactivated when the suite ends,
+  including after setup or test failures.
 
 Disable default activation only if needed:
 - export AUTO_ACTIVATE_PLUGINS=0
@@ -30,6 +33,9 @@ Useful overrides:
 - BOOT_VCOMPONENT_PORT
 - WPEFRAMEWORK_JSONRPC_URL (full URL, highest priority)
 - VCOMPONENT_API_URL (full URL, highest priority)
+- POWERMANAGER_PLUGIN_READY_TIMEOUT (readiness timeout in seconds; default: 6)
+- POWERMANAGER_PLUGIN_INIT_WAIT (legacy fallback for the readiness timeout)
+- PLUGIN_INIT_WAIT (common fallback for the readiness timeout)
 
 Examples:
 
@@ -60,6 +66,8 @@ target launches the service on a different port.
 
 NOTES
 -----
+- Test modules must return True to pass, utils.SKIPPED to skip, or any other
+  value to fail. A run with only passes and skips succeeds.
 - JSON-RPC parameter names in PowerManager_Curl.py follow the IPowerManager
   interface signatures. If a target build exposes different parameter spelling,
   adjust the builders in PowerManager_Curl.py (single source of truth).

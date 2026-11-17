@@ -64,6 +64,18 @@ WPEFRAMEWORK_JSONRPC_URL = (
     or os.environ.get("JSONRPC_URL")
     or f"http://{TARGET_HOST}:{JSONRPC_PORT}/jsonrpc"
 )
+PLUGIN_READY_TIMEOUT = float(
+    os.environ.get(
+        "POWERMANAGER_PLUGIN_READY_TIMEOUT",
+        os.environ.get(
+            "POWERMANAGER_PLUGIN_INIT_WAIT",
+            os.environ.get("PLUGIN_INIT_WAIT", "6"),
+        ),
+    )
+)
+if PLUGIN_READY_TIMEOUT < 0:
+    raise ValueError("Plugin readiness timeout must be non-negative")
+SKIPPED = "SKIPPED"
 DEEPSLEEP_VCOMPONENT_API_URL = (
     os.environ.get("DEEPSLEEP_VCOMPONENT_API_URL")
     or f"http://{TARGET_HOST}:{DEEPSLEEP_VCOMPONENT_PORT}/api/postKVP"
@@ -164,6 +176,43 @@ def activate_plugin(callsign, timeout_seconds=40):
             request_id=1234567890,
         )
         # _emit_log(f"activate_plugin response: {response}")
+        if not response or "error" in response:
+            time.sleep(1)
+            continue
+        return "result" in response
+    return False
+
+
+def wait_for_plugin_ready(callsign, timeout_seconds=PLUGIN_READY_TIMEOUT):
+    '''Wait until the activated plugin responds to a safe JSON-RPC getter.'''
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        response = send_jsonrpc_command(
+            f"{callsign}.getPowerState",
+            request_id=1234567890,
+        )
+        if (
+            isinstance(response, dict)
+            and "error" not in response
+            and "result" in response
+        ):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(min(0.5, max(0, deadline - time.monotonic())))
+
+
+def deactivate_plugin(callsign, timeout_seconds=40):
+    '''Deactivate an RDK plugin via Controller.1.deactivate.
+    Returns True on success, False otherwise.
+    '''
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        response = send_jsonrpc_command(
+            "Controller.1.deactivate",
+            params={"callsign": callsign},
+            request_id=1234567890,
+        )
         if not response or "error" in response:
             time.sleep(1)
             continue
