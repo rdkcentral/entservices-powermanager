@@ -69,35 +69,36 @@ def run_test():
         return False
     orig_high, orig_critical = _thresholds(parse_result(baseline_resp))
 
-    # Write new thresholds (exercises SetTemperatureThresholds).
-    log_info("Executing setTemperatureThresholds")
-    set_resp = send_curl_command(PowerManagerApis.set_temperature_thresholds(TEST_HIGH, TEST_CRITICAL))
-    log_warning(f"Response: {set_resp}")
-    if not _responded(set_resp):
-        log_error("TCID27_TemperatureThresholds Failed ❌ (no response to setTemperatureThresholds)")
-        return False
+    try:
+        # Write new thresholds (exercises SetTemperatureThresholds).
+        log_info("Executing setTemperatureThresholds")
+        set_resp = send_curl_command(PowerManagerApis.set_temperature_thresholds(TEST_HIGH, TEST_CRITICAL))
+        log_warning(f"Response: {set_resp}")
+        if not _responded(set_resp):
+            log_error("TCID27_TemperatureThresholds Failed ❌ (no response to setTemperatureThresholds)")
+            return False
 
-    # Read back (exercises GetTemperatureThresholds again).
-    log_info("Executing getTemperatureThresholds (read-back)")
-    readback_resp = send_curl_command(PowerManagerApis.get_temperature_thresholds)
-    log_warning(f"Response: {readback_resp}")
-    if not _responded(readback_resp):
-        log_error("TCID27_TemperatureThresholds Failed ❌ (no response to read-back)")
-        return False
+        # Read back (exercises GetTemperatureThresholds again).
+        log_info("Executing getTemperatureThresholds (read-back)")
+        readback_resp = send_curl_command(PowerManagerApis.get_temperature_thresholds)
+        log_warning(f"Response: {readback_resp}")
+        if not _responded(readback_resp):
+            log_error("TCID27_TemperatureThresholds Failed ❌ (no response to read-back)")
+            return False
 
-    # When the setter succeeded on a thermal-capable platform, verify persistence.
-    if is_ok(set_resp):
-        high, critical = _thresholds(parse_result(readback_resp))
-        if high is not None and critical is not None:
-            if high != TEST_HIGH or critical != TEST_CRITICAL:
-                log_error(f"TCID27_TemperatureThresholds Failed ❌ (read-back mismatch: {high}/{critical})")
-                return False
-            log_success("✅ Thresholds persisted and read back correctly")
-        # Restore the original thresholds when they were readable numbers.
+        # When the setter succeeded on a thermal-capable platform, verify persistence.
+        if is_ok(set_resp):
+            high, critical = _thresholds(parse_result(readback_resp))
+            if high is not None and critical is not None:
+                if high != TEST_HIGH or critical != TEST_CRITICAL:
+                    log_error(f"TCID27_TemperatureThresholds Failed ❌ (read-back mismatch: {high}/{critical})")
+                    return False
+                log_success("✅ Thresholds persisted and read back correctly")
+        else:
+            log_success("✅ Thermal thresholds handled gracefully (platform reported not supported)")
+    finally:
         if isinstance(orig_high, (int, float)) and isinstance(orig_critical, (int, float)):
             send_curl_command(PowerManagerApis.set_temperature_thresholds(orig_high, orig_critical))
-    else:
-        log_success("✅ Thermal thresholds handled gracefully (platform reported not supported)")
 
     elapsed_time = time.perf_counter() - start_time
     msg = "TCID27_TemperatureThresholds Passed ✅"

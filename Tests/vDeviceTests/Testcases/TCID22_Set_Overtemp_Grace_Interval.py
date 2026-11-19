@@ -41,23 +41,23 @@ def run_test():
     start_time = time.perf_counter()
 
     original = parse_result(send_curl_command(PowerManagerApis.get_overtemp_grace_interval))
+    try:
+        log_info("Executing setOvertempGraceInterval")
+        set_resp = send_curl_command(PowerManagerApis.set_overtemp_grace_interval(TEST_INTERVAL))
+        log_warning(f"Response: {set_resp}")
+        if not is_ok(set_resp):
+            log_error("TCID22_Set_Overtemp_Grace_Interval Failed ❌ (setter did not succeed)")
+            return False
+        log_success("✅ curl command sent")
 
-    log_info("Executing setOvertempGraceInterval")
-    set_resp = send_curl_command(PowerManagerApis.set_overtemp_grace_interval(TEST_INTERVAL))
-    log_warning(f"Response: {set_resp}")
-    if not is_ok(set_resp):
-        log_error("TCID22_Set_Overtemp_Grace_Interval Failed ❌ (setter did not succeed)")
-        return False
-    log_success("✅ curl command sent")
-
-    grace = parse_result(send_curl_command(PowerManagerApis.get_overtemp_grace_interval))
-    log_warning(f"Read-back graceInterval: {grace}")
-    if grace != TEST_INTERVAL:
-        log_error("TCID22_Set_Overtemp_Grace_Interval Failed ❌ (read-back mismatch)")
-        return False
-
-    if isinstance(original, int) and not isinstance(original, bool):
-        send_curl_command(PowerManagerApis.set_overtemp_grace_interval(original))
+        grace = parse_result(send_curl_command(PowerManagerApis.get_overtemp_grace_interval))
+        log_warning(f"Read-back graceInterval: {grace}")
+        if grace != TEST_INTERVAL:
+            log_error("TCID22_Set_Overtemp_Grace_Interval Failed ❌ (read-back mismatch)")
+            return False
+    finally:
+        if isinstance(original, int) and not isinstance(original, bool):
+            send_curl_command(PowerManagerApis.set_overtemp_grace_interval(original))
 
     elapsed_time = time.perf_counter() - start_time
     msg = "TCID22_Set_Overtemp_Grace_Interval Passed ✅"

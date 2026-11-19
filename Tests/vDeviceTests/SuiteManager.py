@@ -57,7 +57,7 @@ SUITES = {
         "prerequisite_callsigns": [],
         "plugin_callsigns": ["org.rdk.PowerManager"],
         "init_module": "Init_PowerManager_Populate",
-        "lifecycle": "per_suite",
+        "lifecycle": "per_test",
         "tests": [
             "TCID01_DeepSleepNaturalWakeupTime",
             "TCID02_TimerWakeDisable",
@@ -162,7 +162,7 @@ def run_suite_init(suite_name):
         log_error(f"Init module missing run_test(): {module_name}")
         return False
 
-    log_info(f"Running suite initialization: {module_name}.run_test()")
+    log_info(f"Running test initialization: {module_name}.run_test()")
     try:
         ok = run_fn() is True
     except Exception as exc:
@@ -170,9 +170,9 @@ def run_suite_init(suite_name):
         return False
 
     if ok:
-        log_success("Suite initialization completed successfully")
+        log_success("Test initialization completed successfully")
     else:
-        log_error("Suite initialization failed")
+        log_error("Test initialization failed")
     return ok
 
 
@@ -187,7 +187,12 @@ def activate_test_plugins(suite_name):
             f"Auto-activating plugin '{callsign}' "
             f"via curl JSON-RPC at {WPEFRAMEWORK_JSONRPC_URL}"
         )
-        if not activate_plugin(callsign):
+        try:
+            activation_ok = activate_plugin(callsign)
+        except Exception as exc:
+            log_error(f"Plugin activation raised an exception: {callsign} ({exc})")
+            return False, activated
+        if not activation_ok:
             log_error(f"Plugin activation failed: {callsign}")
             return False, activated
 
@@ -196,7 +201,12 @@ def activate_test_plugins(suite_name):
         log_info(
             f"Waiting up to {PLUGIN_READY_TIMEOUT}s for plugin readiness..."
         )
-        if not wait_for_plugin_ready(callsign):
+        try:
+            ready = wait_for_plugin_ready(callsign)
+        except Exception as exc:
+            log_error(f"Plugin readiness check raised an exception: {callsign} ({exc})")
+            return False, activated
+        if not ready:
             log_error(f"Plugin did not become ready: {callsign}")
             return False, activated
         log_success(f"Plugin ready: {callsign}")
@@ -208,7 +218,13 @@ def deactivate_test_plugins(callsigns):
     success = True
     for callsign in reversed(callsigns):
         log_info(f"Auto-deactivating plugin '{callsign}'")
-        if deactivate_plugin(callsign):
+        try:
+            deactivated = deactivate_plugin(callsign)
+        except Exception as exc:
+            log_error(f"Plugin deactivation raised an exception: {callsign} ({exc})")
+            success = False
+            continue
+        if deactivated:
             log_success(f"Plugin deactivated: {callsign}")
         else:
             log_error(f"Plugin deactivation failed: {callsign}")
@@ -219,7 +235,7 @@ def deactivate_test_plugins(callsigns):
 def run_suite(suite_name, selected_tests=None):
     suite_config = SUITES[suite_name]
     lifecycle = suite_config.get("lifecycle")
-    if lifecycle != "per_suite":
+    if lifecycle != "per_test":
         raise ValueError(
             f"Unsupported lifecycle '{lifecycle}' for suite '{suite_name}'"
         )
@@ -243,32 +259,33 @@ def run_suite(suite_name, selected_tests=None):
     skipped_cases = []
     failed_cases = []
     original_stdout = sys.stdout
-    activated_callsigns = []
-    cleanup_ok = True
-    setup_ok = True
+    for tc_name, tc_fn in test_cases:
+        log_info(f"\n{'='*60}")
+        log_info(f"Running: {tc_name}")
+        log_info(f"{'='*60}")
+        activated_callsigns = []
+        setup_ok = True
+        cleanup_ok = True
+        result = False
 
-    try:
-        if auto_activate:
-            setup_ok, activated_callsigns = activate_test_plugins(suite_name)
-            if not setup_ok:
+        try:
+            if auto_activate:
+                setup_ok, activated_callsigns = activate_test_plugins(suite_name)
+                if not setup_ok:
+                    log_error(
+                        f"{tc_name} setup failed because plugin activation or "
+                        "readiness did not complete."
+                    )
+
+            if setup_ok and not run_suite_init(suite_name):
+                setup_ok = False
                 log_error(
-                    "Suite setup failed because plugin activation or readiness "
-                    "did not complete."
+                    f"{tc_name} setup failed because initialization did not "
+                    "complete."
                 )
 
-        if setup_ok and not run_suite_init(suite_name):
-            setup_ok = False
-            log_error(
-                "Suite setup failed because initialization did not complete."
-            )
-
-        if setup_ok:
-            for tc_name, tc_fn in test_cases:
-                log_info(f"\n{'='*60}")
-                log_info(f"Running: {tc_name}")
-                log_info(f"{'='*60}")
+            if setup_ok:
                 captured = io.StringIO()
-                result = False
                 sys.stdout = captured
                 try:
                     result = tc_fn()
@@ -276,32 +293,33 @@ def run_suite(suite_name, selected_tests=None):
                     print(f"EXCEPTION in {tc_name}: {exc}")
                 finally:
                     sys.stdout = original_stdout
-
-                output = captured.getvalue()
-                print(output, end="")
-
-                if result == SKIPPED:
-                    skipped += 1
-                    skipped_cases.append(tc_name)
-                    log_warning(f"[SKIP] {tc_name}")
-                elif result is True:
-                    passed += 1
-                    log_success(f"[PASS] {tc_name}")
-                else:
-                    failed += 1
-                    failed_cases.append(tc_name)
-                    log_error(f"[FAIL] {tc_name}")
-    finally:
-        try:
-            if auto_activate:
-                cleanup_ok = deactivate_test_plugins(activated_callsigns)
-                if not cleanup_ok:
-                    log_error("Suite cleanup failed")
+                print(captured.getvalue(), end="")
         except Exception as exc:
-            cleanup_ok = False
-            log_error(f"Suite cleanup raised an exception: {exc}")
+            setup_ok = False
+            log_error(f"{tc_name} setup or execution raised an exception: {exc}")
         finally:
-            sys.stdout = original_stdout
+            try:
+                if auto_activate:
+                    cleanup_ok = deactivate_test_plugins(activated_callsigns)
+                    if not cleanup_ok:
+                        log_error(f"{tc_name} cleanup failed")
+            except Exception as exc:
+                cleanup_ok = False
+                log_error(f"{tc_name} cleanup raised an exception: {exc}")
+            finally:
+                sys.stdout = original_stdout
+
+        if setup_ok and cleanup_ok and result == SKIPPED:
+            skipped += 1
+            skipped_cases.append(tc_name)
+            log_warning(f"[SKIP] {tc_name}")
+        elif setup_ok and cleanup_ok and result is True:
+            passed += 1
+            log_success(f"[PASS] {tc_name}")
+        else:
+            failed += 1
+            failed_cases.append(tc_name)
+            log_error(f"[FAIL] {tc_name}")
 
     log_info(f"\n{'='*60}")
     log_info(
@@ -311,12 +329,8 @@ def run_suite(suite_name, selected_tests=None):
         log_warning(f"Skipped cases: {skipped_cases}")
     if failed_cases:
         log_error(f"Failed cases: {failed_cases}")
-    if not setup_ok:
-        log_error("Suite setup failed")
-    if not cleanup_ok:
-        log_error("Suite cleanup failed")
     log_info(f"{'='*60}")
-    return setup_ok and cleanup_ok and failed == 0
+    return failed == 0
 
 
 if __name__ == "__main__":

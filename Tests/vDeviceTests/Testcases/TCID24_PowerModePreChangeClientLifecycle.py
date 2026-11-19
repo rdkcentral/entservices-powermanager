@@ -59,70 +59,76 @@ def _extract_client_id(result):
 
 def run_test():
     start_time = time.perf_counter()
+    client_id = None
 
-    # 1. Register a new pre-change client (happy path).
-    log_info("Executing addPowerModePreChangeClient (new client)")
-    resp = send_curl_command(PowerManagerApis.add_power_mode_prechange_client(CLIENT_NAME))
-    log_warning(f"Response: {resp}")
-    if not is_ok(resp):
-        log_error("TCID24_PowerModePreChangeClientLifecycle Failed ❌ (add client did not succeed)")
-        return False
+    try:
+        # 1. Register a new pre-change client (happy path).
+        log_info("Executing addPowerModePreChangeClient (new client)")
+        resp = send_curl_command(PowerManagerApis.add_power_mode_prechange_client(CLIENT_NAME))
+        log_warning(f"Response: {resp}")
+        if not is_ok(resp):
+            log_error("TCID24_PowerModePreChangeClientLifecycle Failed ❌ (add client did not succeed)")
+            return False
 
-    client_id = _extract_client_id(parse_result(resp))
-    if client_id is None:
-        log_error("TCID24_PowerModePreChangeClientLifecycle Failed ❌ (no clientId returned)")
-        return False
-    log_success(f"✅ Registered client id={client_id}")
+        client_id = _extract_client_id(parse_result(resp))
+        if client_id is None:
+            log_error("TCID24_PowerModePreChangeClientLifecycle Failed ❌ (no clientId returned)")
+            return False
+        log_success(f"✅ Registered client id={client_id}")
 
-    # 2. Register the same client name again -> should return the same clientId.
-    log_info("Executing addPowerModePreChangeClient (duplicate client)")
-    resp_dup = send_curl_command(PowerManagerApis.add_power_mode_prechange_client(CLIENT_NAME))
-    log_warning(f"Response: {resp_dup}")
-    if not is_ok(resp_dup):
-        log_error("TCID24_PowerModePreChangeClientLifecycle Failed ❌ (duplicate add did not succeed)")
-        return False
-    dup_id = _extract_client_id(parse_result(resp_dup))
-    if dup_id is not None and dup_id != client_id:
-        log_error("TCID24_PowerModePreChangeClientLifecycle Failed ❌ (duplicate returned different clientId)")
-        return False
-    log_success("✅ Duplicate registration returned the same clientId")
+        # 2. Register the same client name again -> should return the same clientId.
+        log_info("Executing addPowerModePreChangeClient (duplicate client)")
+        resp_dup = send_curl_command(PowerManagerApis.add_power_mode_prechange_client(CLIENT_NAME))
+        log_warning(f"Response: {resp_dup}")
+        if not is_ok(resp_dup):
+            log_error("TCID24_PowerModePreChangeClientLifecycle Failed ❌ (duplicate add did not succeed)")
+            return False
+        dup_id = _extract_client_id(parse_result(resp_dup))
+        if dup_id is not None and dup_id != client_id:
+            log_error("TCID24_PowerModePreChangeClientLifecycle Failed ❌ (duplicate returned different clientId)")
+            return False
+        log_success("✅ Duplicate registration returned the same clientId")
 
-    # 3. Register with an empty name -> must be rejected (ERROR_INVALID_PARAMETER).
-    log_info("Executing addPowerModePreChangeClient (empty name, expect rejection)")
-    resp_empty = send_curl_command(PowerManagerApis.add_power_mode_prechange_client(""))
-    log_warning(f"Response: {resp_empty}")
-    if is_ok(resp_empty):
-        log_error("TCID24_PowerModePreChangeClientLifecycle Failed ❌ (empty client name unexpectedly accepted)")
-        return False
-    log_success("✅ Empty client name correctly rejected")
+        # 3. Register with an empty name -> must be rejected (ERROR_INVALID_PARAMETER).
+        log_info("Executing addPowerModePreChangeClient (empty name, expect rejection)")
+        resp_empty = send_curl_command(PowerManagerApis.add_power_mode_prechange_client(""))
+        log_warning(f"Response: {resp_empty}")
+        if is_ok(resp_empty):
+            log_error("TCID24_PowerModePreChangeClientLifecycle Failed ❌ (empty client name unexpectedly accepted)")
+            return False
+        log_success("✅ Empty client name correctly rejected")
 
-    # 4. delayPowerModeChangeBy with the registered client (no active transaction).
-    #    Best-effort: exercises the method entry with a real clientId.
-    log_info("Executing delayPowerModeChangeBy with registered clientId")
-    send_curl_command(PowerManagerApis.delay_power_mode_change_by(client_id, 0, 0))
+        # 4. delayPowerModeChangeBy with the registered client (no active transaction).
+        #    Best-effort: exercises the method entry with a real clientId.
+        log_info("Executing delayPowerModeChangeBy with registered clientId")
+        send_curl_command(PowerManagerApis.delay_power_mode_change_by(client_id, 0, 0))
 
-    # 5. powerModePreChangeComplete for the registered client (acknowledge path).
-    #    Best-effort: exercises PowerModePreChangeComplete entry with a real clientId.
-    log_info("Executing powerModePreChangeComplete with registered clientId")
-    send_curl_command(PowerManagerApis.power_mode_prechange_complete(client_id, 0))
+        # 5. powerModePreChangeComplete for the registered client (acknowledge path).
+        #    Best-effort: exercises PowerModePreChangeComplete entry with a real clientId.
+        log_info("Executing powerModePreChangeComplete with registered clientId")
+        send_curl_command(PowerManagerApis.power_mode_prechange_complete(client_id, 0))
 
-    # 6. Remove the registered client (happy path).
-    log_info("Executing removePowerModePreChangeClient (registered id)")
-    resp_rm = send_curl_command(PowerManagerApis.remove_power_mode_prechange_client(client_id))
-    log_warning(f"Response: {resp_rm}")
-    if not is_ok(resp_rm):
-        log_error("TCID24_PowerModePreChangeClientLifecycle Failed ❌ (remove client did not succeed)")
-        return False
-    log_success(f"✅ Removed client id={client_id}")
+        # 6. Remove the registered client (happy path).
+        log_info("Executing removePowerModePreChangeClient (registered id)")
+        resp_rm = send_curl_command(PowerManagerApis.remove_power_mode_prechange_client(client_id))
+        log_warning(f"Response: {resp_rm}")
+        if not is_ok(resp_rm):
+            log_error("TCID24_PowerModePreChangeClientLifecycle Failed ❌ (remove client did not succeed)")
+            return False
+        log_success(f"✅ Removed client id={client_id}")
+        client_id = None
 
-    # 7. Remove an unknown client -> must be rejected (not found).
-    log_info("Executing removePowerModePreChangeClient (unknown id, expect rejection)")
-    resp_rm_bad = send_curl_command(PowerManagerApis.remove_power_mode_prechange_client(UNKNOWN_CLIENT_ID))
-    log_warning(f"Response: {resp_rm_bad}")
-    if is_ok(resp_rm_bad):
-        log_error("TCID24_PowerModePreChangeClientLifecycle Failed ❌ (unknown client removal unexpectedly accepted)")
-        return False
-    log_success("✅ Unknown client removal correctly rejected")
+        # 7. Remove an unknown client -> must be rejected (not found).
+        log_info("Executing removePowerModePreChangeClient (unknown id, expect rejection)")
+        resp_rm_bad = send_curl_command(PowerManagerApis.remove_power_mode_prechange_client(UNKNOWN_CLIENT_ID))
+        log_warning(f"Response: {resp_rm_bad}")
+        if is_ok(resp_rm_bad):
+            log_error("TCID24_PowerModePreChangeClientLifecycle Failed ❌ (unknown client removal unexpectedly accepted)")
+            return False
+        log_success("✅ Unknown client removal correctly rejected")
+    finally:
+        if client_id is not None:
+            send_curl_command(PowerManagerApis.remove_power_mode_prechange_client(client_id))
 
     elapsed_time = time.perf_counter() - start_time
     msg = "TCID24_PowerModePreChangeClientLifecycle Passed ✅"

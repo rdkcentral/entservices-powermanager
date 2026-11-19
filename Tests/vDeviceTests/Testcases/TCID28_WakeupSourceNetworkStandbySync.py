@@ -60,50 +60,49 @@ def run_test():
     log_warning(f"Baseline wakeup config: {baseline_resp}")
     baseline = _config_list(parse_result(baseline_resp))
 
-    # 1. WIFI + LAN both ENABLED -> drives the nwStandby reconciliation (both equal).
-    log_info("Executing setWakeupSourceConfig (WIFI+LAN enabled)")
-    resp_on = send_curl_command(
-        PowerManagerApis.set_wakeup_source_config([
-            {"wakeupSource": "WIFI", "enabled": True},
-            {"wakeupSource": "LAN", "enabled": True},
-        ])
-    )
-    log_warning(f"Response: {resp_on}")
-    if not _responded(resp_on):
-        log_error("TCID28_WakeupSourceNetworkStandbySync Failed ❌ (no response for WIFI+LAN enable)")
-        return False
+    entries = [
+        {"wakeupSource": e.get("wakeupSource"), "enabled": e.get("enabled")}
+        for e in baseline or []
+        if isinstance(e, dict) and e.get("wakeupSource") is not None and isinstance(e.get("enabled"), bool)
+    ]
+    try:
+        # 1. WIFI + LAN both ENABLED -> drives the nwStandby reconciliation (both equal).
+        log_info("Executing setWakeupSourceConfig (WIFI+LAN enabled)")
+        resp_on = send_curl_command(
+            PowerManagerApis.set_wakeup_source_config([
+                {"wakeupSource": "WIFI", "enabled": True},
+                {"wakeupSource": "LAN", "enabled": True},
+            ])
+        )
+        log_warning(f"Response: {resp_on}")
+        if not _responded(resp_on):
+            log_error("TCID28_WakeupSourceNetworkStandbySync Failed ❌ (no response for WIFI+LAN enable)")
+            return False
 
-    # 2. WIFI + LAN both DISABLED -> drives the reconciliation in the other direction.
-    log_info("Executing setWakeupSourceConfig (WIFI+LAN disabled)")
-    resp_off = send_curl_command(
-        PowerManagerApis.set_wakeup_source_config([
-            {"wakeupSource": "WIFI", "enabled": False},
-            {"wakeupSource": "LAN", "enabled": False},
-        ])
-    )
-    log_warning(f"Response: {resp_off}")
-    if not _responded(resp_off):
-        log_error("TCID28_WakeupSourceNetworkStandbySync Failed ❌ (no response for WIFI+LAN disable)")
-        return False
+        # 2. WIFI + LAN both DISABLED -> drives the reconciliation in the other direction.
+        log_info("Executing setWakeupSourceConfig (WIFI+LAN disabled)")
+        resp_off = send_curl_command(
+            PowerManagerApis.set_wakeup_source_config([
+                {"wakeupSource": "WIFI", "enabled": False},
+                {"wakeupSource": "LAN", "enabled": False},
+            ])
+        )
+        log_warning(f"Response: {resp_off}")
+        if not _responded(resp_off):
+            log_error("TCID28_WakeupSourceNetworkStandbySync Failed ❌ (no response for WIFI+LAN disable)")
+            return False
 
-    # Best-effort restore of the original configuration.
-    if isinstance(baseline, list) and baseline:
-        entries = [
-            {"wakeupSource": e.get("wakeupSource"), "enabled": e.get("enabled")}
-            for e in baseline
-            if isinstance(e, dict) and e.get("wakeupSource") is not None and isinstance(e.get("enabled"), bool)
-        ]
+        # Health check: the plugin must remain responsive.
+        log_info("Verifying plugin is still responsive via getPowerState")
+        health = send_curl_command(PowerManagerApis.get_power_state)
+        log_warning(f"Response: {health}")
+        if not is_ok(health):
+            log_error("TCID28_WakeupSourceNetworkStandbySync Failed ❌ (plugin unresponsive after sync)")
+            return False
+        log_success("✅ Wakeup-source / network-standby sync handled; plugin responsive")
+    finally:
         if entries:
             send_curl_command(PowerManagerApis.set_wakeup_source_config(entries))
-
-    # Health check: the plugin must remain responsive.
-    log_info("Verifying plugin is still responsive via getPowerState")
-    health = send_curl_command(PowerManagerApis.get_power_state)
-    log_warning(f"Response: {health}")
-    if not is_ok(health):
-        log_error("TCID28_WakeupSourceNetworkStandbySync Failed ❌ (plugin unresponsive after sync)")
-        return False
-    log_success("✅ Wakeup-source / network-standby sync handled; plugin responsive")
 
     elapsed_time = time.perf_counter() - start_time
     msg = "TCID28_WakeupSourceNetworkStandbySync Passed ✅"

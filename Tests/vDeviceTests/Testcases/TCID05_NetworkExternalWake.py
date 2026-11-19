@@ -140,7 +140,6 @@ def run_test():
         if not isinstance(state, dict):
             log_error("TCID05_NetworkExternalWake Failed ❌ (device did not report a post-wake power state)")
             return False
-[I
         reason = _wait_for_wakeup_reason("LAN")
         if reason != "LAN":
             log_error("TCID05_NetworkExternalWake Failed ❌ (last wakeup reason was not LAN)")

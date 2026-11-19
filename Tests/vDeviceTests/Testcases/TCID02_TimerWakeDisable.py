@@ -82,7 +82,6 @@ def run_test():
             log_error("TCID02_TimerWakeDisable Failed ❌ (unable to read configured wakeup state)")
             return False
         if get_source_enabled(configured, "TIMER") is not False:
-[O            log_error("TCID02_TimerWakeDisable Failed ❌ (TIMER not disabled before deep sleep)")
             return False
         if get_source_enabled(configured, "CEC") is not True:
             log_error("TCID02_TimerWakeDisable Failed ❌ (CEC not enabled before deep sleep)")

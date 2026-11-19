@@ -11,12 +11,13 @@ with timing   : python3 SuiteManager.py -t powermanager
 without timing: python3 SuiteManager.py powermanager
 
 Default Actions:
-Plugin activation is done by default before suite execution:
+Plugin activation is done by default before each selected test:
 - powermanager -> Controller.1.activate(callsign=org.rdk.PowerManager)
 - The suite waits until getPowerState confirms the plugin is ready.
-- Init_PowerManager_Populate is run to establish a known baseline.
-- The plugin uses a per-suite lifecycle and is deactivated when the suite ends,
-  including after setup or test failures.
+- Init_PowerManager_Populate is run for that test to establish a known baseline.
+- The plugin uses a per-test lifecycle and is deactivated after every test in
+  reverse activation order, including after activation, readiness,
+  initialization, or test failures. The next selected test starts fresh.
 
 Disable default activation only if needed:
 - export AUTO_ACTIVATE_PLUGINS=0

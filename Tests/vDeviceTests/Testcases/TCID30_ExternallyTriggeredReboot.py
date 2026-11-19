@@ -12,7 +12,7 @@
 import os
 import time
 
-from utils import POWERMANAGER_CMD_BASE, send_curl_command, send_vcomponent_command, is_ok, log_success, log_error, log_warning, log_info, activate_plugin
+from utils import POWERMANAGER_CMD_BASE, send_curl_command, send_vcomponent_command, is_ok, log_success, log_error, log_warning, log_info, activate_plugin, wait_for_plugin_ready
 import PowerManager_Curl as PowerManagerApis
 from PowerManager_CombinationHelpers import parse_last_wakeup_reason, parse_power_state
 
@@ -91,10 +91,13 @@ def run_test():
             return False
 
         log_info("Device is awake. Re-activating plugin 'org.rdk.PowerManager' via curl JSON-RPC")
-        if activate_plugin("org.rdk.PowerManager"):
-            log_success("Plugin 'org.rdk.PowerManager' activated successfully")
+        if (
+            activate_plugin("org.rdk.PowerManager")
+            and wait_for_plugin_ready("org.rdk.PowerManager")
+        ):
+            log_success("Plugin 'org.rdk.PowerManager' activated and ready")
         else:
-            log_error("Failed to activate plugin 'org.rdk.PowerManager'")
+            log_error("Failed to activate or ready plugin 'org.rdk.PowerManager'")
             return False
 
         reason = _wait_for_boot_reason(expected_reason)

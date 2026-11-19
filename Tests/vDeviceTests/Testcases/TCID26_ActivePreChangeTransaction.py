@@ -64,26 +64,27 @@ def _extract_client_id(result):
 
 def run_test():
     start_time = time.perf_counter()
-
-    # Start from a known state so the following transition actually changes state.
-    send_curl_command(PowerManagerApis.set_power_state(PowerManagerApis.POWER_STATE_ON, standby_reason="TCID28-setup"))
-    time.sleep(2)
-
-    # Register a pre-change client. With an outstanding (un-acked) client, the next
-    # setPowerState keeps the PreModeChangeController active until timeout.
-    log_info("Executing addPowerModePreChangeClient")
-    resp = send_curl_command(PowerManagerApis.add_power_mode_prechange_client(CLIENT_NAME))
-    log_warning(f"Response: {resp}")
-    if not is_ok(resp):
-        log_error("TCID26_ActivePreChangeTransaction Failed ❌ (add client did not succeed)")
-        return False
-    client_id = _extract_client_id(parse_result(resp))
-    if client_id is None:
-        log_error("TCID26_ActivePreChangeTransaction Failed ❌ (no clientId returned)")
-        return False
-    log_success(f"✅ Registered client id={client_id}")
+    client_id = None
 
     try:
+        # Start from a known state so the following transition actually changes state.
+        send_curl_command(PowerManagerApis.set_power_state(PowerManagerApis.POWER_STATE_ON, standby_reason="TCID26-setup"))
+        time.sleep(2)
+
+        # Register a pre-change client. With an outstanding (un-acked) client, the next
+        # setPowerState keeps the PreModeChangeController active until timeout.
+        log_info("Executing addPowerModePreChangeClient")
+        resp = send_curl_command(PowerManagerApis.add_power_mode_prechange_client(CLIENT_NAME))
+        log_warning(f"Response: {resp}")
+        if not is_ok(resp):
+            log_error("TCID26_ActivePreChangeTransaction Failed ❌ (add client did not succeed)")
+            return False
+        client_id = _extract_client_id(parse_result(resp))
+        if client_id is None:
+            log_error("TCID26_ActivePreChangeTransaction Failed ❌ (no clientId returned)")
+            return False
+        log_success(f"✅ Registered client id={client_id}")
+
         # Trigger an async transition; the controller now waits for our client's ack.
         log_info("Triggering setPowerState(LIGHT_SLEEP) to start an in-progress transaction")
         send_curl_command(
@@ -117,9 +118,10 @@ def run_test():
         log_success("✅ Plugin responsive after in-progress transaction handling")
     finally:
         # Cleanup: drop the client and restore a powered-on state (best effort).
-        send_curl_command(PowerManagerApis.remove_power_mode_prechange_client(client_id))
+        if client_id is not None:
+            send_curl_command(PowerManagerApis.remove_power_mode_prechange_client(client_id))
         send_curl_command(
-            PowerManagerApis.set_power_state(PowerManagerApis.POWER_STATE_ON, standby_reason="TCID28-restore")
+            PowerManagerApis.set_power_state(PowerManagerApis.POWER_STATE_ON, standby_reason="TCID26-restore")
         )
 
     elapsed_time = time.perf_counter() - start_time

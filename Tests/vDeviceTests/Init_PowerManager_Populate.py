@@ -1,7 +1,7 @@
 """
 /**
  * @file Init_PowerManager_Populate.py
- * @brief Suite initialization / precondition for the PowerManager L3 vDevice suite.
+ * @brief Per-test initialization / precondition for the PowerManager L3 vDevice suite.
  *
  * @testcase Init_PowerManager_Populate
  * @details Establishes a known baseline before the test cases run: verifies the
@@ -49,7 +49,7 @@ def _get_power_state():
 
 
 def run_test():
-    log_info("PowerManager suite initialization: verifying plugin reachability")
+    log_info("PowerManager test initialization: verifying plugin reachability")
 
     result = _get_power_state()
     if result is None:
@@ -72,5 +72,5 @@ def run_test():
         log_warning("  Could not set baseline POWER_STATE_ON (non-fatal)")
 
     time.sleep(1)
-    log_success("Suite initialization completed successfully")
+    log_success("Test initialization completed successfully")
     return True
