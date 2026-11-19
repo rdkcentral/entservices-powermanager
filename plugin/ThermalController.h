@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include "Module.h"
 #include <errno.h>  // for errno
 #include <stdint.h> // for uint32_t
 #include <stdio.h>  // for fclose, ferror, fopen, fscanf
