@@ -7,6 +7,21 @@ EXECUTION
 ---------
 cd Tests/vDeviceTests
 
+Help:
+  python3 SuiteManager.py -h
+  python3 SuiteManager.py --help
+  python3 SuiteManager.py powermanager --help
+
+Help shows syntax, options, examples, environment settings, and every registered
+testcase ID with its full module name, generated from SUITES.
+There are no interactive prompts. Help does not run tests, initialize devices,
+or contact services.
+
+Run selected tests using full module names (bare IDs like TCID01 are not accepted):
+  python3 SuiteManager.py powermanager --test TCID01_DeepSleepNaturalWakeupTime
+  python3 SuiteManager.py powermanager --test TCID01_DeepSleepNaturalWakeupTime --test TCID02_TimerWakeDisable
+Repeated --test options run cases in the supplied order; otherwise all cases run.
+
 with timing   : python3 SuiteManager.py -t powermanager
 without timing: python3 SuiteManager.py powermanager
 

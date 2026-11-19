@@ -336,7 +336,52 @@ def run_suite(suite_name, selected_tests=None):
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Run PowerManager test suites")
+    test_case_help = "\n".join(
+        f"  {suite_name}:\n"
+        + "\n".join(f"    {module_name}" for module_name in config["tests"])
+        for suite_name, config in SUITES.items()
+    )
+    parser = argparse.ArgumentParser(
+        description="Run PowerManager L3 test suites",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  python3 %(prog)s --help\n"
+            "  python3 %(prog)s powermanager       Run all tests\n"
+            "  python3 %(prog)s -t powermanager    Run all tests with timing\n"
+            "  python3 %(prog)s powermanager --test TCID01_DeepSleepNaturalWakeupTime\n"
+            "  python3 %(prog)s powermanager --test TCID01_DeepSleepNaturalWakeupTime "
+            "--test TCID02_TimerWakeDisable\n"
+            "\n"
+            "Testcase IDs / module names (execution order):\n"
+            f"{test_case_help}\n"
+            "\n"
+            "Test selection:\n"
+            "  Without --test, all registered tests run in order.\n"
+            "  Supply the full module name, not a bare ID such as TCID01.\n"
+            "  Repeat --test to run multiple tests in the supplied order.\n"
+            "\n"
+            "Execution / prompts:\n"
+            "  No interactive prompts. Help exits without running tests or contacting services.\n"
+            "  For each test, PowerManager is activated and checked for readiness,\n"
+            "  Init_PowerManager_Populate runs, then the test runs and the plugin is deactivated.\n"
+            "  AUTO_ACTIVATE_PLUGINS=0 skips activation/readiness/deactivation, not initialization.\n"
+            "  A run with only passes and skips succeeds; failures return exit status 1.\n"
+            "\n"
+            "Environment settings:\n"
+            "  TARGET_HOST                         Endpoint host (default: 127.0.0.1)\n"
+            "  JSONRPC_PORT                        JSON-RPC port (default: 9998)\n"
+            "  WPEFRAMEWORK_JSONRPC_URL             Full JSON-RPC URL (highest priority)\n"
+            "  JSONRPC_URL                         Fallback full JSON-RPC URL\n"
+            "  DEEPSLEEP_VCOMPONENT_PORT            DeepSleep port (default: 8081)\n"
+            "  BOOT_VCOMPONENT_PORT                 Boot port (default: 8081)\n"
+            "  DEEPSLEEP_VCOMPONENT_API_URL         Full DeepSleep postKVP URL override\n"
+            "  BOOT_VCOMPONENT_API_URL              Full Boot postKVP URL override\n"
+            "  POWERMANAGER_PLUGIN_READY_TIMEOUT   Readiness timeout in seconds (default: 6)\n"
+            "  POWERMANAGER_PLUGIN_INIT_WAIT       Legacy readiness timeout fallback\n"
+            "  PLUGIN_INIT_WAIT                     Shared readiness timeout fallback\n"
+        ),
+    )
     parser.add_argument("suite", help=f"Test suite name. Available: {list(SUITES.keys())}")
     parser.add_argument("-t", "--timing", action="store_true", help="Enable timing output for passed test cases")
     parser.add_argument(
