@@ -19,7 +19,10 @@
 
 #pragma once
 
+#include <fcntl.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <unistd.h>
 #include <core/Portability.h>
 #include <interfaces/IPowerManager.h>
 
@@ -129,12 +132,16 @@ public:
 
     virtual uint32_t SetClockSpeed(uint32_t speed) override
     {
-        FILE* fp = fopen ("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor", "w");
+        const int governorFd = open("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor", O_WRONLY);
+        FILE* fp = governorFd < 0 ? nullptr : fdopen(governorFd, "w");
         uint32_t cur_speed = 0;
         LOGINFO("Setting clock speed to %d", speed );
         //Opening the clock speed adjusting
 
         if (nullptr == fp) {
+            if (governorFd >= 0) {
+                close(governorFd);
+            }
             LOGERR("Unable to open '/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor' for writing");
             return WPEFramework::Core::ERROR_GENERAL;
         }
@@ -143,8 +150,12 @@ public:
         fprintf(fp, "userspace");
         fclose(fp);
 
-        fp = fopen ("/sys/devices/system/cpu/cpu0/cpufreq/scaling_setspeed", "w");
+        const int speedFd = open("/sys/devices/system/cpu/cpu0/cpufreq/scaling_setspeed", O_WRONLY);
+        fp = speedFd < 0 ? nullptr : fdopen(speedFd, "w");
         if (nullptr == fp) {
+            if (speedFd >= 0) {
+                close(speedFd);
+            }
             LOGERR("Unable to open '/sys/devices/system/cpu/cpu0/cpufreq/scaling_setspeed' for writing" );
             return WPEFramework::Core::ERROR_GENERAL;
         }
