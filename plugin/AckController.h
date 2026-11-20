@@ -216,7 +216,7 @@ public:
                 if (!isRevoked) {
                     if (self->_running) {
                         self->_running = false;
-                        self->_handler(isTimedout, isRevoked);
+                        self->invokeHandler(isTimedout, isRevoked);
                     } else {
                         LOGERR("FATAL not expected to reach timeout, without timer running");
                     }
@@ -240,7 +240,6 @@ public:
     uint32_t Reschedule(const uint32_t clientId, const int transactionId, const int offsetInMilliseconds)
     {
         uint32_t status = WPEFramework::Core::ERROR_NONE;
-        ASSERT(nullptr != _handler);
 
         do {
             auto newTimeout = WPEFramework::Core::Time::Now().Add(offsetInMilliseconds);
@@ -294,7 +293,21 @@ private:
             _workerPool.Revoke(_timerJob);
         }
         bool isRevoked = false;
-        _handler(isTimedout, isRevoked);
+        invokeHandler(isTimedout, isRevoked);
+    }
+
+    /**
+     * @brief Invokes the completion handler and releases it afterwards, so state captured by the
+     *        handler does not outlive the round. The handler is moved out first as it may drop
+     *        the last reference to this controller.
+     */
+    void invokeHandler(bool isTimedout, bool isRevoked)
+    {
+        auto handler = std::move(_handler);
+        _handler     = nullptr;
+        if (handler) {
+            handler(isTimedout, isRevoked);
+        }
     }
 
     /**
@@ -310,7 +323,7 @@ private:
                 _workerPool.Revoke(_timerJob);
                 bool isTimedout = false;
                 bool isRevoked  = true;
-                _handler(isTimedout, isRevoked);
+                invokeHandler(isTimedout, isRevoked);
             }
         }
         if (_timerJob.IsValid()) {
