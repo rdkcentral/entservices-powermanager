@@ -67,12 +67,13 @@ The plugin employs a specialized controller pattern with four distinct controlle
 
 ### Power State Change Flow
 1. **Request Initiation**: Client requests power state change through IPowerManager interface
-2. **Pre-Change Notification**: AckController notifies registered clients for acknowledgment
-3. **Acknowledgment Collection**: System waits for client acknowledgments within timeout
-4. **Validation**: PowerController validates target power state and prerequisites
-5. **HAL Execution**: Platform-specific power state change through IPlatform interface
-6. **State Persistence**: Settings controller updates configuration persistence
-7. **Post-Change Notification**: Broadcast power state change notifications to all subscribers
+2. **Pre-Change Notification**: AckController notifies registered pre-change clients to prepare for the transition
+3. **Pre-Change Negotiation**: Clients call PowerModePreChangeComplete or DelayPowerModeChangeBy; negotiation completes when clients finish or the maximum delay expires
+4. **Acknowledgment Collection**: After pre-change negotiation finishes, OnPowerModeChangeAcknowledgementRequested requests readiness acknowledgments from clients registered through AddPowerModeChangeAcknowledgementClient. All registered acknowledgment clients must call PowerModeChangeAcknowledgement with their acknowledgeClientId and the event's transactionId before the power mode change proceeds
+5. **Validation**: PowerController validates target power state and prerequisites
+6. **HAL Execution**: Platform-specific power state change through IPlatform interface
+7. **State Persistence**: Settings controller updates configuration persistence
+8. **Post-Change Notification**: Broadcast power state change notifications to all subscribers
 
 ### Thermal Management Flow
 1. **Continuous Monitoring**: ThermalController polls temperature through MFR HAL
@@ -130,7 +131,7 @@ The plugin employs a specialized controller pattern with four distinct controlle
 - Comprehensive error handling at each controller level
 - Graceful degradation for missing HAL components
 - Automatic recovery mechanisms for thermal emergencies
-- Robust timeout handling for client acknowledgments
+- Robust timeout handling for pre-change negotiation
 
 ### State Consistency
 - Atomic power state transitions with rollback capability
