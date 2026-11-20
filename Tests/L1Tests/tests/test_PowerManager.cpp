@@ -405,6 +405,17 @@ TEST_F(TestPowerManager, GetLastWakeupReason)
     EXPECT_EQ(wakeupReason, WakeupReason::WAKEUP_REASON_IR);
 }
 
+TEST_F(TestPowerManager, SetDeepSleepTimerAcceptsTwoDays)
+{
+    constexpr int twoDaysInSeconds = 2 * 24 * 60 * 60;
+
+    EXPECT_EQ(powerManagerImpl->SetDeepSleepTimer(twoDaysInSeconds), Core::ERROR_NONE);
+    EXPECT_EQ(Settings::Load().deepSleepTimeout(), static_cast<uint32_t>(twoDaysInSeconds));
+
+    EXPECT_EQ(powerManagerImpl->SetDeepSleepTimer(twoDaysInSeconds + 1), Core::ERROR_NONE);
+    EXPECT_EQ(Settings::Load().deepSleepTimeout(), 0U);
+}
+
 TEST_F(TestPowerManager, GetLastWakeupKeyCode)
 {
     int wakeupKeyCode = 0;
