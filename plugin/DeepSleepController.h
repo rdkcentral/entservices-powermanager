@@ -18,6 +18,7 @@
  */
 #pragma once
 
+#include "Module.h"
 #include <map>         // for map
 #include <memory>      // for unique_ptr, operator!=
 #include <stdint.h>    // for uint32_t

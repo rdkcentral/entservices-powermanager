@@ -18,6 +18,7 @@
  */
 #pragma once
 
+#include "Module.h"
 #include <chrono>      // for steady_clock, time_point
 #include <cstdint>     // for uint32_t
 #include <memory>      // for unique_ptr, default_delete

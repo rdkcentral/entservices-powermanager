@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include "Module.h"
 #include <interfaces/IPowerManager.h> // for IPowerManager
 
 class PowerUtils {
