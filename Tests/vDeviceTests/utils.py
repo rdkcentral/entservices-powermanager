@@ -29,8 +29,14 @@
 import os
 import time
 import json
+import base64
+import hashlib
+import socket
+import ssl
+import struct
 import subprocess
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 # Base paths for vComponent YAML commands (scenario hooks - TODO).
@@ -218,6 +224,234 @@ def deactivate_plugin(callsign, timeout_seconds=40):
             continue
         return "result" in response
     return False
+
+
+class _WebSocketConnection:
+    """Minimal RFC 6455 text-frame client implemented with the standard library."""
+
+    GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+    def __init__(self, connection):
+        self.connection = connection
+        self.buffer = bytearray()
+
+    @classmethod
+    def connect(cls, url, timeout):
+        endpoint = urlsplit(url)
+        secure = endpoint.scheme in ("https", "wss")
+        host = endpoint.hostname
+        if not host:
+            raise ValueError(f"Invalid WebSocket endpoint: {url}")
+        port = endpoint.port or (443 if secure else 80)
+        path = endpoint.path or "/"
+        if endpoint.query:
+            path = f"{path}?{endpoint.query}"
+
+        connection = socket.create_connection((host, port), timeout=timeout)
+        if secure:
+            connection = ssl.create_default_context().wrap_socket(
+                connection, server_hostname=host
+            )
+        connection.settimeout(timeout)
+
+        websocket = cls(connection)
+        key = base64.b64encode(os.urandom(16)).decode("ascii")
+        request = (
+            f"GET {path} HTTP/1.1\r\n"
+            f"Host: {endpoint.netloc}\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\n"
+            "Sec-WebSocket-Version: 13\r\n"
+            "Sec-WebSocket-Protocol: jsonrpc\r\n\r\n"
+        )
+        connection.sendall(request.encode("ascii"))
+        response = websocket._receive_headers()
+        lines = response.decode("iso-8859-1").split("\r\n")
+        if not lines or " 101 " not in lines[0]:
+            status = lines[0] if lines else repr(response)
+            raise ConnectionError(f"WebSocket upgrade rejected: {status}")
+
+        headers = {}
+        for line in lines[1:]:
+            name, separator, value = line.partition(":")
+            if separator:
+                headers[name.strip().lower()] = value.strip()
+        expected_accept = base64.b64encode(
+            hashlib.sha1(f"{key}{cls.GUID}".encode("ascii")).digest()
+        ).decode("ascii")
+        if headers.get("sec-websocket-accept") != expected_accept:
+            raise ConnectionError("WebSocket upgrade returned an invalid accept key")
+        return websocket
+
+    def _receive_headers(self):
+        while b"\r\n\r\n" not in self.buffer:
+            chunk = self.connection.recv(4096)
+            if not chunk:
+                raise ConnectionError("Connection closed during WebSocket upgrade")
+            self.buffer.extend(chunk)
+            if len(self.buffer) > 65536:
+                raise ConnectionError("WebSocket upgrade headers are too large")
+        headers, remaining = bytes(self.buffer).split(b"\r\n\r\n", 1)
+        self.buffer = bytearray(remaining)
+        return headers
+
+    def send_text(self, text):
+        self._send_frame(0x1, text.encode("utf-8"))
+
+    def _send_frame(self, opcode, payload=b""):
+        mask = os.urandom(4)
+        length = len(payload)
+        header = bytearray([0x80 | opcode])
+        if length < 126:
+            header.append(0x80 | length)
+        elif length <= 0xFFFF:
+            header.append(0x80 | 126)
+            header.extend(struct.pack("!H", length))
+        else:
+            header.append(0x80 | 127)
+            header.extend(struct.pack("!Q", length))
+        masked_payload = bytes(
+            value ^ mask[index % 4] for index, value in enumerate(payload)
+        )
+        self.connection.sendall(bytes(header) + mask + masked_payload)
+
+    def receive_text(self):
+        fragments = bytearray()
+        while True:
+            first, second = self._receive_exact(2)
+            final = bool(first & 0x80)
+            opcode = first & 0x0F
+            masked = bool(second & 0x80)
+            length = second & 0x7F
+            if length == 126:
+                length = struct.unpack("!H", self._receive_exact(2))[0]
+            elif length == 127:
+                length = struct.unpack("!Q", self._receive_exact(8))[0]
+            mask = self._receive_exact(4) if masked else None
+            payload = self._receive_exact(length)
+            if mask:
+                payload = bytes(
+                    value ^ mask[index % 4] for index, value in enumerate(payload)
+                )
+
+            if opcode == 0x8:
+                raise ConnectionError("WebSocket closed by server")
+            if opcode == 0x9:
+                self._send_frame(0xA, payload)
+                continue
+            if opcode == 0xA:
+                continue
+            if opcode == 0x1:
+                fragments = bytearray(payload)
+            elif opcode == 0x0 and fragments:
+                fragments.extend(payload)
+            else:
+                continue
+            if final:
+                return fragments.decode("utf-8")
+
+    def _receive_exact(self, length):
+        while len(self.buffer) < length:
+            chunk = self.connection.recv(max(4096, length - len(self.buffer)))
+            if not chunk:
+                raise ConnectionError("WebSocket connection closed")
+            self.buffer.extend(chunk)
+        data = bytes(self.buffer[:length])
+        del self.buffer[:length]
+        return data
+
+    def settimeout(self, timeout):
+        self.connection.settimeout(timeout)
+
+    def close(self):
+        try:
+            self._send_frame(0x8)
+        except (OSError, ConnectionError):
+            pass
+        finally:
+            self.connection.close()
+
+
+class JsonRpcEventListener:
+    """Receive Thunder JSON-RPC events over a persistent WebSocket."""
+
+    def __init__(self, callsign, event_name, listener_id, timeout=8):
+        self.callsign = callsign
+        self.event_name = event_name
+        self.listener_id = listener_id
+        self.timeout = timeout
+        self._socket = None
+
+    def connect(self):
+        try:
+            self._socket = _WebSocketConnection.connect(
+                WPEFRAMEWORK_JSONRPC_URL, self.timeout
+            )
+            request_id = 1
+            self._socket.send_text(json.dumps({
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "method": f"{self.callsign}.1.register",
+                "params": {"event": self.event_name, "id": self.listener_id},
+            }))
+            response = self._receive_until(
+                lambda message: message.get("id") == request_id,
+                self.timeout,
+            )
+            if not response or "error" in response or "result" not in response:
+                log_error(f"Event registration rejected: {response}")
+                self.close()
+                return False
+            return True
+        except Exception as exc:
+            log_error(f"WebSocket event registration failed: {exc}")
+            self.close()
+            return False
+
+    def wait_for_event(self, predicate=None, timeout=None):
+        timeout = self.timeout if timeout is None else timeout
+
+        def matches(message):
+            method = message.get("method", "")
+            params = message.get("params")
+            if not (
+                isinstance(method, str)
+                and (
+                    method == self.event_name
+                    or method.endswith(f".{self.event_name}")
+                )
+                and isinstance(params, dict)
+            ):
+                return False
+            return predicate is None or predicate(params)
+
+        message = self._receive_until(matches, timeout)
+        return message.get("params") if message else None
+
+    def _receive_until(self, predicate, timeout):
+        if self._socket is None:
+            return None
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            self._socket.settimeout(max(0.1, deadline - time.monotonic()))
+            try:
+                message = json.loads(self._socket.receive_text())
+            except socket.timeout:
+                return None
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(message, dict) and predicate(message):
+                return message
+        return None
+
+    def close(self):
+        if self._socket is not None:
+            try:
+                self._socket.close()
+            finally:
+                self._socket = None
 
 
 def send_curl_command(curl_command):

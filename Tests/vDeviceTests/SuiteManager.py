@@ -1,4 +1,4 @@
-﻿"""
+"""
 /**
  * @file SuiteManager.py
  * @brief SuiteManager.py
@@ -90,6 +90,10 @@ SUITES = {
             "TCID29_InvalidScenarios",
             "TCID30_ExternallyTriggeredReboot",
             "TCID31_Reboot",
+            "TCID32_PowerModeChangedEvent",
+            "TCID33_DeepSleepTimeoutEvent",
+            "TCID34_NetworkStandbyModeChangedEvent",
+            "TCID35_RebootBeginEvent",
         ],
     },
 }

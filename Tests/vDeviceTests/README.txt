@@ -52,6 +52,8 @@ Useful overrides:
 - POWERMANAGER_PLUGIN_READY_TIMEOUT (readiness timeout in seconds; default: 6)
 - POWERMANAGER_PLUGIN_INIT_WAIT (legacy fallback for the readiness timeout)
 - PLUGIN_INIT_WAIT (common fallback for the readiness timeout)
+- POWERMANAGER_EVENT_TIMEOUT (WebSocket event timeout in seconds; default: 8)
+- POWERMANAGER_DEEP_SLEEP_EVENT_TIMEOUT (deep-sleep event timeout; default: 42)
 
 Examples:
 
