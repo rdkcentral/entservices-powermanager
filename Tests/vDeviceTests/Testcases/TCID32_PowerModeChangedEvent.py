@@ -13,7 +13,7 @@ import os
 import time
 
 import PowerManager_Curl as PowerManagerApis
-from PowerManager_CombinationHelpers import parse_time_since_wakeup
+from PowerManager_CombinationHelpers import parse_power_state, parse_time_since_wakeup
 from utils import (
     JsonRpcEventListener,
     is_ok,
@@ -28,6 +28,17 @@ from utils import (
 EVENT_TIMEOUT = float(os.environ.get("POWERMANAGER_EVENT_TIMEOUT", "8"))
 
 
+def _wait_for_state(expected_state, timeout=5):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        response = send_curl_command(PowerManagerApis.get_power_state)
+        state = parse_power_state(response)
+        if isinstance(state, dict) and state.get("currentState") == expected_state:
+            return state
+        time.sleep(0.25)
+    return None
+
+
 def run_test():
     start_time = time.perf_counter()
     listener = None
@@ -38,7 +49,7 @@ def run_test():
                 "ON", standby_reason="TCID32-event-baseline"
             )
         )
-        if not is_ok(baseline_resp):
+        if not is_ok(baseline_resp) or _wait_for_state("ON") is None:
             log_error("TCID32_PowerModeChangedEvent Failed (unable to establish ON baseline)")
             return False
 
@@ -63,23 +74,36 @@ def run_test():
             log_error("TCID32_PowerModeChangedEvent Failed (setPowerState failed)")
             return False
 
-        wake_resp = send_curl_command(PowerManagerApis.get_time_since_wakeup)
-        log_warning(f"Wake time response: {wake_resp}")
-        if parse_time_since_wakeup(wake_resp) != 0:
-            log_error("TCID32_PowerModeChangedEvent Failed (wake time was not reset)")
-            return False
-
         notification = listener.wait_for_event(
-            lambda params: params.get("newState") == "STANDBY",
+            lambda params: (
+                params.get("currentState") == "ON"
+                and params.get("newState") == "STANDBY"
+            ),
             timeout=EVENT_TIMEOUT,
         )
         if notification is None:
             log_error(
                 "TCID32_PowerModeChangedEvent Failed "
-                "(onPowerModeChanged with newState=STANDBY was not received)"
+                "(onPowerModeChanged for ON to STANDBY was not received)"
             )
             return False
         log_success(f"Captured onPowerModeChanged event: {notification}")
+
+        final_state = _wait_for_state("STANDBY")
+        if final_state is None:
+            log_error(
+                "TCID32_PowerModeChangedEvent Failed "
+                "(device did not reach STANDBY after the event)"
+            )
+            return False
+        log_success(f"Validated completed power-state transition: {final_state}")
+
+        wake_resp = send_curl_command(PowerManagerApis.get_time_since_wakeup)
+        log_warning(f"Wake time response: {wake_resp}")
+        if parse_time_since_wakeup(wake_resp) != 0:
+            log_error("TCID32_PowerModeChangedEvent Failed (wake time was not reset)")
+            return False
+        log_success("Validated secondsSinceWakeup=0 in STANDBY")
     finally:
         if listener is not None:
             listener.close()

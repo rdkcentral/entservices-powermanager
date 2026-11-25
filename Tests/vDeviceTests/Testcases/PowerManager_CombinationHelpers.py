@@ -1,7 +1,14 @@
 import json
 import os
+import time
 
-from utils import TARGET_HOST, log_warning, parse_result
+import PowerManager_Curl as PowerManagerApis
+from utils import (
+    TARGET_HOST,
+    log_warning,
+    parse_result,
+    send_curl_command,
+)
 
 
 STRICT_PARTIALS = os.environ.get("POWERMANAGER_STRICT_SCENARIOS", "0").lower() in (
@@ -83,6 +90,42 @@ def parse_network_standby(curl_response):
             if isinstance(value, bool):
                 return value
     return None
+
+
+def extract_client_id(result):
+    if isinstance(result, dict):
+        value = result.get("clientId")
+    else:
+        value = result
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    return None
+
+
+def extract_transaction_id(params):
+    if not isinstance(params, dict):
+        return None
+    for key in ("transactionId", "trxnId"):
+        value = params.get(key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return None
+
+
+def wait_for_power_state(expected_state, timeout_seconds=5):
+    deadline = time.monotonic() + timeout_seconds
+    last_state = None
+    while time.monotonic() < deadline:
+        last_state = parse_power_state(
+            send_curl_command(PowerManagerApis.get_power_state)
+        )
+        if (
+            isinstance(last_state, dict)
+            and last_state.get("currentState") == expected_state
+        ):
+            return last_state
+        time.sleep(0.25)
+    return last_state
 
 
 def wakeup_map(config_list):
