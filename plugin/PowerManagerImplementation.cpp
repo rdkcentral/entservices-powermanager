@@ -17,6 +17,7 @@
  * limitations under the License.
  */
 
+
 #include <chrono>
 #include <memory>
 
@@ -49,6 +50,7 @@ uint32_t WPEFramework::Plugin::PowerManagerImplementation::_nextClientId        
 // 2. SoC woke-up from deep sleep even before schedule timeout
 static constexpr int kTransientDeepsleepThresholdSec = 5;
 static constexpr int kMaximumDeepSleepTimeoutSec = 2 * 24 * 60 * 60;
+
 
 using namespace std;
 
