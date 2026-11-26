@@ -75,10 +75,10 @@ The plugin employs a specialized controller pattern with four distinct controlle
 7. **Post-Change Notification**: Broadcast power state change notifications to all subscribers
 
 ### Thermal Management Flow
-1. **Continuous Monitoring**: ThermalController polls temperature through MFR HAL
+1. **Continuous Monitoring**: ThermalController polls temperature through MFR HAL unless the PowerManager build sets `-DTHERMAL_STATUS_EVENT=ON`. In event mode, it checks the initial thermal state after registering for MFR HAL notifications, then handles updates on callbacks. If registration fails, it logs an error and does not fall back to polling.
 2. **Threshold Evaluation**: Compare current temperature against configured limits
 3. **State Determination**: Calculate thermal state (NORMAL/HIGH/CRITICAL)
-4. **Emergency Action**: Automatic power state changes for critical thermal conditions
+4. **Emergency Action**: Automatic power state changes for critical thermal conditions. In event mode, ThermalController also records the thermal reboot reason when the HAL reports imminent thermal shutdown, even in deep sleep.
 5. **Event Notification**: Broadcast thermal state changes to registered clients
 
 ### Deep Sleep Management Flow
@@ -120,7 +120,7 @@ The plugin employs a specialized controller pattern with four distinct controlle
 
 ### HAL Interface Requirements
 - Platform-specific power management HAL
-- Thermal monitoring capabilities (MFR HAL)
+- Thermal monitoring capabilities (MFR HAL), including thermal status event registration, unregistration, and state queries for builds with `THERMAL_STATUS_EVENT`
 - Deep sleep hardware support (DeepSleep HAL)
 - Network interface for standby mode coordination
 
