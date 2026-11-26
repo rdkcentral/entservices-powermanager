@@ -1771,5 +1771,15 @@ namespace Plugin {
         LOGINFO("<<");
     }
 
+#ifdef THERMAL_STATUS_EVENT
+    void PowerManagerImplementation::onThermalRebootReason(const std::string& reason)
+    {
+        LOGWARN("Setting reboot reason '%s' due to imminent thermal shutdown", reason.c_str());
+        _apiLock.Lock();
+        _powerController.SetRebootReason(reason);
+        _apiLock.Unlock();
+    }
+#endif
+
 }
 }

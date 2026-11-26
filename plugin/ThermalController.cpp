@@ -37,6 +37,12 @@ ThermalController::~ThermalController()
 {
     LOGINFO(">> DTOR");
     _stopThread = true;
+#ifdef THERMAL_STATUS_EVENT
+    if (_eventRegistered) {
+        platform().UnregisterThermalStatusEvent(this);
+        _eventRegistered = false;
+    }
+#endif
     if ( nullptr != thermalThreadId )
     {
         if (thermalThreadId->joinable())
@@ -160,12 +166,25 @@ void ThermalController::initializeThermalProtection()
             LOGINFO("*****Critical*** Fails to set temperature thresholds.. ");
         }
 
+#ifdef THERMAL_STATUS_EVENT
+        if (WPEFramework::Core::ERROR_NONE == platform().RegisterThermalStatusEvent(this))
+        {
+            _eventRegistered = true;
+            LOGINFO("Subscribed to thermal status events");
+            OnThermalStatusChanged(); // pick up the initial state
+        }
+        else
+        {
+            LOGERR("*****Critical*** Failed to register for thermal status events (platform impl does not support it?)");
+        }
+#else
         thermalThreadId = new std::thread(&ThermalController::pollThermalLevels, this);
 
         if (nullptr == thermalThreadId )
         {
             LOGINFO("*****Critical*** Fails to Create temperature monitor thread ");
         }
+#endif
     }
     else
     {
@@ -463,6 +482,62 @@ void ThermalController::pollThermalLevels()
     }
     LOGINFO(">> Stop monitoring temeperature");
 }
+
+#ifdef THERMAL_STATUS_EVENT
+void ThermalController::OnThermalStatusChanged()
+{
+    ThermalTemperature state;
+    float current_Temp     = 0;
+    float current_WifiTemp = 0;
+    PowerState currentPowerState = PowerState::POWER_STATE_UNKNOWN;
+    PowerState prevPowerState = PowerState::POWER_STATE_UNKNOWN;
+
+    if (_stopThread) {
+        return;
+    }
+
+    if (platform().IsThermalShutdownImminent())
+    {
+        LOGERR("Thermal state CRITICAL_SHUTDOWN_IMMINENT, setting reboot reason '%s'", PowerUtils::kThermalRebootReason);
+        _parent.onThermalRebootReason(PowerUtils::kThermalRebootReason);
+    }
+
+    const uint32_t powerStateResult = _parent.getPowerState(currentPowerState, prevPowerState);
+    if ((WPEFramework::Core::ERROR_NONE == powerStateResult) && (PowerState::POWER_STATE_STANDBY_DEEP_SLEEP == currentPowerState)) {
+        LOGINFO("Ignoring thermal status event in DEEPSLEEP state");
+        return;
+    }
+
+    _therm_mutex->lock();
+    const uint32_t result = platform().GetTemperature(state, current_Temp, current_WifiTemp);
+    if (WPEFramework::Core::ERROR_NONE == result)
+    {
+        if (m_cur_Thermal_Level != state)
+        {
+            LOGINFO("Temeperature levels changed %s -> %s", str(m_cur_Thermal_Level), str(state));
+            _parent.onThermalTemperatureChanged(m_cur_Thermal_Level, state, current_Temp);
+            m_cur_Thermal_Level = state;
+        }
+        LOGINFO("Current Temperature %d", (int)current_Temp);
+        m_cur_Thermal_Value = (int)current_Temp;
+    }
+    _therm_mutex->unlock();
+
+    if (WPEFramework::Core::ERROR_NONE == result)
+    {
+        _grace_interval_mutex->lock();
+        deepSleepIfNeeded();
+        rebootIfNeeded();
+        _grace_interval_mutex->unlock();
+
+        declockIfNeeded();
+    }
+    else
+    {
+        LOGINFO("Warning - Failed to retrieve temperature from OEM");
+    }
+}
+#endif
 
 const char* ThermalController::str(ThermalTemperature mode)
 {

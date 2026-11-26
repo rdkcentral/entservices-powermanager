@@ -221,6 +221,9 @@ namespace Plugin {
         virtual uint32_t getPowerState(PowerState& currentState, PowerState& prevState) const override;
         virtual void onThermalTemperatureChanged(const ThermalTemperature cur_Thermal_Level, const ThermalTemperature new_Thermal_Level, const float current_Temp) override;
         virtual void onDeepSleepForThermalChange() override;
+#ifdef THERMAL_STATUS_EVENT
+        virtual void onThermalRebootReason(const std::string& reason) override;
+#endif
 
         template <typename T>
         Core::hresult Register(std::list<T*>& list, T* notification);
