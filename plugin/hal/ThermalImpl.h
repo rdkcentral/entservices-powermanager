@@ -20,6 +20,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <atomic>
 #include <core/Portability.h>
 #include <interfaces/IPowerManager.h>
 
@@ -259,5 +260,46 @@ public:
         return retValue;
     }
 
+#ifdef THERMAL_STATUS_EVENT
+    virtual bool IsThermalShutdownImminent() const override
+    {
+        mfrThermalState_t state = NORMAL;
+        return (mfrERR_NONE == mfrGetThermalState(&state)) && (CRITICAL_SHUTDOWN_IMMINENT == state);
+    }
+
+    virtual uint32_t RegisterThermalStatusEvent(hal::Thermal::IThermalStatusChangedNotification* receiver) override
+    {
+        if (nullptr == receiver) {
+            return WPEFramework::Core::ERROR_INVALID_PARAMETER;
+        }
+        s_receiver.store(receiver);
+        if (mfrERR_NONE != mfrRegisterThermalStatusEvent(&ThermalImpl::onThermalStatus)) {
+            s_receiver.store(nullptr);
+            return WPEFramework::Core::ERROR_GENERAL;
+        }
+        return WPEFramework::Core::ERROR_NONE;
+    }
+
+    virtual uint32_t UnregisterThermalStatusEvent(hal::Thermal::IThermalStatusChangedNotification* receiver) override
+    {
+        if (s_receiver.load() != receiver) {
+            return WPEFramework::Core::ERROR_INVALID_PARAMETER;
+        }
+        mfrError_t result = mfrUnregisterThermalStatusEvent(&ThermalImpl::onThermalStatus);
+        s_receiver.store(nullptr);
+        return (mfrERR_NONE == result) ? WPEFramework::Core::ERROR_NONE : WPEFramework::Core::ERROR_GENERAL;
+    }
+
+private:
+    static inline std::atomic<hal::Thermal::IThermalStatusChangedNotification*> s_receiver{nullptr};
+
+    static void onThermalStatus(mfrThermalState_t state, int index, int value)
+    {
+        LOGINFO("Thermal status event: state=%d sensor=%d value=%d", (int)state, index, value);
+        if (auto* receiver = s_receiver.load()) {
+            receiver->OnThermalStatusChanged();
+        }
+    }
+#endif
 };
 

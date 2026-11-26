@@ -108,6 +108,9 @@ public:
         const std::function<void(const std::shared_ptr<RebootController::MaintenanceRebootGuard>&)>& reboot);
     void ClearMaintenanceReboot();
     void ShutdownMaintenanceJobs();
+#endif
+
+#if defined(CUSTOM_LGI) || defined(THERMAL_STATUS_EVENT)
     void SetRebootReason(const std::string& reason);
 #endif
 

@@ -21,6 +21,11 @@
 
 namespace hal {
 namespace Thermal {
+#ifdef THERMAL_STATUS_EVENT
+    struct IThermalStatusChangedNotification {
+        virtual void OnThermalStatusChanged() {}
+    };
+#endif
     class IPlatform {
         using ThermalTemperature = WPEFramework::Exchange::IPowerManager::ThermalTemperature;
 
@@ -33,7 +38,11 @@ namespace Thermal {
         virtual uint32_t SetClockSpeed(uint32_t speed) = 0;
         virtual uint32_t DetemineClockSpeeds(uint32_t &cpu_rate_Normal, uint32_t &cpu_rate_Scaled, uint32_t &cpu_rate_Minimal) = 0;
         virtual uint32_t GetTemperature(ThermalTemperature &curState, float &curTemperature, float &wifiTemperature) const = 0;
-
+#ifdef THERMAL_STATUS_EVENT
+        virtual bool IsThermalShutdownImminent() const { return false; }
+        virtual uint32_t RegisterThermalStatusEvent(IThermalStatusChangedNotification*) { return WPEFramework::Core::ERROR_GENERAL; }
+        virtual uint32_t UnregisterThermalStatusEvent(IThermalStatusChangedNotification*) { return WPEFramework::Core::ERROR_GENERAL; }
+#endif
     };
 }
 }

@@ -323,6 +323,9 @@ void PowerController::ShutdownMaintenanceJobs()
     });
 }
 
+#endif
+
+#if defined(CUSTOM_LGI) || defined(THERMAL_STATUS_EVENT)
 void PowerController::SetRebootReason(const std::string& reason)
 {
     _settings.SetRebootReason(reason.empty() ? "Unknown" : reason);

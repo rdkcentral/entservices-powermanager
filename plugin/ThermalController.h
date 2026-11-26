@@ -55,7 +55,11 @@
 #define THERMAL_SHUTDOWN_REASON   (char*)"THERMAL_SHUTDOWN"
 
 
-class ThermalController {
+class ThermalController
+#ifdef THERMAL_STATUS_EVENT
+    : public hal::Thermal::IThermalStatusChangedNotification
+#endif
+{
 
 #ifndef MFR_TEMP_CLOCK_READ
 /* Temperature (in celcus) at which box will ALWAYS be rebooted */
@@ -193,6 +197,9 @@ public:
 
             virtual void onThermalTemperatureChanged(const ThermalTemperature cur_Thermal_Level,const ThermalTemperature new_Thermal_Level, const float current_Temp) = 0;
             virtual void onDeepSleepForThermalChange() = 0;
+#ifdef THERMAL_STATUS_EVENT
+            virtual void onThermalRebootReason(const std::string& reason) { (void)reason; }
+#endif
     };
 
 private:
@@ -220,6 +227,13 @@ private:
 
     //Thread entry function to monitor thermal levels of the device.
     void pollThermalLevels();
+
+#ifdef THERMAL_STATUS_EVENT
+    bool _eventRegistered = false;
+public:
+    void OnThermalStatusChanged() override;
+private:
+#endif
 
     static const char* str(ThermalTemperature mode);
 

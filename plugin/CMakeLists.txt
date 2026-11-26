@@ -108,6 +108,12 @@ if(DISABLE_DECLOCKING_LOGIC)
                                 DISABLE_DECLOCKING_LOGIC)
 endif()
 
+if(THERMAL_STATUS_EVENT)
+   target_compile_definitions(${PLUGIN_IMPLEMENTATION}
+                              PRIVATE
+                                THERMAL_STATUS_EVENT)
+endif()
+
 target_compile_definitions(${PLUGIN_IMPLEMENTATION}
                            PRIVATE
                              POWERMANAGER_SCHEDULES_FILE=\"${PLUGIN_POWERMANAGER_SCHEDULES_FILE}\")
