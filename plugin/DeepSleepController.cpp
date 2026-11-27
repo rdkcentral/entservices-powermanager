@@ -197,14 +197,8 @@ DeepSleepController::DeepSleepController(INotification& parent, std::shared_ptr<
 
 DeepSleepController::~DeepSleepController()
 {
-    *_activateCancelled = true;
     LOGINFO(">> DTOR");
-    if (_deepSleepDelayJob.IsValid()) {
-        // Cancel the delay timer if it is still active
-        _workerPool.Revoke(_deepSleepDelayJob);
-        _deepSleepDelayJob.Release();
-        LOGINFO("Deepsleep delayed job cancelled");
-    }
+    Shutdown();
     LOGINFO("<< DTOR");
 }
 
@@ -252,6 +246,23 @@ uint32_t DeepSleepController::Deactivate()
     return errorCode;
 }
 
+void DeepSleepController::Shutdown()
+{
+    *_activateCancelled = true;
+    requestAbortDeepSleep();
+
+    if (_deepSleepDelayJob.IsValid()) {
+        _workerPool.Revoke(_deepSleepDelayJob);
+        _deepSleepDelayJob.Release();
+        LOGINFO("Deepsleep delayed job cancelled");
+    }
+
+    std::unique_lock<std::mutex> lock(_abortState->mutex);
+    _abortState->cv.wait(lock, [this]() {
+        return !_abortState->running;
+    });
+}
+
 bool DeepSleepController::read_integer_conf(const char* file_name, uint32_t& val)
 {
     bool ok         = false;
@@ -287,6 +298,24 @@ void DeepSleepController::enterDeepSleepDelayed(std::shared_ptr<std::atomic<bool
 
 void DeepSleepController::enterDeepSleepNow(std::shared_ptr<std::atomic<bool>> abortFlag)
 {
+    {
+        std::lock_guard<std::mutex> lock(_abortState->mutex);
+        _abortState->running = true;
+    }
+
+    struct RunningGuard {
+        std::shared_ptr<AbortState> state;
+
+        ~RunningGuard()
+        {
+            {
+                std::lock_guard<std::mutex> lock(state->mutex);
+                state->running = false;
+            }
+            state->cv.notify_all();
+        }
+    } runningGuard { _abortState };
+
     LOGINFO("Enter to Deep sleep Mode..stop Receiver with sleep 1 before DS");
     if (waitForAbortableDelay(std::chrono::seconds(1))) {
         _deepSleepState = DeepSleepState::NotStarted;

@@ -129,9 +129,11 @@ class DeepSleepController {
         std::mutex mutex;
         std::condition_variable cv;
         bool requested;
+        bool running;
 
         AbortState()
             : requested(false)
+            , running(false)
         {
         }
     };
@@ -176,6 +178,9 @@ public:
 
     // deactivate deep sleep mode
     uint32_t Deactivate();
+
+    // Abort any in-flight activation and wait for the worker to exit.
+    void Shutdown();
 
     // perform maintenance reboot
     void MaintenanceReboot();
