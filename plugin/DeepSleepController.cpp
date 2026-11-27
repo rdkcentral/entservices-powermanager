@@ -191,7 +191,6 @@ DeepSleepController::DeepSleepController(INotification& parent, std::shared_ptr<
     , _abortState(std::make_shared<AbortState>())
     , _timingMutex(std::make_shared<std::mutex>())
     , _activateCancelled(std::make_shared<std::atomic<bool>>(false))
-    , _activateCancelled(std::make_shared<std::atomic<bool>>(false))
 {
     LOGINFO(">> CTOR <<");
 }
