@@ -950,7 +950,7 @@ namespace Plugin {
                 errorCode = _modeChangeController->Reschedule(clientId, transactionId, delayPeriod * 1000);
                 LOGINFO("Delay allowed for DEEP_SLEEP transition");
             } else {
-                errorCode = Core::ERROR_ILLEGAL_STATE;
+                errorCode = Core::ERROR_INVALID_PARAMETER;
                 LOGWARN("Delay NOT allowed for %s transition. DelayPowerModeChangeBy is restricted to DEEP_SLEEP only", util::str(targetState));
             }
         }
